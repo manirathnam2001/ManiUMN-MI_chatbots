@@ -1,0 +1,184 @@
+
+Patient: Hello. 
+
+Provider: Hello there. How are you? 
+
+Patient: I'm doing good. 
+
+Provider: Good. My name is Rylee. I'll be your dental hygiene student today. 
+
+Patient: Nice to meet you. 
+
+Provider: All right. So let's look over your medical history really quick. And I just see that you’ve clicked that you have not received the HPV vaccine. 
+
+Patient: Correct. 
+
+Provider: Are you interested in the vaccine? Do you know much about the vaccine?
+
+
+Patient: I don’t know a whole lot, but I did see this flyer in your waiting room and I have a question. Why is the dentist concerned about STDs?
+
+Provider: Yeah, that’s a really good question. That’s great. So with HPV, recently, there’s been a lot more research on its link to throat cancer. So kind of at the base of your tongue, back of your throat, your tonsils area. So we're trying to create a little bit more awareness about just that correlation because it’s just kind of been swept under the rug, I feel like. And so we try to educate patients as much as we can on the vaccine and promoting that you can prevent oral cancer. Is that something you’d be interested in learning more about, the actual vaccine itself? 
+
+Patient: Yeah. I guess I don’t know much about it.  I'm open to.
+
+Provider: Do you know anything about, or can you tell me a little bit about what you already know, what HPV in general is?
+
+
+Patient: I mean, I guess just info here. Yeah. I mean, I know it’s pretty contagious. I know it’s an STD. That’s about it.
+
+Provider: Yeah, that’s great. I feel like a lot of people don’t know a ton about HPV. It’s just not talked about a whole lot. 
+
+Provider continues: As that sheet says, it is the most common STD in America and a lot of people get it, but a lot of people just pass it. Their immune system finds it. It’s not a big deal. But there are a few strains that can go latent or go undetected for a long time. And those are the ones that could come back and cause cancer later on. And so those are the ones we’re concerned about. But if someone has the vaccine, it does prevent from all of those strains. And so it kind of helps protect you now and potentially in the future.  What are your thoughts on that?
+
+
+
+Patient: Yeah. I mean, good to know. I don’t think I or my family will ever be at risk for that. But  I guess I don’t really know.
+
+Provider: With HPV, it is a sexually transmitted disease, but it’s not only—you can also get it through passionate kissing, stuff like that, so everyone is at risk for it. It’s not like you have to be sexually active to obtain HPV, especially now that the vaccine is approved for younger children as well. It can be good to get them vaccinated while they’re young and just prevent that from ever even being exposed to them.
+
+
+
+Patient: Yeah. But are there, like, benefits to getting the vaccine younger? Because it feels like not even on my radar at all, but my kids are nine and eleven. But I just wouldn’t even think about that.
+
+Provider: Yeah. That is young. I know, I don’t blame you. I would be in the same boat. I mean, it is helpful for getting it under the age of fifteen. They can get it in two shots instead of three. So you get one, and then six months later, you get the second one. It is nice that it’s one less appointment, one less shot they have to get because no kid loves that. One less trip to get ice cream after. But yeah, it can be beneficial, just prevent it while they’re still young.
+
+
+
+Patient: Is it pretty safe?
+
+Provider: Yeah. I mean, there’s minimal side effects. It’s kind of the same as, like, getting the flu shot where your arm might be sore, might be a little tender, red. There can be some very, very rare side effects of people being allergic or something, but for the most part, it’s the same as getting your flu vaccine—just stiff arm, soreness. That lasts about a day or so. How’s that? What are your thoughts after learning a little bit more about it?
+
+
+
+Patient: I mean, all good information for sure.
+And it works pretty well?
+
+Provider: Yeah. I think it’s proven to. Yeah. It’s got a really good rate for working.
+
+
+
+Patient: Is that something, I mean, since you’re discussing it here in the dentist’s office, is that something I could do here or do I have to go somewhere else?
+
+Provider: That is, unfortunately, something you would have to go to your primary care provider to receive, but it’s something we’re working on being able to do more in the dental office.  It would be great to be able to just do while you’re here, especially with the six months. You’re here every six months anyway. It would be great. On a scale of one to ten, I guess, after just learning a little bit more about it, what are your thoughts on getting it, with one being probably not, ten being sure I’ll get it?
+
+Patient: Like seven or eight.
+
+Provider: Yeah. That’s great. How about even just for your kids? I mean, does that change your thoughts at all?
+
+Patient: Probably. I think I—yeah. Since it hasn’t even been on my mind whatsoever, I want to talk to my spouse about it. Just maybe learn a little bit more about it.
+
+
+
+Provider: Of course. That’s great.  That’s good to know. It is one of those vaccines that’s considered one of the standard ones that they get. So I’m sure too, now that they’re getting at the age of where it’s recommended, because they start recommending it to boys and girls at about nine years old. I wouldn’t be surprised the next couple of years in their physicals they start to be like, “Well, we recommend this as well.” So you could learn more through your primary care provider as well on that. Okay. Yeah. All right. Do you have any other questions for me on that?
+
+Patient: I don’t think so. You said the likelihood of cancer—it’s, like, about the same for boys and girls?
+
+Provider: Boys are a little bit more likely than girls, but for the most part, it’s pretty similar. It’s the same strains actually that cause cervical cancer as well. And so it’s just beneficial. I guess even though the boys have a little bit higher chance of developing it. But it is only, like, one to two out of one hundred people get oral cancer. Got you. The only hard thing is it’s ten to thirty years from now. So once you kind of have it, you can’t do anything. 
+
+
+Patient: Okay. All right. 
+
+Provider: Yeah. What other questions do you have?
+
+Patient: I don’t think any.
+
+Provider: Okay. Sounds good. These are all really good questions, and it sounds like you already knew a bit, and it’s great that you saw that and brought it in today. It’s great.
+
+Patient: It did catch my eye.
+
+Provider: Yeah. It’s interesting now that it’s in the dental office, how that correlates.
+
+Patient: Exactly. 
+
+Provider: But yeah, it sounds like you’re a little more interested in getting the vaccine now that you know a little bit more about it. It sounds like you understand too that even though you already have kids, your kids are also at risk, and so it’d be great to talk to your primary care provider about that definitely.Yeah. All right. And do you have any other comments or concerns, questions?
+
+Patient: I don’t think so.
+
+Provider: Sounds great. Well, it’s great to talk to you about that today. Good luck with your dots.
+
+Motivational Interviewing (MI) Rubric & Feedback Summary
+________________________________________
+1. Evocation (Evoke self-efficacy, confidence, intrinsic motivation, and understanding)
+Rubric Criteria: Uses open-ended questions for any of the following:
+•	Patient understanding
+•	Determining stage of change
+•	Eliciting change talk
+Evaluation:
+•	Criteria Met (Partially): You occasionally self-corrected closed questions (e.g., “Tell me a little bit about what you already know, what HPV in general is?”).
+•	Criteria Not Met (Often): Too many closed questions were used, which limited patient engagement and reduced opportunities for change talk.
+Feedback:
+•	Practice starting with open-ended questions from the outset (e.g., “What have you heard about the HPV vaccine?” or “How do you feel about HPV vaccination for your children?”).
+•	Open-ended questions are critical for exploring readiness, ambivalence, and patient values.
+________________________________________
+2. Acceptance (Demonstrate respect, autonomy, and affirmations)
+Rubric Criteria:
+•	Uses reflections to demonstrate listening.
+•	Acknowledges and affirms patient experiences.
+•	Asks permission before providing information.
+Evaluation:
+•	Criteria Met: You asked permission before sharing HPV information.
+•	Criteria Not Met: Many responses were surface-level (e.g., “That’s great” or “That’s a really good question”), which don’t fully affirm or reflect patient thoughts.
+Feedback:
+•	Strengthen affirmations by validating feelings and knowledge (e.g., “You are correct that HPV is a very contagious STD”).
+•	Normalize and affirm patient ambivalence (e.g., “It’s understandable to question vaccines when your children are still young”).
+•	Replace weak reflections with statements that show deep listening (e.g., “Many parents share the same concerns you have about this vaccine”).
+________________________________________
+3. Collaboration (Partnership and Rapport Development)
+Rubric Criteria:
+•	Elicits patient ideas for change.
+•	Shares accurate information in partnership (chunk-and-check approach).
+•	Avoids closed questions, lecturing, or “fixing” the patient.
+•	Demonstrates evidence-based knowledge.
+•	Creates a welcoming and engaging interaction.
+Evaluation:
+•	Criteria Met:
+o	Introduced yourself and your role in a warm and welcoming manner.
+o	Used the chunk-and-check method in some instances (small information pieces followed by questions).
+o	Successfully addressed some patient questions with evidence-based information.
+•	Criteria Not Met:
+1.	Closed Questions: Closed questions were often used, limiting patient participation.
+2.	Limited Elicitation of Patient Ideas: There were missed opportunities to explore the patient’s motivations, ideas, or preferences for HPV vaccination.
+3.	Unprepared/Uncertain Responses: Phrases like “I think it’s proven” indicated uncertainty, which can weaken patient confidence.
+4.	Perceived Lecturing/Scare Tactics: The statement “Once you kind of have it, you can’t do anything” might be interpreted as scare-based persuasion.
+5.	No Collaborative Closing: The session ended abruptly without reflecting or confirming patient input.
+Feedback for Improvement:
+•	Use Open Questions: (e.g., “What do you think about what we just discussed?”).
+•	Be Confident and Evidence-Based: Prepare accurate facts about HPV to respond effectively.
+•	Avoid Scare Tactics: Reframe messages in a neutral, supportive tone. For example, instead of warning, say “HPV vaccines can help prevent some cancers years later, which is why early vaccination can be valuable.”
+•	Close Collaboratively: Summarize key points and ask for the patient’s thoughts (e.g., “Based on what we’ve discussed, how do you feel about next steps?”).
+________________________________________
+4. Compassion (No judgment, shaming, or belittling)
+Rubric Criteria:
+•	Demonstrates empathy and understanding of patient concerns.
+•	Avoids judgmental language, tone, or non-verbal cues.
+Evaluation:
+•	Criteria Met:
+o	Showed genuine effort to understand patient concerns (e.g., using a readiness ruler).
+•	Criteria Not Met:
+o	Some language choices could be perceived as scare tactics or overly directive (e.g., “You can’t do anything once you have it”).
+Feedback:
+•	Monitor tone and phrasing to avoid unintended judgment.
+•	Pair readiness ruler questions with affirmations (e.g., “You’re very high on the readiness scale, which shows how much you value your children’s health.”).
+________________________________________
+5. Summary (Reflecting and Closing the Conversation)
+Rubric Criteria:
+•	Reflects the “big picture” of what the patient shared.
+•	Checks for accuracy and understanding.
+•	Outlines next steps collaboratively.
+Evaluation:
+•	Criteria Not Met:
+o	The session closed abruptly without summarizing or validating patient input.
+Feedback:
+•	Use summaries to reinforce key points and show active listening (e.g., “You came with strong questions about HPV, and we discussed its link to cancer. You mentioned you may want to talk to your primary care provider about it. Did I capture that correctly?”).
+•	A clear summary helps build trust and ensures mutual understanding before closing.
+________________________________________
+Overall Performance:
+•	Strengths: Warm tone, occasional self-correction to open questions, some collaboration, use of readiness ruler, willingness to engage.
+•	Areas for Growth:
+o	Increase open-ended questions and reduce closed ones.
+o	Deepen affirmations with meaningful reflections.
+o	Strengthen collaboration by inviting patient ideas and ensuring evidence-based responses.
+o	Avoid scare tactics or lecturing language.
+o	Close with a reflective summary to validate and plan next steps.
+
