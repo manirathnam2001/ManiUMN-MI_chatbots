@@ -38,6 +38,8 @@ Your task:
 - Provide a **detailed MI feedback report** following the rubric, with actionable suggestions and examples of improved phrasing.
 """
 
+
+
 # --- Streamlit page configuration ---
 st.set_page_config(
     page_title="HPV MI Practice",
@@ -45,7 +47,21 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- UI: Title ---
+st.title("🧬 HPV MI Practice")
+
+st.markdown(
+    """
+    Welcome to the **HPV MI Practice App**. This chatbot simulates a realistic patient 
+    who is hesitant about the HPV vaccine. Your goal is to practice **Motivational Interviewing (MI)** skills 
+    by engaging in a natural conversation and helping the patient explore their thoughts and feelings. 
+    At the end, you’ll receive **detailed feedback** based on the official MI rubric.
+    """,
+    unsafe_allow_html=True
+)
+
 working_dir = os.path.dirname(os.path.abspath(__file__))
+
 
 # --- Ask user to enter their GROQ API key ---
 api_key = st.text_input("🔑 Enter your GROQ API Key", type="password")
@@ -64,7 +80,6 @@ client = Groq()
 # GROQ_API_KEY = config_data.get("GROQ_API_KEY")
 # os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 # client = Groq()
-
 
 # --- Step 1: Load Knowledge Document (MI Rubric) ---
 # for multiple example rubrics inside the hpv_rubrics folder
@@ -121,8 +136,7 @@ if "chat_history" not in st.session_state:
         "content": "Hello! I’m Alex, your HPV Motivational Interviewing patient for today."
     })
 
-# --- UI: Title ---
-st.title("🧬 HPV MI Practice")
+
 
 # --- Display chat history ---
 for message in st.session_state.chat_history:
