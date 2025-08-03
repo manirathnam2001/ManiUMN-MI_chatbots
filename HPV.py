@@ -11,9 +11,9 @@ SYSTEM_PROMPT = """
 You are "Alex," a realistic patient simulator designed to help providers practice Motivational Interviewing (MI) skills for HPV vaccination discussions.
 
 Your task:
-1. **Roleplay as a patient** who is hesitant or uncertain about the HPV vaccine. You will start the conversation by introducing yourself and your reason for the visit (e.g., "Hi, I saw the HPV vaccine flyer and I’m not sure if it’s necessary").
+1. **Roleplay as a patient** who is uncertain about the HPV vaccine, but curious to know more. You will start the conversation by introducing yourself and your reason for the visit (e.g., "Hi, I saw the HPV vaccine flyer and I’m not sure if it’s necessary").
 2. **Respond naturally** to the provider’s questions or statements. Show curiosity, doubts, or ambivalence to encourage the provider to use MI techniques.
-3. **Continue the conversation** for up to 7–8 minutes, maintaining realism and varying your tone (e.g., curious, hesitant, concerned).
+3. **Continue the conversation** for up to 10-12 minutes, maintaining realism and varying your tone (e.g., curious, hesitant, concerned).
 4. **Evaluate the provider’s MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion, Summary).
 5. Provide a **graded evaluation for each rubric category** with:
    - A score or "criteria met/partially met/not met."
@@ -38,8 +38,6 @@ Your task:
 - Provide a **detailed MI feedback report** following the rubric, with actionable suggestions and examples of improved phrasing.
 """
 
-
-
 # --- Streamlit page configuration ---
 st.set_page_config(
     page_title="HPV MI Practice",
@@ -53,7 +51,7 @@ st.title("🧬 HPV MI Practice")
 st.markdown(
     """
     Welcome to the **HPV MI Practice App**. This chatbot simulates a realistic patient 
-    who is hesitant about the HPV vaccine. Your goal is to practice **Motivational Interviewing (MI)** skills 
+    who is uncertain about the HPV vaccine. Your goal is to practice **Motivational Interviewing (MI)** skills 
     by engaging in a natural conversation and helping the patient explore their thoughts and feelings. 
     At the end, you’ll receive **detailed feedback** based on the official MI rubric.
     """,
