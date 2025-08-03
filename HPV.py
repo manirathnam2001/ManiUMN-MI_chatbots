@@ -46,10 +46,25 @@ st.set_page_config(
 )
 
 working_dir = os.path.dirname(os.path.abspath(__file__))
-config_data = json.load(open(f"{working_dir}/config.json"))
-GROQ_API_KEY = config_data.get("GROQ_API_KEY")
-os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+
+# --- Ask user to enter their GROQ API key ---
+api_key = st.text_input("🔑 Enter your GROQ API Key", type="password")
+
+# --- Warn and stop if key not provided ---
+if not api_key:
+    st.warning("Please enter your GROQ API key above to continue.")
+    st.stop()
+
+# --- Set API key and initialize client ---
+os.environ["GROQ_API_KEY"] = api_key
 client = Groq()
+
+# MY API KEY - Anwesha
+# config_data = json.load(open(f"{working_dir}/config.json"))
+# GROQ_API_KEY = config_data.get("GROQ_API_KEY")
+# os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+# client = Groq()
+
 
 # --- Step 1: Load Knowledge Document (MI Rubric) ---
 # for multiple example rubrics inside the hpv_rubrics folder
