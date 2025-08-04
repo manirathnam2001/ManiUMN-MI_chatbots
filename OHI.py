@@ -78,6 +78,9 @@ st.markdown(
     who is uncertain about the OHI recommendations. Your goal is to practice **Motivational Interviewing (MI)** skills 
     by engaging in a natural conversation and helping the patient explore their thoughts and feelings. 
     At the end, you’ll receive **detailed feedback** based on the official MI rubric.
+
+    👉 To use this app, you'll need a **Groq API key**.  
+    [Follow these steps to generate your API key](https://docs.newo.ai/docs/groq-api-keys).
     """,
     unsafe_allow_html=True
 )
