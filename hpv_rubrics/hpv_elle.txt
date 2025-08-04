@@ -1,0 +1,102 @@
+Provider: Hi. I'm XXXX with you today. 
+Patient: Nice to meet you. 
+Provider: All right. I'm just going to sit here.
+Patient: Sure. 
+Provider: How are you doing today?
+Patient: Oh, I'm fine. I'm good. I'm just here for my routine cleaning, but I did have a question.
+Provider: Yes, of course.
+Patient: So I saw a flyer in your waiting room for HPV vaccination?
+Provider: Yes.
+Patient: And I was just wondering why dentists are concerned with STDs, I guess?
+Provider: Okay, so that's a great question to start with. Is it okay if I give you some information on the vaccine and just HPV in general?
+Patient: Sure.
+Provider: Okay. So HPV kind of starts as a sexually transmitted disease. You can get it with just intimate interactions with your partner. So I saw on your chart that you do have two kids, correct?
+Patient: Yeah.
+Provider: Nine and eleven?
+Patient: Yes.
+Provider: Okay. So we are kind of more concerned with the mouth and the throat, like, you know, how dentists work. So mouth and throat cancers can come from HPV. There are many strains of HPV and only a few of them can cause cancer over time. 
+Patient: Okay. 
+Provider: What do you know, I guess, about HPV so far, if anything?
+Patient: I mean, really, just that it’s an STD, I guess.
+Provider: Right. Okay. Well, that’s great that you know that. So I guess kind of starting with that, what you already know—yeah, it can affect around 90% of people, men and women. A lot of people may think it only affects one or the other sex, but it affects 90% throughout your lifetime. So about one in two of 100 people will develop cancer later from it. The earlier we detect HPV—and a lot of it is from throat and mouth—the earlier we can catch that, the earlier we can prevent anything from going further. Is it okay if I talk to you a bit about the vaccine, like you were asking earlier?
+Patient: Sure.
+Provider: Okay. So with the vaccine, you can get it from nine-years-old to forty-five-years-old.
+Patient: Okay, that’s great.
+Provider: It’s right in the age range of you and your children. Especially for men, it’s more common to get the throat cancer that I was talking about before. While your children, I assume, are not sexually active, they will be later in life. So getting it now kind of just, you know, gets that out of the way.
+Provider: So I guess on a scale of one to ten, how likely are you to get it for you and your children right now?
+Patient: I mean, I guess I have maybe a couple more questions before. So like you said, obviously, my kids are pretty young, and I guess I just don’t—I’m not fully understanding why I would get them an STD vaccination right now.
+Provider: Yes, that’s a great point. I think a lot of concerns for parents are why do it now when they can get it later. It’s more about that prevention thing that we were talking about. Get it now while they’re younger so they don’t have to worry about it later in life. Around fifteen-years-old, they’ll have to get three shots of that vaccine. If they do it now, at nine and eleven-years-old, they only get two shots. It’s great to just stop that from going further.
+Provider: And then for you, if you’d still like it, that’s more of a conversation for your primary doctor to have. Because you are forty-five-years-old, we try to stay around twenty-five and then you need a doctor’s permission at forty-five. But they should get the vaccine. Sometimes some dentists will offer the vaccine, but it’s more your primary care doctor.
+Provider: I can give you a brochure later after we’re done with the cleaning, and we can kind of go through that and you can get in contact with your primary doctor and get an appointment set up if that’s what you’d like for you and your children.
+Patient: Is it safe?
+Provider: That’s a great concern. So it has been around since 2006. The vaccine has been around for quite some time and many studies have been done showing that it is safe.
+Patient: Okay.
+Provider: So that’s why we do the two to three doses—more effective when you’re younger. So getting that out of the way for the kids is great. But if you’d like to push that off, that’s okay too. They’ve got some time to choose themselves if they want the vaccine later in life. But to answer your question straightforward, yes, it is safe.
+Patient: Okay, great.
+Provider: What questions do you have about the vaccine or HPV in general?
+Patient: I know you mentioned that both men and women can get HPV. Can both men and women get the vaccine? Because I have a son.
+Provider: Yes, both can equally get it.
+Patient: Okay.
+Provider: Same time, same age, same dosage—same goes with that. With HPV, though, it usually develops a bit differently. It’s more common for men. So your son, when he’s older, if he were to get HPV, he is more likely to get throat cancer than your daughter is.
+Patient: Okay.
+Provider: There are usually no symptoms and it can stay in your body for about fifteen years with no symptoms and you just have no idea it’s there. So just getting that prevention again out of the way—you don’t have to worry about it.
+Patient: Okay. Sure. Makes sense.
+Provider: On a scale of one to ten, how likely are you to get those vaccines for you and your kids, do you think?
+Patient: I would say now I’m probably like a seven or eight.
+Provider: That’s great. With that, what can we do to make that a ten for you? What makes that a seven and not, let’s say, a five?
+Patient: I think I’m pretty on board. I think the prevention makes a lot of sense. But since I can’t get it here, I’m thinking I’ll just talk to my doctor about it, get their perspective, and then maybe set up an appointment with them.
+Provider: Okay, great. I think that’s great. We can give you that brochure, like I said, right after the cleaning and get you on your way.
+Provider: Any questions that you have about the vaccine?
+Provider: What questions do you have?
+Patient: I don’t think I need—no, thank you.
+Provider: Okay, well thank you so much. So what I’m hearing, just to kind of summarize and make sure that we’ve covered all our bases—you’re at about a seven in likeliness to get that vaccine for you and your kids, correct?
+Patient: Yes.
+Provider: Or more your kids than you? What are you thinking?
+Patient: I think both at this point. Are you still eligible?
+Provider: Yes, you are still eligible this year until your birthday.
+Patient: Okay.
+Provider: But it’s more of your doctor’s decision and less on us.
+Patient: Okay.
+Provider: And you said that you’re more concerned about the safety and we covered that safety basis. Again, you can talk about that with your primary care doctor. They know quite a lot more than I would about the vaccine. Any symptoms or anything that you are concerned about—there are very little of those symptoms. Any questions at all?
+Patient: Okay.
+Provider: All righty. Well, thank you so much for letting me talk to you about that.
+Patient: Yeah, sure.
+Provider: We will get started with the cleaning. I will go grab that brochure for you. Great. Thank you. Lisa, nice to meet you.
+Patient:  Nice to meet you as well.
+
+
+
+Feedback
+
+Collaboration (Establish partnership and rapport development)
+Rubric met: Introduces self, role, is engaging, welcoming
+Rubric not met: Collaborated with the patient by eliciting their ideas for change in HPV vaccination status or by providing support as a partnership
+Feedback: Throughout the conversations there were limited open questions, affirmations and reflections. This did not allow the provider to evoke or elicit the patient’s ideas or concerns. 
+Rubric not met: Did not lecture; Did not try to “fix” the patient
+Feedback: The conversation did not align with the collaborative Spirit of MI. The information that was provided did not evoke. Additionally there was a lot of information provided at one time and the patient was only able to response with “yeah” or “sure.” During a MI conversation there should be equally talking time between the provider and the patient. Or the patient should be doing more talking. Essentially the role of the provider is to be the facilitator to ask open questions to assess the patients motivates, raise awareness, and initiative change conversations. 
+
+
+Acceptance Demonstrate respect, autonomy, and affirmations
+	Rubric met: Asks permission before eliciting accurate information about the HPV vaccination.
+	Feedback: Although permission was asked, it is important to only provide a small chunk of information and then check in with the patient by asking another open questions, such as: What does this information mean to you? How does this information make you feel? 
+ 	
+Rubric not met: Uses reflections to demonstrate listening.
+Feedback: There were limited to no reflections. Reflections are used to demonstrate the provider is listening, evoke change conversations, and to clarify. The patient knew HPV was an STD, she had questions and safety concerns. The provider could have affirmed her knowledge and awareness that HPV is a STD/STI. The provider could have also affirmed and reflected that many patients have questions about the safety and that is why it is discussed in the dental office to provide patient with information and clarify questions about the vaccine. 
+
+
+Compassion (Show no judgment, shaming, or belittling)
+Rubric not met: Tries to understand the patient’s perceptions and/or concerns with the HPV vaccination
+Feedback: The provider attempted to use the readiness, importance or confidence scale; however, the provider did not define the measures as 1 low 10 has high. The provider also stated ‘how likely’ to get the vaccine. This scale was out of context because the patient had safety concerns about the vaccine. The provider should have asked on a scale 1 to 10, how confident are you in the safety of the HPV vaccine after our conversation, of 1 not safe and 10 safe. The readiness, importance or confidence scale is a excellent tool to assess patient motives, but you need to make sure the application algins with the information the patient shared with the provider. 
+
+Rubric met: Does not judge, shame or belittle the patient
+Feedback: The provider did not verbally state or demonstrate non verbal ques that were judgmental. However, anytime a provider lectures, it can be perceived by a patient that they are being judged. 
+
+Evocation (Evoke self-efficacy, confidence, and intrinsic motivation and elicit understanding)
+Rubric not met: Uses open-ended questions for any of the following: 1) patient understanding, 2) determining stage of change, and 3) eliciting change talk
+Rubric not met: Supports self-efficacy, (Emphasizes patient autonomy regarding the HPV vaccination (rolls with resistance))
+Feedback: Both of these rubric criteria are related in the concept that if the provider does not pose valid open questions, it makes it extremely challenging to support self-efficacy. Therefore, providers need to follow the basic MI strategies of applying OARS (open questions, affirmations, reflections, and summaries). Support self-efficacy is a key fundamental aspect to support behavior change.  
+
+
+Summary
+Rubric met: Reflects big picture, checks for accuracy of information provided by the patient and/or next steps.
+Feedback: The provider did provide an accurate summary of the information the patient shared and included the patient’s concerns about safety. 

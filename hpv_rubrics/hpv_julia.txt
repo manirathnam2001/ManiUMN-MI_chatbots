@@ -1,0 +1,87 @@
+Provider: Hi there. 
+Patient: Hi. 
+Provider: How are you? 
+Patient: I'm doing good. 
+Provider: Good. I'm XXXX. I'll be your provider today. 
+Patient: Nice to meet you.
+Provider: Sarah, right? Yes. Okay. Perfect. Thanks for coming in today. All right. Well, I was just reviewing your medical history. Sounds like you're taking good care of yourself and your teeth, so that's awesome. Regarding your vaccines, I noticed you didn't have the HPV vaccine or the human papillomavirus vaccine. I was wondering if you could tell me a little bit about what you know about HPV, if you want to share that information.
+Patient: Sure. Yeah. I was actually going to ask you because I saw this flyer in your waiting room about the HPV vaccine. I guess I was just curious why a dentist would be concerned about an STD.
+Provider: Yeah, that's a great question. HPV is actually now the leading cause for throat or oral cancer, even more than alcohol and tobacco use. That’s what the new studies have shown—HPV is really prevalent. And that’s related to us because we’re looking in your mouth. I don’t know if you remember, we typically feel around your head and neck area and the back of your throat, which is where HPV typically manifests. We’re trying to play a role in educating patients since it’s in our area that we’re checking out.
+Patient: Got you. Yeah. 
+Provider: How does that information make you feel?
+Patient: Yeah. I didn’t know about the throat cancer aspect of it, the surgical aspect.
+Provider: Yeah, for sure. It’s really common. People often associate it only with cervical cancer, but the throat cancer is definitely becoming more prevalent. Is it okay if I share a little bit more information about HPV with you?
+Patient: Yeah, sure.
+Provider: Okay, perfect. HPV, like I said, is associated with throat cancer. HPV has a lot of strains—over 100 strains of the disease. Most people will come in contact with it in their lives. However, our immune system is really good at fighting off most of those strains, but the strains that cause oral cancer are the ones that our body can't fight off. They go undercover in our immune system and stay in our body for many years, and then later they start to manifest, maybe as warts or throat cancer.
+Patient: Got you. Yeah.
+Provider: Yeah. What are you feeling about that information?
+Patient: Yeah. I mean, good to know that. I guess from my own perspective right now, I don’t know that I or my family would be at very much risk for them.
+Provider: Yeah, that’s totally understandable. May I share a little bit about the vaccine and why we encourage people to get vaccinated even though they don't necessarily think they’re at risk?
+Patient: Sure.
+Provider: Okay. Yeah, our immune systems are really strong when we’re younger. That age—below 15—is when our immune system is super active. It’s responding to our environment and bacteria or germs that we’re in contact with, so it’s really good at creating those antibodies. Even though you may not be participating in sexual activities at that age, it builds up those antibodies to fight against HPV if you were to come into contact with it later. Does that make sense?
+Patient: Yeah.
+Provider: Okay. Yeah. We encourage the vaccine. It’s Gardasil 9. Does that sound familiar to you?
+Patient: Yeah, I think I’ve heard that.
+Provider: Yeah, is it okay if I share some information about that vaccine?
+Patient: Okay.
+Provider: Yeah, the vaccine is really great. It’s one of the only vaccines that prevents against cancer. So those strains I was talking about earlier—the ones your body can’t fight off—this vaccine helps prevent them. It’s recommended for kids ages 9 to 45. I think you have some kids in that age range—9 to 11?
+Patient: Yeah.
+Provider: This would be a great time for them to receive the vaccine. When they’re under 15, it’s a two-dose series. You get one shot, and then in the next six months you get the second one. Like I said before, even though they’re not at risk right now, just in case they come into contact with HPV since there are so many strains, it would protect them from getting those cancers. Then, if you're older than 15, you get it in a three-dose series.
+Patient: Got you.
+Patient: Yeah.
+Yeah. That’s quite in the age range.
+Patient: Yeah.
+Patient: Yeah. And it’s, like, a pretty safe vaccine?
+Provider: Yes. Yes, it’s very safe. It’s been tested many, many times, and many, many people have gotten the vaccine. The typical side effects are just like soreness at the site, maybe some faintness, dizziness—things that are kind of associated with all vaccines—but it’s very safe and really effective.
+Patient: Okay. Is there, like, the same risks associated between boys and girls?
+Provider: Yeah, that’s another great question. It’s actually more common in men. I’m not exactly sure why—that might be something you could bring up with your primary care doctor—but HPV does have a higher prevalence in men.
+Patient: Yeah. Okay.
+Yeah. Good to know.
+Provider: Yeah. So how are you feeling about that information overall? What are you feeling like?
+Patient: I feel good. Yeah, it just was totally not on my radar whatsoever. So I’ll definitely want to discuss that with my spouse and then probably our family doctor.
+Provider: Yeah, that’s a great idea. Sounds like you’re interested in learning more, and I’m glad that flyer was able to get your attention because, yeah, it’s something you don’t always think about or you don’t maybe think it will apply to you. But it sounds like you have a good perspective on it, and I think it’s a great idea to go talk to your doctor about it. On a scale of one to ten, one being least likely, ten being very likely—how likely do you feel like you would get the vaccine? Whichever answer is totally okay, just to gauge where you're at.
+Patient: Yeah, I’m probably at a seven or eight. Something like that.
+Provider: Yeah. That’s awesome. Is it okay if I follow up with you at your next appointment just to see how it’s going—if you got the vaccine or how you’re feeling about HPV and everything?
+Patient: Okay.
+Provider: Great. What are some other questions you have, if any? You have really great questions, so I appreciate that.
+Patient: Yeah. That’s not something I can get here at the dentist, can I?
+Provider: No, unfortunately not yet. It’s definitely something I think the dental field is trying to expand—our scope—because, like I said, it’s that six-month thing. You get the first dose, and then six months later you get the second dose if you're below 15. It would make sense because you typically see us every six months. Unfortunately, we can’t give it here, but your primary care doctor is a great resource for that.
+Patient: Yeah. I don’t think I have any other questions right now.
+Provider: Great. Well, it sounds like you're interested. We had a good conversation. You have a good understanding about how the virus manifests and the benefits of the vaccine.
+Provider: Great. I will just go grab—I know you have this flyer—but we have another flyer that also gives you some resources for places to get the HPV vaccine as well. I’ll go grab that and then we can continue on with the appointment.
+Patient: Great. Thank you.
+Yep.
+
+
+
+Feedback
+
+Collaboration (Establish partnership and rapport development)
+Rubric met: Introduces self, role, is engaging, welcoming
+ Rubric met: Collaborated with the patient by eliciting their ideas for change in HPV vaccination status or by providing support as a partnership
+Feedback: The provider did a great job of multiple open questions. The provider also affirmed the patient’s responses. 
+ Rubric met: Did not lecture; Did not try to “fix” the patient
+Feedback: The conversation did align with the collaborative Spirit of MI. The  role of the provider is to be the facilitator to ask open questions to assess the patients motivates, raise awareness, and initiative change conversations. Although this particular patient did not have a lot to share, the provider followed the Spirit of MI.
+
+
+Acceptance Demonstrate respect, autonomy, and affirmations
+Rubric met: Asks permission before eliciting accurate information about the HPV vaccination.
+Feedback: Although permission was asked, it is important to only provide a small chunk of information and then check in with the patient by asking another open questions, such as: What does this information mean to you? How does this information make you feel? 
+ 	Rubric met: Uses reflections to demonstrate listening.
+Feedback: The provider did affirm and reflect. The reflections could have been more robust. Reviewing the Affirmations to Demonstrate Reflective Listening and Evoke Change Talk resource to choose stronger words to use in your affirmation and reflection responses would have improved this conversation.  
+
+
+Compassion (Show no judgment, shaming, or belittling)
+Rubric met: Tries to understand the patient’s perceptions and/or concerns with the HPV vaccination
+Feedback: The provider used the readiness, importance or confidence scale and define the measures as 1 low 10 has high. The provider can improve by apply  with the information the patient shared with the provider. The patient was concerned about safety. 
+Rubric met: Does not judge, shame or belittle the patient
+Feedback: The provider did not verbally state or demonstrate non verbal ques that were judgmental. 
+
+Evocation (Evoke self-efficacy, confidence, and intrinsic motivation and elicit understanding)
+Rubric met: Uses open-ended questions for any of the following: 1) patient understanding, 2) determining stage of change, and 3) eliciting change talk
+ Rubric met: Supports self-efficacy, (Emphasizes patient autonomy regarding the HPV vaccination (rolls with resistance))
+Feedback: The provider used Elicit-Provide-Elicit (E-P-E) with the OARS (open questions, affirmations, reflections and summaries) very well. To refine, refer to the E-P-E resource.  
+Summary
+Rubric not met: Reflects big picture, checks for accuracy of information provided by the patient and/or next steps.
+Feedback: The provider did not provide a global accurate summary of the information the patient shared and included the patient’s concerns about safety. The summary is used by the provider to demonstrate the provider was listening and captured/understood the patient’s thoughts, feelings and concerns.  
+
