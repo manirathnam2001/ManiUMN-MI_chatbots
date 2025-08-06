@@ -12,7 +12,9 @@ These chatbots simulate realistic patient interactions and provide **automated M
 ## 📁 Project Structure
 anwesha-umn/
 ├── .devcontainer/         # Dev Container setup (for VS Code Remote/Containers)
-├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format)
+
+├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format
+
 ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
 ├── HPV.py                 # Streamlit app for HPV vaccine MI chatbot
 ├── OHI.py                 # Streamlit app for Oral Health MI chatbot
