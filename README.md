@@ -11,16 +11,14 @@ These chatbots simulate realistic patient interactions and provide **automated M
 
 ## 📁 Project Structure
 anwesha-umn/
-├── .devcontainer/         # Dev Container setup (for VS Code Remote/Containers)
-
-├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format
-
-├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
-├── HPV.py                 # Streamlit app for HPV vaccine MI chatbot
-├── OHI.py                 # Streamlit app for Oral Health MI chatbot
-├── README.md              # Instructions to set up and run the app
-├── requirements.txt       # Python dependencies for the chatbot
-└── runtime.txt            # (Optional) Python version for deployment environments (e.g., Streamlit Cloud)
+├── .devcontainer/ # Dev Container setup (for VS Code Remote/Containers)
+├── hpv_rubrics/ # HPV MI example transcripts + rubric feedback (.txt format)
+├── ohi_rubrics/ # Oral Hygiene MI transcripts + rubric feedback (.txt format)
+├── HPV.py # Streamlit app for HPV vaccine MI chatbot
+├── OHI.py # Streamlit app for Oral Health MI chatbot
+├── README.md # Instructions to set up and run the app
+├── requirements.txt # Python dependencies for the chatbot
+└── runtime.txt # (Optional) Python version for deployment environments (e.g., Streamlit Cloud)
 
 > You can add more `.txt` transcripts with MI feedback in the `hpv_rubrics/` or `ohi_rubrics/` folders to improve the RAG-based evaluation.
 
