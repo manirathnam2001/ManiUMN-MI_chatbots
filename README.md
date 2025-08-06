@@ -24,7 +24,7 @@ These chatbots simulate realistic patient interactions and provide **automated M
 
 ---
 
-## 💉 HPV MI Practice App
+## 🧬 HPV MI Practice App
 
 This app simulates a realistic patient interaction to practice Motivational Interviewing (MI) skills for HPV vaccination discussions. Users can play the role of a patient or provider to engage in a conversation that focuses on exploring thoughts and feelings about the HPV vaccine.
 
