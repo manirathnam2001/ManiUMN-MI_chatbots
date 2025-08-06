@@ -19,8 +19,8 @@ To run this app on your own computer, follow these steps:
 ### Installation
 1. Clone or download the repository to your local machine:
    ```bash
-   git clone <repository-url>
-   cd hpv-mi-practice-app
+   git clone https://github.com/anwesha-umn/MI_chatbots.git
+   cd MI_chatbots
 
 ### How to run it on your own machine
 
