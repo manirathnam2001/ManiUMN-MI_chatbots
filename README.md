@@ -27,7 +27,7 @@ This app simulates a realistic patient interaction to practice Motivational Inte
 To run this app on your own computer, follow these steps:
 
 ### Prerequisites
-- Python installed on your machine (Python 3.6+ recommended)
+- Python installed on your machine (Python 3.10 recommended)
 - Pip package manager installed
 
 ### Installation
