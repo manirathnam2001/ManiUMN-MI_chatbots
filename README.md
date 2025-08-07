@@ -1,4 +1,4 @@
-# 🧠 MI Chatbots
+# MI Chatbots
 
 This repository contains two Motivational Interviewing (MI) chatbot applications built using Streamlit:
 
