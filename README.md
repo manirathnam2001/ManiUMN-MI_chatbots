@@ -6,6 +6,7 @@ This repository contains two Motivational Interviewing (MI) chatbot applications
 - `OHI.py`: Practice MI skills for **Oral Hygiene**
 
 These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on example transcripts stored in `*.txt` format.
+We use Groq LLMs for real-time dialogue and retrieval-augmented generation (RAG) to incorporate structured feedback from rubric documents.
 
 ---
 ## 📁 Project Structure
