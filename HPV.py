@@ -167,7 +167,7 @@ Include strengths, examples of change talk, and clear next-step suggestions.
 """
 
     feedback_response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": review_prompt}
@@ -195,7 +195,7 @@ if user_prompt:
     ]
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-120b",
         messages=messages
     )
     assistant_response = response.choices[0].message.content
