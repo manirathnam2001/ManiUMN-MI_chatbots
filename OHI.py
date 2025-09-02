@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from datetime import datetime
+from pdf_utils import parse_feedback_response, generate_pdf_report
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
 
@@ -151,9 +152,16 @@ working_dir = os.path.dirname(os.path.abspath(__file__))
 # --- Ask user to enter their GROQ API key ---         
 api_key = st.text_input("🔑 Enter your GROQ API Key", type="password")
 
+# --- Ask for student name ---
+student_name = st.text_input("👤 Enter your name:", placeholder="Your name for the feedback report")
+
 # --- Warn and stop if key not provided ---
 if not api_key:
     st.warning("Please enter your GROQ API key above to continue.")
+    st.stop()
+
+if not student_name:
+    st.warning("Please enter your name for the feedback report.")
     st.stop()
 
 # --- Set API key and initialize client ---
@@ -237,9 +245,17 @@ if st.button("Finish Session & Get Feedback"):
     Relevant MI Knowledge:
     {rag_context}
 
-    Based on the MI rubric, evaluate the user's MI skills.
-    Provide feedback with scores for Evocation, Acceptance, Collaboration, Compassion, and Summary.
-    Include strengths, example questions, and clear next-step suggestions.
+    Based on the MI rubric, evaluate the user's MI skills and provide structured feedback.
+    
+    Please evaluate each MI component and clearly state for each one:
+    1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
+    2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
+    3. ACCEPTANCE: [Met/Partially Met/Not Met] - [specific feedback about respecting autonomy and reflecting]
+    4. COMPASSION: [Met/Partially Met/Not Met] - [specific feedback about warmth and non-judgmental approach]
+    5. SUMMARY: [Met/Partially Met/Not Met] - [specific feedback about closure and next steps]
+    
+    For each component, also provide specific suggestions for improvement.
+    Include overall strengths and clear next-step suggestions for continued learning.
     """
 
     feedback_response = client.chat.completions.create(
@@ -252,6 +268,23 @@ if st.button("Finish Session & Get Feedback"):
     feedback = feedback_response.choices[0].message.content
     st.markdown("### Session Feedback")
     st.markdown(feedback)
+    
+    # --- PDF Generation ---
+    st.markdown("### 📄 Download PDF Report")
+    
+    # Parse feedback response for structured data
+    components = parse_feedback_response(feedback)
+    
+    # Generate PDF report
+    pdf_buffer = generate_pdf_report(student_name, components, "Oral Hygiene")
+    
+    # Add download button
+    st.download_button(
+        label="📥 Download MI Performance Report (PDF)",
+        data=pdf_buffer.getvalue(),
+        file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
+        mime="application/pdf"
+    )
 
 # --- Handle chat input ---
 user_prompt = st.chat_input("Your response...")
