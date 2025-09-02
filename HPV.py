@@ -215,7 +215,7 @@ if st.session_state.selected_persona is None:
             "role": "assistant",
             "content": f"Hello! I'm {selected}, nice to meet you today."
         })
-        st.experimental_rerun()
+        st.rerun()
 
 # Continue with the rest of your existing code...
 # --- Step 1: Load Knowledge Document (MI Rubric) ---
@@ -324,4 +324,4 @@ if st.session_state.selected_persona is not None:
     if st.button("Start New Conversation"):
         st.session_state.selected_persona = None
         st.session_state.chat_history = []
-        st.experimental_rerun()
+        st.rerun()
