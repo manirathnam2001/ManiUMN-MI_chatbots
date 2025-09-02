@@ -12,3 +12,4 @@ torchvision>=0.21.0
 tqdm
 transformers
 wandb
+reportlab

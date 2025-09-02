@@ -5,6 +5,13 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
+from datetime import datetime
+from time_utils import get_formatted_utc_time
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+import io
 
 # --- Persona System Prompts ---
 PERSONAS = {
@@ -245,6 +252,64 @@ def split_text(text, max_length=200):
         chunks.append(" ".join(current_chunk))
     return chunks
 
+def generate_feedback_pdf(feedback_content, timestamp, evaluator, persona):
+    """Generate PDF report with feedback content"""
+    buffer = io.BytesIO()
+    
+    # Create PDF document
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=1*inch)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor='black',
+        spaceAfter=12,
+        alignment=1  # Center alignment
+    )
+    
+    header_style = ParagraphStyle(
+        'CustomHeader',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor='black',
+        spaceAfter=6
+    )
+    
+    content = []
+    
+    # Title
+    content.append(Paragraph("Motivational Interviewing Evaluation Report", title_style))
+    content.append(Spacer(1, 12))
+    
+    # Header information
+    content.append(Paragraph(f"<b>Evaluation Timestamp (UTC):</b> {timestamp}", header_style))
+    content.append(Paragraph(f"<b>Evaluator:</b> {evaluator}", header_style))
+    content.append(Paragraph(f"<b>Patient Persona:</b> {persona}", header_style))
+    content.append(Spacer(1, 12))
+    
+    # Add horizontal line
+    content.append(Paragraph("─" * 60, header_style))
+    content.append(Spacer(1, 12))
+    
+    # Feedback content
+    content.append(Paragraph("<b>Evaluation Results:</b>", styles['Heading2']))
+    content.append(Spacer(1, 6))
+    
+    # Split feedback into paragraphs for better formatting
+    feedback_paragraphs = feedback_content.split('\n\n')
+    for paragraph in feedback_paragraphs:
+        if paragraph.strip():
+            content.append(Paragraph(paragraph.replace('\n', '<br/>'), styles['Normal']))
+            content.append(Spacer(1, 6))
+    
+    # Build PDF
+    doc.build(content)
+    buffer.seek(0)
+    return buffer
+
 knowledge_chunks = split_text(knowledge_text)
 dimension = 384  # for all-MiniLM-L6-v2
 faiss_index = faiss.IndexFlatL2(dimension)
@@ -264,6 +329,10 @@ if st.session_state.selected_persona is not None:
 
     # --- Finish Session Button (Feedback with RAG) ---
     if st.button("Finish Session & Get Feedback"):
+        # Get current UTC timestamp and user login
+        current_timestamp = get_formatted_utc_time()
+        user_login = "manirathnam2001"
+        
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
 
         # Retrieve relevant rubric content
@@ -271,15 +340,23 @@ if st.session_state.selected_persona is not None:
         rag_context = "\n".join(retrieved_info)
 
         review_prompt = f"""
+    Evaluation Timestamp (UTC): {current_timestamp}
+    Evaluator: {user_login}
+    
     Here is the dental hygiene session transcript:
     {transcript}
 
     Relevant MI Knowledge:
     {rag_context}
 
-    Based on the MI rubric, evaluate the user's MI skills.
-    Provide feedback with scores for Evocation, Acceptance, Collaboration, Compassion, and Summary.
-    Include strengths, examples of change talk, and clear next-step suggestions.
+    Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
+    Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
+    Include a Summary section (without points) that provides strengths, examples of change talk, and clear next-step suggestions.
+    
+    Format your response with:
+    - Individual component scores out of 7.5 points each
+    - Total score out of 30 points
+    - Summary section with qualitative feedback
     """
 
         feedback_response = client.chat.completions.create(
@@ -290,8 +367,23 @@ if st.session_state.selected_persona is not None:
             ]
         )
         feedback = feedback_response.choices[0].message.content
+        
+        # Display feedback with timestamp header
         st.markdown("### Session Feedback")
+        st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
+        st.markdown(f"**Evaluator:** {user_login}")
+        st.markdown("---")
         st.markdown(feedback)
+        
+        # Generate and offer PDF download
+        pdf_buffer = generate_feedback_pdf(feedback, current_timestamp, user_login, st.session_state.selected_persona)
+        
+        st.download_button(
+            label="📄 Download Feedback as PDF",
+            data=pdf_buffer,
+            file_name=f"MI_Feedback_{current_timestamp.replace(' ', '_').replace(':', '-')}.pdf",
+            mime="application/pdf"
+        )
 
     # --- User Input ---
     user_prompt = st.chat_input("Your response...")
