@@ -8,10 +8,7 @@ tokenizers
 torch>=2.5.1
 torchaudio>=2.6.0
 torchmetrics==1.6.1
-torchvision==0.20.1
+torchvision>=0.21.0
 tqdm
 transformers
 wandb
-
-
-
