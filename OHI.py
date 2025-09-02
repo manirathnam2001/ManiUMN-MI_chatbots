@@ -540,8 +540,14 @@ if st.session_state.selected_persona is not None:
     # Combine all documents into a single knowledge base
     knowledge_text = "\n\n".join(knowledge_texts)
     
-    # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    # --- Step 2: Initialize RAG (Embeddings + FAISS) with fallback ---
+    try:
+        embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        use_embeddings = True
+    except Exception as e:
+        st.warning("⚠️ Internet connection required for full RAG functionality. Using simplified feedback mode.")
+        embedding_model = None  
+        use_embeddings = False
     
     def split_text(text, max_length=200):
         words = text.split()
@@ -556,15 +562,28 @@ if st.session_state.selected_persona is not None:
         return chunks
     
     knowledge_chunks = split_text(knowledge_text)
-    dimension = 384  # for all-MiniLM-L6-v2
-    faiss_index = faiss.IndexFlatL2(dimension)
-    embeddings = embedding_model.encode(knowledge_chunks)
-    faiss_index.add(np.array(embeddings))
     
-    def retrieve_knowledge(query, top_k=2):
-        query_embedding = embedding_model.encode([query])
-        distances, indices = faiss_index.search(np.array(query_embedding), top_k)
-        return [knowledge_chunks[i] for i in indices[0]]
+    if use_embeddings:
+        dimension = 384  # for all-MiniLM-L6-v2
+        faiss_index = faiss.IndexFlatL2(dimension)
+        embeddings = embedding_model.encode(knowledge_chunks)
+        faiss_index.add(np.array(embeddings))
+    
+        def retrieve_knowledge(query, top_k=2):
+            query_embedding = embedding_model.encode([query])
+            distances, indices = faiss_index.search(np.array(query_embedding), top_k)
+            return [knowledge_chunks[i] for i in indices[0]]
+    else:
+        # Fallback: simple text retrieval without embeddings
+        def retrieve_knowledge(query, top_k=2):
+            # Simple keyword matching fallback
+            query_words = query.lower().split()
+            scored_chunks = []
+            for chunk in knowledge_chunks:
+                score = sum(word in chunk.lower() for word in query_words)
+                scored_chunks.append((score, chunk))
+            scored_chunks.sort(reverse=True)
+            return [chunk for score, chunk in scored_chunks[:top_k] if score > 0]
     
     ### --- Initialize chat history --- ###
     if "chat_history" not in st.session_state:
@@ -576,14 +595,15 @@ if st.session_state.selected_persona is not None:
     
     # --- Display chat history with role labels ---
     for message in st.session_state.chat_history:
-        role_label = "🧑‍⚕️ Student" if message["role"] == "user" else "🧕 Patient (Alex)"
+        persona_name = st.session_state.selected_persona
+        role_label = "🧑‍⚕️ Student" if message["role"] == "user" else f"🧕 Patient ({persona_name})"
         with st.chat_message(message["role"]):
             st.markdown(f"**{role_label}**: {message['content']}")
     
     # --- Feedback section ---
     if st.button("Finish Session & Get Feedback"):
         transcript = "\n".join([
-            f"STUDENT: {msg['content']}" if msg['role'] == "user" else f"PATIENT (Alex): {msg['content']}"
+            f"STUDENT: {msg['content']}" if msg['role'] == "user" else f"PATIENT ({persona_name}): {msg['content']}"
             for msg in st.session_state.chat_history
         ])
         retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
