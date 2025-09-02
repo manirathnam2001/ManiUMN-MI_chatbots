@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from datetime import datetime
+from time_utils import get_formatted_utc_time
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
 
@@ -221,6 +222,10 @@ for message in st.session_state.chat_history:
 
 # --- Feedback section ---
 if st.button("Finish Session & Get Feedback"):
+    # Get current UTC timestamp and user login
+    current_timestamp = get_formatted_utc_time()
+    user_login = "manirathnam2001"
+    
     transcript = "\n".join([
         f"STUDENT: {msg['content']}" if msg['role'] == "user" else f"PATIENT (Alex): {msg['content']}"
         for msg in st.session_state.chat_history
@@ -229,6 +234,9 @@ if st.button("Finish Session & Get Feedback"):
     rag_context = "\n".join(retrieved_info)
 
     review_prompt = f"""
+    Evaluation Timestamp (UTC): {current_timestamp}
+    Evaluator: {user_login}
+    
     Here is the dental hygiene session transcript:
     {transcript}
 
@@ -237,7 +245,7 @@ if st.button("Finish Session & Get Feedback"):
     Relevant MI Knowledge:
     {rag_context}
 
-    Based on the MI rubric, evaluate the user's MI skills.
+    Based on the MI rubric, evaluate the user's MI skills using consistent timestamp format.
     Provide feedback with scores for Evocation, Acceptance, Collaboration, Compassion, and Summary.
     Include strengths, example questions, and clear next-step suggestions.
     """
@@ -250,7 +258,12 @@ if st.button("Finish Session & Get Feedback"):
         ]
     )
     feedback = feedback_response.choices[0].message.content
+    
+    # Display feedback with timestamp header
     st.markdown("### Session Feedback")
+    st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
+    st.markdown(f"**Evaluator:** {user_login}")
+    st.markdown("---")
     st.markdown(feedback)
 
 # --- Handle chat input ---
