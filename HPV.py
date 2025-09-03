@@ -194,7 +194,7 @@ if not api_key:
     st.stop()
 
 if not student_name:
-    st.warning("Please enter your name for the feedback report.")
+    st.warning("Please enter your name")
     st.stop()
 
 # --- Set API key and initialize client ---
@@ -291,7 +291,6 @@ if st.session_state.selected_persona is not None:
 
         review_prompt = f"""
     Evaluation Timestamp (UTC): {current_timestamp}
-    Evaluator: {user_login}
     
     Here is the dental hygiene session transcript:
     {transcript}
@@ -331,16 +330,23 @@ if st.session_state.selected_persona is not None:
         
         # --- PDF Generation ---
         st.markdown("### 📄 Download PDF Report")
-        
-        # Parse feedback response for structured data
-        components = parse_feedback_response(feedback)
+
+         # Format feedback for PDF
+        formatted_feedback = f"""Session Feedback
+Evaluation Timestamp (UTC): {current_timestamp}
+---
+{feedback}"""
         
         # Generate PDF report
-        pdf_buffer = generate_pdf_report(student_name, components, "HPV Vaccine")
+        pdf_buffer = generate_pdf_report(
+            student_name=student_name,
+            raw_feedback=formatted_feedback,
+            chat_history=st.session_state.chat_history,
+            session_type="HPV Vaccine"
         
         # Add download button
         st.download_button(
-            label="📥 Download MI Performance Report (PDF)",
+            label="Download MI Performance Report (PDF)",
             data=pdf_buffer.getvalue(),
             file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
             mime="application/pdf"
