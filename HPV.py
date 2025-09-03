@@ -5,6 +5,13 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
+from datetime import datetime
+from time_utils import get_formatted_utc_time
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+import io
 from pdf_utils import parse_feedback_response, generate_pdf_report
 
 # --- Persona System Prompts ---
@@ -271,7 +278,11 @@ if st.session_state.selected_persona is not None:
             st.markdown(message["content"])
 
     # --- Finish Session Button (Feedback with RAG) ---
-    if st.button("Finish Session & Get Feedback"):
+ if st.button("Finish Session & Get Feedback"):
+        # Get current UTC timestamp and user login
+        current_timestamp = get_formatted_utc_time()
+        user_login = "manirathnam2001"
+        
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
 
         # Retrieve relevant rubric content
@@ -279,13 +290,18 @@ if st.session_state.selected_persona is not None:
         rag_context = "\n".join(retrieved_info)
 
         review_prompt = f"""
+    Evaluation Timestamp (UTC): {current_timestamp}
+    Evaluator: {user_login}
+    
     Here is the dental hygiene session transcript:
     {transcript}
 
     Relevant MI Knowledge:
     {rag_context}
-
-    Based on the MI rubric, evaluate the user's MI skills and provide structured feedback.
+    
+    Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
+    Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
+    Include a Summary section (without points) that provides strengths, examples of change talk, and clear next-step suggestions.
     
     Please evaluate each MI component and clearly state for each one:
     1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
@@ -306,7 +322,11 @@ if st.session_state.selected_persona is not None:
             ]
         )
         feedback = feedback_response.choices[0].message.content
+         # Display feedback with timestamp header
         st.markdown("### Session Feedback")
+        st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
+        st.markdown(f"**Evaluator:** {user_login}")
+        st.markdown("---")
         st.markdown(feedback)
         
         # --- PDF Generation ---
