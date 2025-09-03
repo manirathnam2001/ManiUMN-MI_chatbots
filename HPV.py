@@ -42,7 +42,6 @@ Your task:
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
 - **Compassion:** Did they avoid judgment, scare tactics, or shaming?
-- **Summary:** Did they wrap up with a reflective summary and clear next steps?
 
 **End of Scenario:**
 - Once the conversation ends, switch roles to evaluator.
@@ -60,7 +59,7 @@ Your task:
 1. **Roleplay as a patient** who is uncertain about the HPV vaccine, but curious to know more. You will start the conversation by introducing yourself and your reason for the visit. Do not sound too hesitant or too eager.
 2. **Respond naturally** to the provider's questions or statements. Show curiosity, doubts, or ambivalence to encourage the provider to use MI techniques.
 3. **Continue the conversation** for up to 10-12 minutes, maintaining realism and varying your tone (e.g., curious, hesitant, concerned).
-4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion, Summary).
+4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion).
 5. Provide a **graded evaluation for each rubric category** with:
    - A score or "criteria met/partially met/not met."
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
@@ -77,7 +76,6 @@ Your task:
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
 - **Compassion:** Did they avoid judgment, scare tactics, or shaming?
-- **Summary:** Did they wrap up with a reflective summary and clear next steps?
 
 **End of Scenario:**
 - Once the conversation ends, switch roles to evaluator.
@@ -95,7 +93,7 @@ Your task:
 1. **Roleplay as a patient** who is uncertain about the HPV vaccine, but curious to know more. You will start the conversation by introducing yourself and your reason for the visit. Do not sound too hesitant or too eager.
 2. **Respond naturally** to the provider's questions or statements. Show curiosity, doubts, or ambivalence to encourage the provider to use MI techniques.
 3. **Continue the conversation** for up to 10-12 minutes, maintaining realism and varying your tone (e.g., curious, hesitant, concerned).
-4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion, Summary).
+4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion).
 5. Provide a **graded evaluation for each rubric category** with:
    - A score or "criteria met/partially met/not met."
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
@@ -112,7 +110,6 @@ Your task:
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
 - **Compassion:** Did they avoid judgment, scare tactics, or shaming?
-- **Summary:** Did they wrap up with a reflective summary and clear next steps?
 
 **End of Scenario:**
 - Once the conversation ends, switch roles to evaluator.
@@ -130,7 +127,7 @@ Your task:
 1. **Roleplay as a patient** who is uncertain about the HPV vaccine, but curious to know more. You will start the conversation by introducing yourself and your reason for the visit. Do not sound too hesitant or too eager.
 2. **Respond naturally** to the provider's questions or statements. Show curiosity, doubts, or ambivalence to encourage the provider to use MI techniques.
 3. **Continue the conversation** for up to 10-12 minutes, maintaining realism and varying your tone (e.g., curious, hesitant, concerned).
-4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion, Summary).
+4. **Evaluate the provider's MI performance** at the end of the conversation using the HPV MI rubric (Collaboration, Evocation, Acceptance, Compassion).
 5. Provide a **graded evaluation for each rubric category** with:
    - A score or "criteria met/partially met/not met."
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
@@ -299,8 +296,7 @@ if st.session_state.selected_persona is not None:
     
     Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
     Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
-    Include a Summary section (without points) that provides strengths, examples of change talk, and clear next-step suggestions.
-    
+   
     Please evaluate each MI component and clearly state for each one:
     1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
     2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
