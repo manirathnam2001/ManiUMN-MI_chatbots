@@ -1,3 +1,11 @@
+import io
+from datetime import datetime
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+
 def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="HPV Vaccine"):
     """
     Generate a PDF report with exact MI feedback formatting.
