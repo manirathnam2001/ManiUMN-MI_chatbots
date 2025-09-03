@@ -343,6 +343,7 @@ Evaluation Timestamp (UTC): {current_timestamp}
             raw_feedback=formatted_feedback,
             chat_history=st.session_state.chat_history,
             session_type="HPV Vaccine"
+        )
         
         # Add download button
         st.download_button(
