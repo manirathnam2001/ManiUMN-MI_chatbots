@@ -86,6 +86,14 @@ def generate_feedback_pdf(student_name, evaluation_date, mi_data):
     elements.append(Paragraph("<b>Areas for Improvement:</b>", styles['Normal']))
     elements.append(Paragraph(mi_data['summary']['improvements'], normal_style))
 
+ # Chatbot conversation section
+    elements.append(Paragraph("Chatbot Conversation", styles['Heading2']))
+    for idx, turn in enumerate(conversation):
+        speaker = turn.get("speaker", "User")
+        message = turn.get("message", "")
+        elements.append(Paragraph(f"<b>{speaker}:</b> {message}", normal_style))
+        elements.append(Spacer(1, 4))
+
     # Build PDF
     doc.build(elements)
     buffer.seek(0)
