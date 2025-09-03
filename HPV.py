@@ -147,7 +147,6 @@ Your task:
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
 - **Compassion:** Did they avoid judgment, scare tactics, or shaming?
-- **Summary:** Did they wrap up with a reflective summary and clear next steps?
 
 **End of Scenario:**
 - Once the conversation ends, switch roles to evaluator.
@@ -307,7 +306,6 @@ if st.session_state.selected_persona is not None:
     2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
     3. ACCEPTANCE: [Met/Partially Met/Not Met] - [specific feedback about respecting autonomy and reflecting]
     4. COMPASSION: [Met/Partially Met/Not Met] - [specific feedback about warmth and non-judgmental approach]
-    5. SUMMARY: [Met/Partially Met/Not Met] - [specific feedback about closure and next steps]
     
     For each component, also provide specific suggestions for improvement.
     Include overall strengths and clear next-step suggestions for continued learning.
