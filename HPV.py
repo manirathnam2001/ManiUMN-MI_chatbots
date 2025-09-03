@@ -278,7 +278,7 @@ if st.session_state.selected_persona is not None:
             st.markdown(message["content"])
 
     # --- Finish Session Button (Feedback with RAG) ---
- if st.button("Finish Session & Get Feedback"):
+    if st.button("Finish Session & Get Feedback"):
         # Get current UTC timestamp and user login
         current_timestamp = get_formatted_utc_time()
         user_login = "manirathnam2001"
