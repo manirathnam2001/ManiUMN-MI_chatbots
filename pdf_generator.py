@@ -11,6 +11,7 @@ def generate_feedback_pdf(student_name, evaluation_date, mi_data):
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
     elements = []
     styles = getSampleStyleSheet()
+    normal_style = styles["Normal"]
     
     # Header
     header_style = ParagraphStyle(
@@ -26,7 +27,7 @@ def generate_feedback_pdf(student_name, evaluation_date, mi_data):
     
     # MI Components table
     table_data = [
-        ['MI Component', 'Meets Criteria', 'Feedback', 'Needs Improvement', 'Score'],
+        [[Paragraph("MI Component", normal_style), Paragraph(component_feedback["MI Component"],normal_style)], [Paragraph("Meets Criteria", normal_style), Paragraph(component_feedback["Meets Criteria"],normal_style)], [Paragraph("Feedback", normal_style), Paragraph(component_feedback["Feedback"],normal_style)], [Paragraph("Needs Improvement", normal_style), Paragraph(component_feedback["Needs Improvement"],normal_style)], [Paragraph("Score", normal_style), Paragraph(component_feedback["Score"],normal_style)]]
     ]
     
     components = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation']
@@ -43,7 +44,7 @@ def generate_feedback_pdf(student_name, evaluation_date, mi_data):
     # Calculate total
     total_score = sum(mi_data[component]['score'] for component in components)
     
-    table = Table(table_data, colWidths=[1.2*inch, inch, 2*inch, 2*inch, 0.8*inch])
+    table = Table(table_data, colWidths=[120, 320])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
