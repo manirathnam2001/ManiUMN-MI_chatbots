@@ -353,28 +353,28 @@ if st.button("Finish Session & Get Feedback"):
    # PDF Generation section
     st.markdown("### 📄 Download PDF Report")
 
-    # Fix the indentation of formatted_feedback
+        # Format feedback for PDF
     formatted_feedback = f"""Session Feedback
 Evaluation Timestamp (UTC): {current_timestamp}
 ---
 {feedback}"""
 
-  # Generate PDF report
+# Generate PDF report
     pdf_buffer = generate_pdf_report(
         student_name=student_name,
         raw_feedback=formatted_feedback,
         chat_history=st.session_state.chat_history,
         session_type="OHI"
     )
-
-# Add download button
-st.download_button(
-  label="📥 Download OHI MI Performance Report (PDF)",
-  data=pdf_buffer.getvalue(),
-  file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
-  mime="application/pdf"
-)
-
+    
+    # Add download button
+    st.download_button(
+        label="📥 Download OHI MI Performance Report (PDF)",
+        data=pdf_buffer.getvalue(),
+        file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
+        mime="application/pdf"
+    )
+    
 # --- Handle chat input ---
 user_prompt = st.chat_input("Your response...")
 
