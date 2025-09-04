@@ -303,10 +303,9 @@ if st.session_state.selected_persona is not None:
 # --- Store feedback in session state ---
 if "feedback" not in st.session_state:
   st.session_state.feedback = None
-
- # --- Finish Session Button (Feedback with RAG) ---
+    
+    # --- Finish Session Button (Feedback with RAG) ---
     if st.button("Finish Session & Get Feedback"):
-        # Get current UTC timestamp and user login
         current_timestamp = get_formatted_utc_time()
         user_login = "manirathnam2001"
         
