@@ -306,11 +306,12 @@ if "feedback" not in st.session_state:
     
 # --- Finish Session Button (Feedback with RAG) ---
 if st.button("Finish Session & Get Feedback"):
+    # Define current_timestamp at the beginning of this block
     current_timestamp = get_formatted_utc_time()
     user_login = "manirathnam2001"
     
     transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
-  
+    
     retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
     rag_context = "\n".join(retrieved_info)
 
@@ -349,22 +350,22 @@ if st.button("Finish Session & Get Feedback"):
     st.markdown("---")
     st.markdown(feedback)
 
-    # --- PDF Generation ---
+   # PDF Generation section
     st.markdown("### 📄 Download PDF Report")
 
-    # Format feedback for PDF
- formatted_feedback = f"""Session Feedback
+    # Fix the indentation of formatted_feedback
+    formatted_feedback = f"""Session Feedback
 Evaluation Timestamp (UTC): {current_timestamp}
 ---
 {feedback}"""
 
-    # Generate PDF report
-pdf_buffer = generate_pdf_report(
-  student_name=student_name,
-  raw_feedback=formatted_feedback,
-  chat_history=st.session_state.chat_history,
-  session_type="OHI"
-)
+  # Generate PDF report
+    pdf_buffer = generate_pdf_report(
+        student_name=student_name,
+        raw_feedback=formatted_feedback,
+        chat_history=st.session_state.chat_history,
+        session_type="OHI"
+    )
 
 # Add download button
 st.download_button(
