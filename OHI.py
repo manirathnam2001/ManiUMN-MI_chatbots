@@ -374,8 +374,8 @@ Evaluation Timestamp (UTC): {current_timestamp}
         file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
         mime="application/pdf"
     )
-    
-# --- Handle chat input ---
+
+    # --- Handle chat input ---
 user_prompt = st.chat_input("Your response...")
 
 if user_prompt:
@@ -396,10 +396,10 @@ if user_prompt:
         messages=messages
     )
     assistant_response = response.choices[0].message.content
-  
-st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-with st.chat_message("assistant"):
-  st.markdown(assistant_response)
+    
+    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+    with st.chat_message("assistant"):
+        st.markdown(assistant_response)
       
   # Add a button to start a new conversation with a different persona
 if st.button("Start New Conversation"):
