@@ -262,14 +262,14 @@ knowledge_text = "\n\n".join(knowledge_texts)
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    if st.button("Start Conversation"):
-        st.session_state.selected_persona = selected
-        st.session_state.chat_history = []
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": f"Hello! I'm {selected}, nice to meet you today."
-        })
-        st.rerun()
+if st.button("Start Conversation"):
+    st.session_state.selected_persona = selected
+    st.session_state.chat_history = []
+    st.session_state.chat_history.append({
+        "role": "assistant",
+        "content": f"Hello! I'm {selected}, nice to meet you today."
+    })
+    st.rerun()
       
 def split_text(text, max_length=200):
     words = text.split()
