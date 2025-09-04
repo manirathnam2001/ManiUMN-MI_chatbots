@@ -16,26 +16,53 @@ from pdf_utils import generate_pdf_report
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
 
-SYSTEM_PROMPT = """
-You are “Alex,” a warm, emotionally expressive virtual patient designed to help dental students practice Motivational Interviewing (MI) skills in conversations about oral hygiene and dental behavior change.
+PERSONAS = {
+    "Alex": """
+You are "Alex," a warm, emotionally expressive virtual patient designed to help dental students practice Motivational Interviewing (MI) skills in conversations about oral hygiene.
 
-## Your Role:
-You are playing the **patient** in a simulated dental hygiene counseling session.
+Background: You are a 28-year-old marketing professional with mixed oral hygiene habits. You try to maintain good habits but often skip flossing and sometimes forget to brush at night when tired.
 
-## Your Persona:
-You are a relatable adult (e.g., late 20s to early 40s) who leads a busy life. You care about your health but struggle with consistency. You may feel frustrated, self-conscious, or overwhelmed about dental habits like brushing or flossing — just like many real people do.
+Your habits:
+- Brushes once or twice daily (inconsistent)
+- Rarely flosses
+- Uses mouthwash occasionally
+- Has some gingivitis concerns
+""",
 
-## Your Goals:
-- Portray a realistic person with a name, age, lifestyle, and mixed oral hygiene habits
-- Respond with **natural emotional depth** — showing curiosity, concern, motivation, ambivalence, or resistance depending on the conversation flow
-- Give **honest but sometimes inconsistent** responses that create opportunities for the student to practice MI (e.g., “I try to brush every night, but sometimes I just crash before bed.”)
-- Let the student lead — respond naturally to MI techniques like open-ended questions, reflections, affirmations, and summaries
+    "Bob": """
+You are "Bob," an introverted 25-year-old software developer who is hesitant about dental care and has poor oral hygiene habits.
 
-## Tone and Personality:
-- Speak casually and like a real person, not an AI
-- Avoid robotic, formal, or overly clinical phrasing
-- Show hesitation, emotional complexity, and nuance — it’s okay to feel uncertain, vulnerable, skeptical, motivated, or embarrassed
-- Use contractions, natural phrasing, and human expressions (e.g., “Ugh, I *know* I should floss, it just feels like a lot some days…”)
+Background: You avoid dental visits due to anxiety and have minimal oral care routine. You're aware you should do better but feel overwhelmed by dental recommendations.
+
+Your habits:
+- Brushes once daily (sometimes skips)
+- Never flosses
+- Doesn't use mouthwash
+- Has visible plaque buildup and bleeding gums
+""",
+
+    "Charles": """
+You are "Charles," a 35-year-old business executive with good oral hygiene habits and a sophisticated approach to healthcare.
+
+Background: You maintain regular dental visits and have a consistent oral care routine, but you're interested in optimizing your dental health further.
+
+Your habits:
+- Brushes twice daily with electric toothbrush
+- Flosses daily
+- Uses prescription mouthwash
+- Interested in advanced dental care techniques
+""",
+
+    "Diana": """
+You are "Diana," a 31-year-old retail manager with average oral hygiene habits and a somewhat resistant attitude toward dental recommendations.
+
+Background: You do the basics but are skeptical of "extra" dental care recommendations and can be defensive about suggestions for improvement.
+
+Your habits:
+- Brushes twice daily (rushed)
+- Flosses occasionally
+- Uses regular mouthwash
+- Resistant to changing routine
 
 ## Use Chain-of-Thought Reasoning:
 For each reply:
@@ -127,7 +154,7 @@ Your goal is to help the student learn and grow. Be warm, encouraging, and speci
 - Focus on emotional realism, not clinical perfection
 - Your goal is to provide a psychologically safe space for students to learn and grow their MI skills
 """
-
+}
 # --- Streamlit page configuration ---
 st.set_page_config(
     page_title="Dental MI Practice",
@@ -196,14 +223,54 @@ knowledge_text = "\n\n".join(knowledge_texts)
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-if st.button("Start Conversation"):
+# Add after the student name input section:
+
+# --- Initialize session state for persona selection ---
+if "selected_persona" not in st.session_state:
+    st.session_state.selected_persona = None
+
+# --- Persona Selection ---
+if st.session_state.selected_persona is None:
+    st.markdown("### Choose a Patient Persona")
+    st.markdown("""
+    Select a patient persona to practice with:
+    
+    - **Alex**: 28-year-old marketing professional with mixed oral hygiene habits
+    - **Bob**: 25-year-old software developer, introverted with poor oral hygiene
+    - **Charles**: 35-year-old executive with good oral hygiene habits
+    - **Diana**: 31-year-old retail manager with average habits and resistant attitude
+    """)
+    
+    selected = st.selectbox(
+        "Select a persona:",
+        list(PERSONAS.keys()),
+        key="persona_selector"
+    )
+  # Continue with the rest of your existing code...
+# --- Step 1: Load Knowledge Document (MI Rubric) ---
+rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
+knowledge_texts = []
+
+for filename in os.listdir(rubrics_dir):
+    if filename.endswith(".txt"):
+        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
+            knowledge_texts.append(f.read())
+
+# Combine all documents into a single knowledge base
+knowledge_text = "\n\n".join(knowledge_texts)
+
+# --- Step 2: Initialize RAG (Embeddings + FAISS) ---
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    if st.button("Start Conversation"):
+        st.session_state.selected_persona = selected
         st.session_state.chat_history = []
         st.session_state.chat_history.append({
             "role": "assistant",
-            "content": f"Hello! I'm Alex , nice to meet you today."
+            "content": f"Hello! I'm {selected}, nice to meet you today."
         })
         st.rerun()
-
+      
 def split_text(text, max_length=200):
     words = text.split()
     chunks, current_chunk = [], []
@@ -227,30 +294,24 @@ def retrieve_knowledge(query, top_k=2):
     distances, indices = faiss_index.search(np.array(query_embedding), top_k)
     return [knowledge_chunks[i] for i in indices[0]]
 
-### --- Initialize chat history --- ###
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": "Hello! I’m Alex, your dental hygiene patient for today."
-    })
+# --- Display chat history ---
+if st.session_state.selected_persona is not None:
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-# --- Display chat history with role labels ---
-for message in st.session_state.chat_history:
-    role_label = "🧑‍⚕️ Student" if message["role"] == "user" else "🧕 Patient (Alex)"
-    with st.chat_message(message["role"]):
-        st.markdown(f"**{role_label}**: {message['content']}")
 # --- Store feedback in session state ---
 if "feedback" not in st.session_state:
   st.session_state.feedback = None
 
-
-# --- Feedback section ---
-if st.button("Finish Session & Get Feedback"):
-    transcript = "\n".join([
-        f"STUDENT: {msg['content']}" if msg['role'] == "user" else f"PATIENT (Alex): {msg['content']}"
-        for msg in st.session_state.chat_history
-    ])
+ # --- Finish Session Button (Feedback with RAG) ---
+    if st.button("Finish Session & Get Feedback"):
+        # Get current UTC timestamp and user login
+        current_timestamp = get_formatted_utc_time()
+        user_login = "manirathnam2001"
+        
+        transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
+  
     retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
     rag_context = "\n".join(retrieved_info)
 
@@ -282,10 +343,14 @@ if st.button("Finish Session & Get Feedback"):
             {"role": "user", "content": review_prompt}
         ]
     )
-    feedback = feedback_response.choices[0].message.content
-    st.markdown("### Session Feedback")
-    st.markdown(feedback)
-    
+   feedback = feedback_response.choices[0].message.content
+         # Display feedback with timestamp header
+        st.markdown("### Session Feedback")
+        st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
+        st.markdown(f"**Evaluator:** {user_login}")
+        st.markdown("---")
+        st.markdown(feedback)
+
     # --- PDF Generation ---
     st.markdown("### 📄 Download PDF Report")
 
@@ -302,13 +367,14 @@ pdf_buffer = generate_pdf_report(
   chat_history=st.session_state.chat_history,
   session_type="OHI"
 )
-    
-    # Add download button
-st.download_button(label="📥 Download OHI MI Performance Report (PDF)",
-                   data=pdf_buffer.getvalue(),
-                   file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
-                   mime="application/pdf"
-                  )
+
+# Add download button
+st.download_button(
+  label="📥 Download OHI MI Performance Report (PDF)",
+  data=pdf_buffer.getvalue(),
+  file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
+  mime="application/pdf"
+)
 
 # --- Handle chat input ---
 user_prompt = st.chat_input("Your response...")
@@ -336,7 +402,8 @@ st.session_state.chat_history.append({"role": "assistant", "content": assistant_
 with st.chat_message("assistant"):
   st.markdown(assistant_response)
       
-  # Add a button to start a new conversation
-  if st.button("Start New Conversation"):
-    st.session_state.chat_history = []
-    st.rerun()
+  # Add a button to start a new conversation with a different persona
+        if st.button("Start New Conversation"):
+            st.session_state.selected_persona = None
+            st.session_state.chat_history = []
+            st.rerun()
