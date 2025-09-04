@@ -197,11 +197,10 @@ knowledge_text = "\n\n".join(knowledge_texts)
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 if st.button("Start Conversation"):
-        st.session_state.selected_persona = selected
         st.session_state.chat_history = []
         st.session_state.chat_history.append({
             "role": "assistant",
-            "content": f"Hello! I'm {selected}, nice to meet you today."
+            "content": f"Hello! I'm Alex , nice to meet you today."
         })
         st.rerun()
 
@@ -339,6 +338,5 @@ with st.chat_message("assistant"):
       
   # Add a button to start a new conversation
   if st.button("Start New Conversation"):
-    st.session_state.selected_persona = None
     st.session_state.chat_history = []
     st.rerun()
