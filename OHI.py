@@ -342,13 +342,12 @@ if st.button("Finish Session & Get Feedback"):
             {"role": "user", "content": review_prompt}
         ]
     )
-   feedback = feedback_response.choices[0].message.content
-         # Display feedback with timestamp header
-        st.markdown("### Session Feedback")
-        st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
-        st.markdown(f"**Evaluator:** {user_login}")
-        st.markdown("---")
-        st.markdown(feedback)
+    feedback = feedback_response.choices[0].message.content
+    st.markdown("### Session Feedback")
+    st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
+    st.markdown(f"**Evaluator:** {user_login}")
+    st.markdown("---")
+    st.markdown(feedback)
 
     # --- PDF Generation ---
     st.markdown("### 📄 Download PDF Report")
