@@ -291,9 +291,9 @@ if st.button("Finish Session & Get Feedback"):
     st.markdown("### 📄 Download PDF Report")
 
     # Format feedback for PDF
-  formatted_feedback = f"""Session Feedback
-  Evaluation Timestamp (UTC): {current_timestamp}
-  ---
+formatted_feedback = f"""Session Feedback
+Evaluation Timestamp (UTC): {current_timestamp}
+---
 {feedback}"""
 
     # Generate PDF report
