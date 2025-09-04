@@ -6,6 +6,12 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from datetime import datetime
+from time_utils import get_formatted_utc_time
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+import io
 from pdf_utils import parse_feedback_response, generate_pdf_report
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
@@ -190,6 +196,15 @@ knowledge_text = "\n\n".join(knowledge_texts)
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
+ if st.button("Start Conversation"):
+        st.session_state.selected_persona = selected
+        st.session_state.chat_history = []
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": f"Hello! I'm {selected}, nice to meet you today."
+        })
+        st.rerun()
+
 def split_text(text, max_length=200):
     words = text.split()
     chunks, current_chunk = [], []
@@ -226,6 +241,10 @@ for message in st.session_state.chat_history:
     role_label = "🧑‍⚕️ Student" if message["role"] == "user" else "🧕 Patient (Alex)"
     with st.chat_message(message["role"]):
         st.markdown(f"**{role_label}**: {message['content']}")
+# --- Store feedback in session state ---
+if "feedback" not in st.session_state:
+  st.session_state.feedback = None
+
 
 # --- Feedback section ---
 if st.button("Finish Session & Get Feedback"):
@@ -252,7 +271,6 @@ if st.button("Finish Session & Get Feedback"):
     2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
     3. ACCEPTANCE: [Met/Partially Met/Not Met] - [specific feedback about respecting autonomy and reflecting]
     4. COMPASSION: [Met/Partially Met/Not Met] - [specific feedback about warmth and non-judgmental approach]
-    5. SUMMARY: [Met/Partially Met/Not Met] - [specific feedback about closure and next steps]
     
     For each component, also provide specific suggestions for improvement.
     Include overall strengths and clear next-step suggestions for continued learning.
@@ -271,18 +289,26 @@ if st.button("Finish Session & Get Feedback"):
     
     # --- PDF Generation ---
     st.markdown("### 📄 Download PDF Report")
-    
-    # Parse feedback response for structured data
-    components = parse_feedback_response(feedback)
-    
+
+    # Format feedback for PDF
+  formatted_feedback = f"""Session Feedback
+  Evaluation Timestamp (UTC): {current_timestamp}
+  ---
+{feedback}"""
+
     # Generate PDF report
-    pdf_buffer = generate_pdf_report(student_name, components, "Oral Hygiene")
+     pdf_buffer = generate_pdf_report(
+            student_name=student_name,
+            raw_feedback=formatted_feedback,
+            chat_history=st.session_state.chat_history,
+            session_type="OHI"
+        )
     
     # Add download button
     st.download_button(
-        label="📥 Download MI Performance Report (PDF)",
+        label="📥 Download OHI MI Performance Report (PDF)",
         data=pdf_buffer.getvalue(),
-        file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
+        file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
         mime="application/pdf"
     )
 
@@ -312,3 +338,8 @@ if user_prompt:
     st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
     with st.chat_message("assistant"):
         st.markdown(assistant_response)
+ # Add a button to start a new conversation
+    if st.button("Start New Conversation"):
+        st.session_state.selected_persona = None
+        st.session_state.chat_history = []
+        st.rerun()
