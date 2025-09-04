@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 import io
-from pdf_utils import parse_feedback_response, generate_pdf_report
+from pdf_utils import generate_pdf_report
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
 
