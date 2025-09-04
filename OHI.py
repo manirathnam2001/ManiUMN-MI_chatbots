@@ -297,20 +297,19 @@ Evaluation Timestamp (UTC): {current_timestamp}
 {feedback}"""
 
     # Generate PDF report
-     pdf_buffer = generate_pdf_report(
-            student_name=student_name,
-            raw_feedback=formatted_feedback,
-            chat_history=st.session_state.chat_history,
-            session_type="OHI"
-        )
+pdf_buffer = generate_pdf_report(
+  student_name=student_name,
+  raw_feedback=formatted_feedback,
+  chat_history=st.session_state.chat_history,
+  session_type="OHI"
+)
     
     # Add download button
-    st.download_button(
-        label="📥 Download OHI MI Performance Report (PDF)",
-        data=pdf_buffer.getvalue(),
-        file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
-        mime="application/pdf"
-    )
+st.download_button(label="📥 Download OHI MI Performance Report (PDF)",
+                   data=pdf_buffer.getvalue(),
+                   file_name=f"OHI_Feedback_Report_{student_name.replace(' ', '_')}_OralHygiene.pdf",
+                   mime="application/pdf"
+                  )
 
 # --- Handle chat input ---
 user_prompt = st.chat_input("Your response...")
@@ -328,18 +327,18 @@ if user_prompt:
         turn_instruction,
         *st.session_state.chat_history
     ]
-
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=messages
     )
     assistant_response = response.choices[0].message.content
-
-    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-    with st.chat_message("assistant"):
-        st.markdown(assistant_response)
- # Add a button to start a new conversation
-    if st.button("Start New Conversation"):
+  
+st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+with st.chat_message("assistant"):
+  st.markdown(assistant_response)
+      
+  # Add a button to start a new conversation
+      if st.button("Start New Conversation"):
         st.session_state.selected_persona = None
         st.session_state.chat_history = []
         st.rerun()
