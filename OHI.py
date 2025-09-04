@@ -155,6 +155,22 @@ Your goal is to help the student learn and grow. Be warm, encouraging, and speci
 - Your goal is to provide a psychologically safe space for students to learn and grow their MI skills
 """
 }
+
+# --- System Prompt for Motivational Interviewing ---
+SYSTEM_PROMPT = """
+You are an expert motivational interviewing evaluator focused on oral health interventions. Provide detailed feedback based on the four core MI principles: Collaboration, Evocation, Acceptance, and Compassion.
+
+When evaluating a conversation:
+1. Focus only on the student's responses (not the patient's statements)
+2. Assess each MI component: Collaboration, Evocation, Acceptance, Compassion
+3. Provide specific examples from the conversation
+4. Give constructive suggestions for improvement
+5. Be encouraging while maintaining professional standards
+
+Rate each component as: Met / Partially Met / Not Met
+Include specific quotes and actionable feedback for each category.
+"""
+
 # --- Streamlit page configuration ---
 st.set_page_config(
     page_title="Dental MI Practice",
@@ -229,6 +245,10 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 if "selected_persona" not in st.session_state:
     st.session_state.selected_persona = None
 
+# --- Initialize chat history ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
 # --- Persona Selection ---
 if st.session_state.selected_persona is None:
     st.markdown("### Choose a Patient Persona")
@@ -246,30 +266,14 @@ if st.session_state.selected_persona is None:
         list(PERSONAS.keys()),
         key="persona_selector"
     )
-  # Continue with the rest of your existing code...
-# --- Step 1: Load Knowledge Document (MI Rubric) ---
-rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
-knowledge_texts = []
-
-for filename in os.listdir(rubrics_dir):
-    if filename.endswith(".txt"):
-        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
-            knowledge_texts.append(f.read())
-
-# Combine all documents into a single knowledge base
-knowledge_text = "\n\n".join(knowledge_texts)
-
-# --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-if st.button("Start Conversation"):
-    st.session_state.selected_persona = selected
-    st.session_state.chat_history = []
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": f"Hello! I'm {selected}, nice to meet you today."
-    })
-    st.rerun()
+    if st.button("Start Conversation"):
+        st.session_state.selected_persona = selected
+        st.session_state.chat_history = []
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": f"Hello! I'm {selected}, nice to meet you today."
+        })
+        st.rerun()
       
 def split_text(text, max_length=200):
     words = text.split()
@@ -302,7 +306,7 @@ if st.session_state.selected_persona is not None:
 
 # --- Store feedback in session state ---
 if "feedback" not in st.session_state:
-  st.session_state.feedback = None
+    st.session_state.feedback = None
     
 # --- Finish Session Button (Feedback with RAG) ---
 if st.button("Finish Session & Get Feedback"):
@@ -350,16 +354,16 @@ if st.button("Finish Session & Get Feedback"):
     st.markdown("---")
     st.markdown(feedback)
 
-   # PDF Generation section
+    # PDF Generation section
     st.markdown("### 📄 Download PDF Report")
 
-        # Format feedback for PDF
+    # Format feedback for PDF
     formatted_feedback = f"""Session Feedback
 Evaluation Timestamp (UTC): {current_timestamp}
 ---
 {feedback}"""
 
-# Generate PDF report
+    # Generate PDF report
     pdf_buffer = generate_pdf_report(
         student_name=student_name,
         raw_feedback=formatted_feedback,
@@ -375,33 +379,34 @@ Evaluation Timestamp (UTC): {current_timestamp}
         mime="application/pdf"
     )
 
-    # --- Handle chat input ---
-user_prompt = st.chat_input("Your response...")
+# --- Handle chat input ---
+if st.session_state.selected_persona is not None:
+    user_prompt = st.chat_input("Your response...")
 
-if user_prompt:
-    st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-    st.chat_message("user").markdown(user_prompt)
+    if user_prompt:
+        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+        st.chat_message("user").markdown(user_prompt)
 
-    turn_instruction = {
-        "role": "system",
-        "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
-    }
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        turn_instruction,
-        *st.session_state.chat_history
-    ]
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=messages
-    )
-    assistant_response = response.choices[0].message.content
-    
-    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-    with st.chat_message("assistant"):
-        st.markdown(assistant_response)
-      
-  # Add a button to start a new conversation with a different persona
+        turn_instruction = {
+            "role": "system",
+            "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
+        }
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            turn_instruction,
+            *st.session_state.chat_history
+        ]
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages
+        )
+        assistant_response = response.choices[0].message.content
+        
+        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+        with st.chat_message("assistant"):
+            st.markdown(assistant_response)
+
+# Add a button to start a new conversation with a different persona
 if st.button("Start New Conversation"):
     st.session_state.selected_persona = None
     st.session_state.chat_history = []
