@@ -14,7 +14,7 @@ from reportlab.lib.units import inch
 import io
 from pdf_utils import generate_pdf_report
 
-# --- Persona System Prompts ---
+# --- Motivational Interviewing System Prompt (HPV) ---
 PERSONAS = {
     "Alex": """
 You are "Alex," a realistic patient simulator designed to help providers practice Motivational Interviewing (MI) skills for HPV vaccination discussions.
@@ -197,6 +197,22 @@ if not student_name:
 os.environ["GROQ_API_KEY"] = api_key
 client = Groq()
 
+# --- Step 1: Load Knowledge Document (MI Rubric) for RAG feedback ---
+# for multiple example rubrics inside the ohi_rubrics folder
+rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
+knowledge_texts = []
+
+for filename in os.listdir(rubrics_dir):
+    if filename.endswith(".txt"):
+        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
+            knowledge_texts.append(f.read())
+
+# Combine all documents into a single knowledge base
+knowledge_text = "\n\n".join(knowledge_texts)
+
+# --- Step 2: Initialize RAG (Embeddings + FAISS) ---
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 # --- Initialize session state for persona selection ---
 if "selected_persona" not in st.session_state:
     st.session_state.selected_persona = None
@@ -218,15 +234,6 @@ if st.session_state.selected_persona is None:
         list(PERSONAS.keys()),
         key="persona_selector"
     )
-    
-    if st.button("Start Conversation"):
-        st.session_state.selected_persona = selected
-        st.session_state.chat_history = []
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": f"Hello! I'm {selected}, nice to meet you today."
-        })
-        st.rerun()
 
 # Continue with the rest of your existing code...
 # --- Step 1: Load Knowledge Document (MI Rubric) ---
@@ -243,6 +250,15 @@ knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+ if st.button("Start Conversation"):
+        st.session_state.selected_persona = selected
+        st.session_state.chat_history = []
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": f"Hello! I'm {selected}, nice to meet you today."
+        })
+        st.rerun()
 
 def split_text(text, max_length=200):
     words = text.split()
@@ -295,6 +311,9 @@ if st.session_state.selected_persona is not None:
     Here is the dental hygiene session transcript:
     {transcript}
 
+    Important: Please only evaluate the **student's responses** (lines marked 'STUDENT'). Do not attribute change talk or motivational statements made by the patient (Alex) to the student.
+
+
     Relevant MI Knowledge:
     {rag_context}
     
@@ -345,7 +364,7 @@ Evaluation Timestamp (UTC): {current_timestamp}
         
         # Add download button
         st.download_button(
-            label="Download MI Performance Report (PDF)",
+            label="Download HPV MI Performance Report (PDF)",
             data=pdf_buffer.getvalue(),
             file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
             mime="application/pdf"
