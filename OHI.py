@@ -196,7 +196,7 @@ knowledge_text = "\n\n".join(knowledge_texts)
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
- if st.button("Start Conversation"):
+if st.button("Start Conversation"):
         st.session_state.selected_persona = selected
         st.session_state.chat_history = []
         st.session_state.chat_history.append({
