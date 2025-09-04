@@ -366,10 +366,10 @@ Evaluation Timestamp (UTC): {current_timestamp}
             file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
             mime="application/pdf"
         )
-
+        
     # --- User Input ---
     user_prompt = st.chat_input("Your response...")
-
+    
     if user_prompt:
         st.session_state.chat_history.append({"role": "user", "content": user_prompt})
         st.chat_message("user").markdown(user_prompt)
@@ -389,13 +389,13 @@ Evaluation Timestamp (UTC): {current_timestamp}
             messages=messages
         )
         assistant_response = response.choices[0].message.content
-
+        
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         with st.chat_message("assistant"):
             st.markdown(assistant_response)
-
+            
     # Add a button to start a new conversation with a different persona
-    if st.button("Start New Conversation"):
-        st.session_state.selected_persona = None
-        st.session_state.chat_history = []
-        st.rerun()
+        if st.button("Start New Conversation"):
+            st.session_state.selected_persona = None
+            st.session_state.chat_history = []
+            st.rerun()
