@@ -304,12 +304,12 @@ if st.session_state.selected_persona is not None:
 if "feedback" not in st.session_state:
   st.session_state.feedback = None
     
-    # --- Finish Session Button (Feedback with RAG) ---
-    if st.button("Finish Session & Get Feedback"):
-        current_timestamp = get_formatted_utc_time()
-        user_login = "manirathnam2001"
-        
-        transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
+# --- Finish Session Button (Feedback with RAG) ---
+if st.button("Finish Session & Get Feedback"):
+    current_timestamp = get_formatted_utc_time()
+    user_login = "manirathnam2001"
+    
+    transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
   
     retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
     rag_context = "\n".join(retrieved_info)
