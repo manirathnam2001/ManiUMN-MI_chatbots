@@ -15,25 +15,48 @@ class FeedbackFormatter:
     def format_evaluation_prompt(session_type: str, transcript: str, rag_context: str) -> str:
         """Generate standardized evaluation prompt for both HPV and OHI assessments."""
         return f"""
-        Here is the {session_type} session transcript:
+        ## Motivational Interviewing Assessment - {session_type} Session
+
+        You are evaluating a student's Motivational Interviewing (MI) skills based on their conversation with a simulated patient. Your role is to provide constructive, educational feedback that helps the student improve their MI competencies.
+
+        ### Session Transcript:
         {transcript}
 
-        Important: Please only evaluate the **student's responses** (lines marked 'STUDENT'). Do not attribute change talk or motivational statements made by the patient to the student.
+        **Important Instructions:**
+        - Only evaluate the **student's responses** (lines marked 'STUDENT' or similar indicators)
+        - Do not attribute change talk or motivational statements made by the patient to the student
+        - Focus on the student's use of MI techniques, not the patient's responses
 
-        Relevant MI Knowledge:
+        ### MI Knowledge Base:
         {rag_context}
 
-        Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
-        Provide feedback with scores for Collaboration (7.5 pts), Evocation (7.5 pts), Acceptance (7.5 pts), and Compassion (7.5 pts).
+        ### Assessment Framework:
+        Evaluate the student's MI skills using the 30-point scoring system (7.5 points per component).
+        
+        **Scoring Guidelines:**
+        - **Met** (7.5 pts): Student demonstrates proficient use of the MI component
+        - **Partially Met** (3.75 pts): Student shows some understanding but needs improvement
+        - **Not Met** (0 pts): Student does not demonstrate the component or uses techniques contrary to MI
 
-        Please evaluate each MI component and clearly state for each one:
-        1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
-        2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
-        3. ACCEPTANCE: [Met/Partially Met/Not Met] - [specific feedback about respecting autonomy and reflecting]
-        4. COMPASSION: [Met/Partially Met/Not Met] - [specific feedback about warmth and non-judgmental approach]
+        ### Required Evaluation Format:
+        Please structure your feedback exactly as follows for each component:
 
-        For each component, also provide specific suggestions for improvement.
-        Include overall strengths and clear next-step suggestions for continued learning.
+        **1. COLLABORATION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about partnership building and rapport development]**
+        
+        **2. EVOCATION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about drawing out patient motivations and exploring their perspective]**
+        
+        **3. ACCEPTANCE (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about respecting patient autonomy and using reflective listening]**
+        
+        **4. COMPASSION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about demonstrating warmth and non-judgmental approach]**
+
+        ### Additional Requirements:
+        - For each component, provide specific examples from the conversation
+        - Highlight what the student did well (strengths)
+        - Offer concrete suggestions for improvement with specific MI techniques
+        - Include overall recommendations for continued learning and skill development
+        - Maintain a supportive and educational tone throughout your feedback
+
+        Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations.
         """
 
     @staticmethod
@@ -71,10 +94,14 @@ class FeedbackFormatter:
             table_data = []
             
             for score in component_scores:
+                # Format score with proper parentheses and max score context
+                max_score = MIScorer.COMPONENTS[score.component]
+                score_display = f"{score.score:.1f} pts ({score.score/max_score*100:.0f}%)"
+                
                 table_data.append({
                     'component': score.component,
                     'status': score.status,
-                    'score': f"{score.score}",
+                    'score': score_display,
                     'feedback': score.feedback
                 })
             
