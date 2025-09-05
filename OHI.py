@@ -169,7 +169,7 @@ st.title("🦷 OHI MI Practice")
 
 st.markdown(
     """
-    Welcome to the ** OHI MI Practice App**. This chatbot simulates a realistic patient 
+    Welcome to the **OHI MI Practice App**. This chatbot simulates a realistic patient 
     who is uncertain about the OHI recommendations. Your goal is to practice **Motivational Interviewing (MI)** skills 
     by engaging in a natural conversation and helping the patient explore their thoughts and feelings. 
     At the end, you’ll receive **detailed feedback** based on the official MI rubric.
