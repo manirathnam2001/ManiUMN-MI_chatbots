@@ -303,19 +303,18 @@ if st.session_state.selected_persona is not None:
         rag_context = "\n".join(retrieved_info)
 
         review_prompt = f"""
-    Evaluation Timestamp (UTC): {current_timestamp}
-    
-    Here is the dental hygiene session transcript:
-    {transcript}
-
-    Important: Please only evaluate the **student's responses** (lines marked 'STUDENT'). Do not attribute change talk or motivational statements made by the patient (Alex) to the student.
-
-
-    Relevant MI Knowledge:
-    {rag_context}
-    
-    Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
-    Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
+        Evaluation Timestamp (UTC): {current_timestamp}
+        
+        Here is the dental hygiene session transcript:
+        {transcript}
+        
+        Important: Please only evaluate the **student's responses** (lines marked 'STUDENT'). Do not attribute change talk or motivational statements made by the patient (Alex) to the student.
+        
+        Relevant MI Knowledge:
+        {rag_context}
+        
+        Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
+        Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
    
     Please evaluate each MI component and clearly state for each one:
     1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
@@ -347,9 +346,9 @@ if st.session_state.selected_persona is not None:
 
          # Format feedback for PDF
         formatted_feedback = f"""Session Feedback
-Evaluation Timestamp (UTC): {current_timestamp}
----
-{feedback}"""
+        Evaluation Timestamp (UTC): {current_timestamp}
+        ---
+        {feedback}"""
         
         # Generate PDF report
         pdf_buffer = generate_pdf_report(
@@ -393,9 +392,3 @@ Evaluation Timestamp (UTC): {current_timestamp}
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         with st.chat_message("assistant"):
             st.markdown(assistant_response)
-            
-    # Add a button to start a new conversation with a different persona
-        if st.button("Start New Conversation"):
-            st.session_state.selected_persona = None
-            st.session_state.chat_history = []
-            st.rerun()
