@@ -374,8 +374,6 @@ if st.button("Finish Session & Get Feedback"):
     except Exception as e:
         st.error(f"Unexpected error: {e}")
         st.info("There was an issue generating the PDF. Please try again.")
-        mime="application/pdf"
-    )
 
 # --- Handle chat input ---
 if st.session_state.selected_persona is not None:
