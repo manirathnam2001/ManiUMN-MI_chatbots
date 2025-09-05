@@ -308,8 +308,7 @@ if st.button("Finish Session & Get Feedback"):
 
     Relevant MI Knowledge:
     {rag_context}
-
-    Based on the MI rubric, evaluate the user's MI skills and provide structured feedback.
+    Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
     
     Please evaluate each MI component and clearly state for each one:
     1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
