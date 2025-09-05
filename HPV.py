@@ -13,6 +13,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 import io
 from pdf_utils import generate_pdf_report
+from feedback_template import FeedbackFormatter, FeedbackValidator
+from scoring_utils import validate_student_name
 
 # --- Motivational Interviewing System Prompt (HPV) ---
 PERSONAS = {
@@ -302,29 +304,10 @@ if st.session_state.selected_persona is not None:
         retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
         rag_context = "\n".join(retrieved_info)
 
-        review_prompt = f"""
-        Evaluation Timestamp (UTC): {current_timestamp}
-        
-        Here is the dental hygiene session transcript:
-        {transcript}
-        
-        Important: Please only evaluate the **student's responses** (lines marked 'STUDENT'). Do not attribute change talk or motivational statements made by the patient (Alex) to the student.
-        
-        Relevant MI Knowledge:
-        {rag_context}
-        
-        Based on the MI rubric, evaluate the user's MI skills using the 30-point scoring system (7.5 points × 4 components).
-        Provide feedback with scores for Evocation (7.5 pts), Acceptance (7.5 pts), Collaboration (7.5 pts), and Compassion (7.5 pts).
-   
-    Please evaluate each MI component and clearly state for each one:
-    1. COLLABORATION: [Met/Partially Met/Not Met] - [specific feedback about partnership and rapport]
-    2. EVOCATION: [Met/Partially Met/Not Met] - [specific feedback about drawing out patient motivations]
-    3. ACCEPTANCE: [Met/Partially Met/Not Met] - [specific feedback about respecting autonomy and reflecting]
-    4. COMPASSION: [Met/Partially Met/Not Met] - [specific feedback about warmth and non-judgmental approach]
-    
-    For each component, also provide specific suggestions for improvement.
-    Include overall strengths and clear next-step suggestions for continued learning.
-    """
+        # Use standardized evaluation prompt
+        review_prompt = FeedbackFormatter.format_evaluation_prompt(
+            "HPV vaccine", transcript, rag_context
+        )
 
         feedback_response = client.chat.completions.create(
             model="openai/gpt-oss-120b",
@@ -334,37 +317,65 @@ if st.session_state.selected_persona is not None:
             ]
         )
         feedback = feedback_response.choices[0].message.content
-         # Display feedback with timestamp header
-        st.markdown("### Session Feedback")
-        st.markdown(f"**Evaluation Timestamp (UTC):** {current_timestamp}")
-        st.markdown(f"**Evaluator:** {user_login}")
-        st.markdown("---")
-        st.markdown(feedback)
+        
+        # Display feedback using standardized formatting
+        display_format = FeedbackFormatter.format_feedback_for_display(
+            feedback, current_timestamp, user_login
+        )
+        
+        st.markdown(display_format['header'])
+        st.markdown(display_format['timestamp'])
+        st.markdown(display_format['evaluator'])
+        st.markdown(display_format['separator'])
+        st.markdown(display_format['content'])
         
         # --- PDF Generation ---
         st.markdown("### 📄 Download PDF Report")
 
-         # Format feedback for PDF
-        formatted_feedback = f"""Session Feedback
-        Evaluation Timestamp (UTC): {current_timestamp}
-        ---
-        {feedback}"""
-        
-        # Generate PDF report
-        pdf_buffer = generate_pdf_report(
-            student_name=student_name,
-            raw_feedback=formatted_feedback,
-            chat_history=st.session_state.chat_history,
-            session_type="HPV Vaccine"
+        # Format feedback for PDF using standardized template
+        formatted_feedback = FeedbackFormatter.format_feedback_for_pdf(
+            feedback, current_timestamp, user_login
         )
         
-        # Add download button
-        st.download_button(
-            label="Download HPV MI Performance Report (PDF)",
-            data=pdf_buffer.getvalue(),
-            file_name=f"MI_Feedback_Report_{student_name.replace(' ', '_')}_{st.session_state.selected_persona}.pdf",
-            mime="application/pdf"
-        )
+        # Validate student name and generate PDF
+        try:
+            validated_name = validate_student_name(student_name)
+            
+            pdf_buffer = generate_pdf_report(
+                student_name=validated_name,
+                raw_feedback=formatted_feedback,
+                chat_history=st.session_state.chat_history,
+                session_type="HPV Vaccine"
+            )
+            
+            # Generate standardized filename
+            download_filename = FeedbackFormatter.create_download_filename(
+                student_name, "HPV Vaccine", st.session_state.selected_persona
+            )
+            
+            # Add download button with enhanced label
+            st.download_button(
+                label="📥 Download HPV MI Performance Report (PDF)",
+                data=pdf_buffer.getvalue(),
+                file_name=download_filename,
+                mime="application/pdf",
+                help="Download a comprehensive PDF report with scores, feedback, and conversation transcript"
+            )
+            
+            # Display score summary if parsing is successful
+            try:
+                from scoring_utils import MIScorer
+                score_breakdown = MIScorer.get_score_breakdown(formatted_feedback)
+                st.success(f"**Total Score: {score_breakdown['total_score']:.1f} / {score_breakdown['total_possible']:.1f} ({score_breakdown['percentage']:.1f}%)**")
+            except Exception:
+                pass  # Skip score display if parsing fails
+                
+        except ValueError as e:
+            st.error(f"Error generating PDF: {e}")
+            st.info("Please check your student name and try again.")
+        except Exception as e:
+            st.error(f"Unexpected error: {e}")
+            st.info("There was an issue generating the PDF. Please try again.")
         
     # --- User Input ---
     user_prompt = st.chat_input("Your response...")
