@@ -169,7 +169,7 @@ st.title("🦷 OHI MI Practice")
 
 st.markdown(
     """
-    Welcome to the ** OHI MI Practice App**. This chatbot simulates a realistic patient 
+    Welcome to the **OHI MI Practice App**. This chatbot simulates a realistic patient 
     who is uncertain about the OHI recommendations. Your goal is to practice **Motivational Interviewing (MI)** skills 
     by engaging in a natural conversation and helping the patient explore their thoughts and feelings. 
     At the end, you’ll receive **detailed feedback** based on the official MI rubric.
@@ -316,6 +316,13 @@ if st.button("Finish Session & Get Feedback"):
     )
     feedback = feedback_response.choices[0].message.content
     
+    # Store feedback in session state to prevent disappearing
+    st.session_state.feedback = {
+        'content': feedback,
+        'timestamp': current_timestamp,
+        'evaluator': user_login
+    }
+    
     # Display feedback using standardized formatting
     display_format = FeedbackFormatter.format_feedback_for_display(
         feedback, current_timestamp, user_login
@@ -335,6 +342,71 @@ if st.button("Finish Session & Get Feedback"):
         feedback, current_timestamp, user_login
     )
 
+    # Validate student name and generate PDF
+    try:
+        validated_name = validate_student_name(student_name)
+        
+        pdf_buffer = generate_pdf_report(
+            student_name=validated_name,
+            raw_feedback=formatted_feedback,
+            chat_history=st.session_state.chat_history,
+            session_type="OHI"
+        )
+        
+        # Generate standardized filename
+        download_filename = FeedbackFormatter.create_download_filename(
+            student_name, "OHI", st.session_state.selected_persona
+        )
+        
+        # Add download button with enhanced label
+        st.download_button(
+            label="📥 Download OHI MI Performance Report (PDF)",
+            data=pdf_buffer.getvalue(),
+            file_name=download_filename,
+            mime="application/pdf",
+            help="Download a comprehensive PDF report with scores, feedback, and conversation transcript"
+        )
+        
+        # Display score summary if parsing is successful
+        try:
+            from scoring_utils import MIScorer
+            score_breakdown = MIScorer.get_score_breakdown(formatted_feedback)
+            st.success(f"**Total Score: {score_breakdown['total_score']:.1f} / {score_breakdown['total_possible']:.1f} ({score_breakdown['percentage']:.1f}%)**")
+        except Exception:
+            pass  # Skip score display if parsing fails
+            
+    except ValueError as e:
+        st.error(f"Error generating PDF: {e}")
+        st.info("Please check your student name and try again.")
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        st.info("There was an issue generating the PDF. Please try again.")
+
+# Display existing feedback if it exists (prevents disappearing after PDF download)
+elif st.session_state.feedback is not None:
+    feedback_data = st.session_state.feedback
+    display_format = FeedbackFormatter.format_feedback_for_display(
+        feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
+    )
+    
+    st.markdown(display_format['header'])
+    st.markdown(display_format['timestamp'])
+    st.markdown(display_format['evaluator'])
+    st.markdown(display_format['separator'])
+    st.markdown(display_format['content'])
+    
+    # Show PDF download section for existing feedback
+    st.markdown("### 📄 Download PDF Report")
+
+# PDF Generation section - always available if feedback exists
+if st.session_state.feedback is not None and st.session_state.selected_persona is not None:
+    feedback_data = st.session_state.feedback
+    
+    # Format feedback for PDF using standardized template
+    formatted_feedback = FeedbackFormatter.format_feedback_for_pdf(
+        feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
+    )
+    
     # Validate student name and generate PDF
     try:
         validated_name = validate_student_name(student_name)
@@ -406,4 +478,5 @@ if st.session_state.selected_persona is not None:
 if st.button("Start New Conversation"):
     st.session_state.selected_persona = None
     st.session_state.chat_history = []
+    st.session_state.feedback = None  # Clear feedback when starting new conversation
     st.rerun()

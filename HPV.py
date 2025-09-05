@@ -310,13 +310,20 @@ if st.session_state.selected_persona is not None:
         )
 
         feedback_response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
                 {"role": "user", "content": review_prompt}
             ]
         )
         feedback = feedback_response.choices[0].message.content
+        
+        # Store feedback in session state to prevent disappearing
+        st.session_state.feedback = {
+            'content': feedback,
+            'timestamp': current_timestamp,
+            'evaluator': user_login
+        }
         
         # Display feedback using standardized formatting
         display_format = FeedbackFormatter.format_feedback_for_display(
@@ -329,12 +336,29 @@ if st.session_state.selected_persona is not None:
         st.markdown(display_format['separator'])
         st.markdown(display_format['content'])
         
-        # --- PDF Generation ---
+    # Display existing feedback if it exists (prevents disappearing after PDF download)
+    elif st.session_state.feedback is not None:
+        feedback_data = st.session_state.feedback
+        display_format = FeedbackFormatter.format_feedback_for_display(
+            feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
+        )
+        
+        st.markdown(display_format['header'])
+        st.markdown(display_format['timestamp'])
+        st.markdown(display_format['evaluator'])
+        st.markdown(display_format['separator'])
+        st.markdown(display_format['content'])
+        
+        # Show PDF download section for existing feedback
         st.markdown("### 📄 Download PDF Report")
 
+    # PDF Generation section - always available if feedback exists
+    if st.session_state.feedback is not None:
+        feedback_data = st.session_state.feedback
+        
         # Format feedback for PDF using standardized template
         formatted_feedback = FeedbackFormatter.format_feedback_for_pdf(
-            feedback, current_timestamp, user_login
+            feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
         )
         
         # Validate student name and generate PDF
@@ -395,7 +419,7 @@ if st.session_state.selected_persona is not None:
         ]
 
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="llama-3.1-8b-instant",
             messages=messages
         )
         assistant_response = response.choices[0].message.content
@@ -404,8 +428,9 @@ if st.session_state.selected_persona is not None:
         with st.chat_message("assistant"):
             st.markdown(assistant_response)
 
-# Add a button to start a new conversation with a different persona
+    # Add a button to start a new conversation with a different persona
     if st.button("Start New Conversation"):
         st.session_state.selected_persona = None
         st.session_state.chat_history = []
+        st.session_state.feedback = None  # Clear feedback when starting new conversation
         st.rerun()
