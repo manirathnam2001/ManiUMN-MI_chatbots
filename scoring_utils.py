@@ -35,7 +35,20 @@ class MIScorer:
     STATUS_MULTIPLIERS = {
         'Met': 1.0,
         'Partially Met': 0.5,
-        'Not Met': 0.0
+        'Not Met': 0.0,
+        # Case variations
+        'met': 1.0,
+        'partially met': 0.5,
+        'not met': 0.0,
+        # Common alternatives
+        'Not Yet Met': 0.0,
+        'not yet met': 0.0,
+        'Partially Achieved': 0.5,
+        'partially achieved': 0.5,
+        'Achieved': 1.0,
+        'achieved': 1.0,
+        'Fully Met': 1.0,
+        'fully met': 1.0,
     }
     
     TOTAL_POSSIBLE_SCORE = sum(COMPONENTS.values())
@@ -63,24 +76,36 @@ class MIScorer:
         """Parse a single component line from feedback text."""
         line = line.strip()
         
-        # Look for component pattern: "COMPONENT: [Status] - feedback"
-        component_pattern = r'(\d+\.\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION):\s*\[([^\]]+)\]\s*-\s*(.+)'
-        match = re.match(component_pattern, line, re.IGNORECASE)
+        # Enhanced regex pattern to handle multiple formats:
+        # Format 1: "1. COMPONENT: [Status] - feedback"
+        # Format 2: "COMPONENT: [Status] - feedback" 
+        # Format 3: "● COMPONENT: [Status] - feedback"
+        # Format 4: "• COMPONENT: [Status] - feedback"
+        # Format 5: "COMPONENT (7.5 pts): [Status] - feedback"
+        # Format 6: "COMPONENT: Status - feedback" (without brackets)
+        component_patterns = [
+            # Pattern with brackets: [Status]
+            r'^(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*\[([^\]]+)\]\s*[-–—]\s*(.+)$',
+            # Pattern without brackets: Status (including various status terms)
+            r'^(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*(Met|Partially Met|Not Met|met|partially met|not met|Not Yet Met|not yet met|Partially Achieved|partially achieved|Achieved|achieved|Fully Met|fully met)\s*[-–—]\s*(.+)$'
+        ]
         
-        if not match:
-            return None
+        for pattern in component_patterns:
+            match = re.match(pattern, line, re.IGNORECASE)
+            if match:
+                component = match.group(1).upper()
+                status = match.group(2).strip()
+                feedback = match.group(3).strip()
+                
+                # Validate and calculate score
+                try:
+                    score = cls.calculate_component_score(component, status)
+                    return MIComponentScore(component, status, score, feedback)
+                except ValueError:
+                    # If status is invalid, default to 0 score
+                    return MIComponentScore(component, status, 0.0, feedback)
         
-        component = match.group(2).upper()
-        status = match.group(3).strip()
-        feedback = match.group(4).strip()
-        
-        # Validate and calculate score
-        try:
-            score = cls.calculate_component_score(component, status)
-            return MIComponentScore(component, status, score, feedback)
-        except ValueError:
-            # If status is invalid, default to 0 score
-            return MIComponentScore(component, status, 0.0, feedback)
+        return None
     
     @classmethod
     def parse_feedback_scores(cls, feedback_text: str) -> List[MIComponentScore]:
