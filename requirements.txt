@@ -1,5 +1,6 @@
 accelerate
 faiss-cpu
+flask
 groq
 openai
 streamlit
