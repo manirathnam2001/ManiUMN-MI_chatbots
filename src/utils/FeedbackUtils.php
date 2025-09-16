@@ -425,16 +425,16 @@ Remember: Your feedback should help the student understand both what they did we
     public static function sanitizeSpecialCharacters($text) {
         // Replace problematic characters that might cause issues in PDF generation
         $replacements = [
-            '"' => '"',
-            '"' => '"',
-            ''' => "'",
-            ''' => "'",
-            '–' => '-',
-            '—' => '-',
-            '…' => '...',
-            '©' => '(c)',
-            '®' => '(R)',
-            '™' => '(TM)'
+            "\u{201C}" => '"',  // Left double quotation mark
+            "\u{201D}" => '"',  // Right double quotation mark
+            "\u{2018}" => "'",  // Left single quotation mark
+            "\u{2019}" => "'",  // Right single quotation mark
+            "\u{2013}" => '-',  // En dash
+            "\u{2014}" => '-',  // Em dash
+            "\u{2026}" => '...',// Horizontal ellipsis
+            "\u{00A9}" => '(c)',// Copyright symbol
+            "\u{00AE}" => '(R)',// Registered trademark
+            "\u{2122}" => '(TM)'// Trademark symbol
         ];
         
         $cleanText = str_replace(array_keys($replacements), array_values($replacements), $text);
