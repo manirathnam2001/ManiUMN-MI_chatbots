@@ -21,6 +21,16 @@ coverage.xml
 *.tmp
 *.log
 
+# PHP specific
+/vendor/
+composer.lock
+/logs/
+*.pdf
+
+# Database files (SQLite for testing)
+*.db
+*.sqlite
+
 # OS generated files
 .DS_Store
 .DS_Store?
