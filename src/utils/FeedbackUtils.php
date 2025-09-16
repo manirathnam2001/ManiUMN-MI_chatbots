@@ -351,19 +351,13 @@ class FeedbackUtils
         
         // Character replacements for PDF compatibility
         $replacements = [
-            '"' => '"',  // Smart quotes
-            '"' => '"',
-            ''' => "'",
-            ''' => "'",
-            '–' => '-',  // En dash
-            '—' => '--', // Em dash
-            '…' => '...',
-            "\u2013" => '-',  // En dash unicode
-            "\u2014" => '--', // Em dash unicode
-            "\u2018" => "'",  // Left single quote
-            "\u2019" => "'",  // Right single quote
             "\u201c" => '"',  // Left double quote
             "\u201d" => '"',  // Right double quote
+            "\u2018" => "'",  // Left single quote
+            "\u2019" => "'",  // Right single quote
+            "\u2013" => '-',  // En dash unicode
+            "\u2014" => '--', // Em dash unicode
+            "\u2026" => '...' // Ellipsis
         ];
         
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
