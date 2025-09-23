@@ -40,15 +40,24 @@ class MIScorer:
         'met': 1.0,
         'partially met': 0.5,
         'not met': 0.0,
+        'MET': 1.0,
+        'PARTIALLY MET': 0.5,
+        'NOT MET': 0.0,
+        'partially MET': 0.5,
+        'not MET': 0.0,
         # Common alternatives
         'Not Yet Met': 0.0,
         'not yet met': 0.0,
+        'NOT YET MET': 0.0,
         'Partially Achieved': 0.5,
         'partially achieved': 0.5,
+        'PARTIALLY ACHIEVED': 0.5,
         'Achieved': 1.0,
         'achieved': 1.0,
+        'ACHIEVED': 1.0,
         'Fully Met': 1.0,
         'fully met': 1.0,
+        'FULLY MET': 1.0,
     }
     
     TOTAL_POSSIBLE_SCORE = sum(COMPONENTS.values())
@@ -72,51 +81,83 @@ class MIScorer:
         return max_score * multiplier
     
     @classmethod
-    def parse_component_line(cls, line: str) -> Optional[MIComponentScore]:
+    def parse_component_line(cls, line: str, debug: bool = False) -> Optional[MIComponentScore]:
         """Parse a single component line from feedback text."""
         line = line.strip()
         
-        # Enhanced regex pattern to handle multiple formats:
+        # Debug logging to help diagnose parsing issues
+        if debug:
+            print(f"DEBUG: Parsing line: {repr(line)}")
+        
+        # Enhanced regex patterns to handle multiple formats including bold markdown:
         # Format 1: "1. COMPONENT: [Status] - feedback"
         # Format 2: "COMPONENT: [Status] - feedback" 
         # Format 3: "● COMPONENT: [Status] - feedback"
         # Format 4: "• COMPONENT: [Status] - feedback"
         # Format 5: "COMPONENT (7.5 pts): [Status] - feedback"
         # Format 6: "COMPONENT: Status - feedback" (without brackets)
+        # Format 7: "**COMPONENT (7.5 pts): Status** - feedback" (bold markdown)
+        # Format 8: "**1. COMPONENT: [Status]** - feedback" (bold with brackets)
         component_patterns = [
-            # Pattern with brackets: [Status]
+            # Pattern with brackets: [Status] (handles bold markdown around entire component)
+            r'^(?:\*+)?(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*\[([^\]]+)\](?:\*+)?\s*[-–—]\s*(.+)$',
+            
+            # Pattern without brackets but with bold markdown around status (handles multiple asterisks)
+            r'^(?:\*+)?(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*(?:\*+)?(Met|Partially Met|Not Met|met|partially met|not met|Not Yet Met|not yet met|Partially Achieved|partially achieved|Achieved|achieved|Fully Met|fully met|PARTIALLY MET|NOT MET|FULLY MET|partially MET|not MET)(?:\*+)?\s*[-–—]\s*(.+)$',
+            
+            # Pattern for bold markdown around entire component section
+            r'^\*+(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*(Met|Partially Met|Not Met|met|partially met|not met|Not Yet Met|not yet met|Partially Achieved|partially achieved|Achieved|achieved|Fully Met|fully met|PARTIALLY MET|NOT MET|FULLY MET|partially MET|not MET)\*+\s*[-–—]\s*(.+)$',
+            
+            # Original patterns (for backward compatibility)
             r'^(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*\[([^\]]+)\]\s*[-–—]\s*(.+)$',
-            # Pattern without brackets: Status (including various status terms)
             r'^(?:\d+\.\s*|[●•]\s*)?(COLLABORATION|EVOCATION|ACCEPTANCE|COMPASSION)(?:\s*\([0-9.]+\s*(?:pts?)?\))?\s*:\s*(Met|Partially Met|Not Met|met|partially met|not met|Not Yet Met|not yet met|Partially Achieved|partially achieved|Achieved|achieved|Fully Met|fully met)\s*[-–—]\s*(.+)$'
         ]
         
-        for pattern in component_patterns:
+        for i, pattern in enumerate(component_patterns):
             match = re.match(pattern, line, re.IGNORECASE)
             if match:
                 component = match.group(1).upper()
                 status = match.group(2).strip()
                 feedback = match.group(3).strip()
                 
+                if debug:
+                    print(f"DEBUG: Pattern {i} matched - Component: {component}, Status: {status}")
+                
+                # Clean up any remaining markdown from status
+                status = status.replace('*', '').strip()
+                
                 # Validate and calculate score
                 try:
                     score = cls.calculate_component_score(component, status)
+                    if debug:
+                        print(f"DEBUG: Score calculated: {score} for {component} with status {status}")
                     return MIComponentScore(component, status, score, feedback)
-                except ValueError:
+                except ValueError as e:
+                    if debug:
+                        print(f"DEBUG: Score calculation failed for {component} with status '{status}': {e}")
                     # If status is invalid, default to 0 score
                     return MIComponentScore(component, status, 0.0, feedback)
         
+        if debug:
+            print(f"DEBUG: No pattern matched for line: {repr(line)}")
         return None
     
     @classmethod
-    def parse_feedback_scores(cls, feedback_text: str) -> List[MIComponentScore]:
+    def parse_feedback_scores(cls, feedback_text: str, debug: bool = False) -> List[MIComponentScore]:
         """Parse all component scores from feedback text."""
         scores = []
         lines = feedback_text.split('\n')
         
+        if debug:
+            print(f"DEBUG: Parsing {len(lines)} lines of feedback")
+        
         for line in lines:
-            component_score = cls.parse_component_line(line)
+            component_score = cls.parse_component_line(line, debug=debug)
             if component_score:
                 scores.append(component_score)
+        
+        if debug:
+            print(f"DEBUG: Found {len(scores)} component scores")
         
         return scores
     
@@ -129,22 +170,55 @@ class MIScorer:
         return total
     
     @classmethod
-    def get_score_breakdown(cls, feedback_text: str) -> Dict[str, any]:
+    def get_score_breakdown(cls, feedback_text: str, debug: bool = False) -> Dict[str, any]:
         """Get complete score breakdown from feedback text."""
-        component_scores = cls.parse_feedback_scores(feedback_text)
+        if debug:
+            print(f"DEBUG: Starting score breakdown for feedback of length {len(feedback_text)}")
+        
+        component_scores = cls.parse_feedback_scores(feedback_text, debug=debug)
+        
+        if debug:
+            print(f"DEBUG: Parsed {len(component_scores)} components:")
+            for score in component_scores:
+                print(f"  - {score.component}: {score.status} = {score.score} pts")
+        
         total_score = cls.calculate_total_score(component_scores)
         
+        if debug:
+            print(f"DEBUG: Total score calculated: {total_score}")
+        
+        # Ensure all required components are present with 0 scores if missing
+        all_components = {}
+        for component in cls.COMPONENTS.keys():
+            # Find matching component score or create empty one
+            found_score = next((s for s in component_scores if s.component == component), None)
+            if found_score:
+                all_components[component] = {
+                    'status': found_score.status,
+                    'score': found_score.score,
+                    'max_score': cls.COMPONENTS[component],
+                    'feedback': found_score.feedback
+                }
+            else:
+                # Component missing - set to 0
+                if debug:
+                    print(f"DEBUG: Component {component} missing, setting to 0")
+                all_components[component] = {
+                    'status': 'Not Found',
+                    'score': 0.0,
+                    'max_score': cls.COMPONENTS[component],
+                    'feedback': 'No feedback found for this component'
+                }
+        
         breakdown = {
-            'components': {score.component: {
-                'status': score.status,
-                'score': score.score,
-                'max_score': cls.COMPONENTS[score.component],
-                'feedback': score.feedback
-            } for score in component_scores},
+            'components': all_components,
             'total_score': total_score,
             'total_possible': cls.TOTAL_POSSIBLE_SCORE,
             'percentage': (total_score / cls.TOTAL_POSSIBLE_SCORE) * 100
         }
+        
+        if debug:
+            print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']}/{breakdown['total_possible']} ({breakdown['percentage']:.1f}%)")
         
         return breakdown
 

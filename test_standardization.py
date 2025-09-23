@@ -117,6 +117,38 @@ def test_pdf_generation():
         traceback.print_exc()
         return False
 
+def test_pdf_scoring_fix():
+    """Test that the PDF scoring issue has been fixed - ensures bold markdown feedback produces correct scores."""
+    try:
+        from scoring_utils import MIScorer
+        
+        # Test the problematic bold markdown format that used to return 0 scores
+        bold_feedback = """
+**1. COLLABORATION (7.5 pts): Met** - Student demonstrated excellent partnership
+**2. EVOCATION (7.5 pts): Partially Met** - Some good questioning techniques
+**3. ACCEPTANCE (7.5 pts): Met** - Respected patient autonomy
+**4. COMPASSION (7.5 pts): Not Met** - Lacked empathy
+"""
+        
+        breakdown = MIScorer.get_score_breakdown(bold_feedback)
+        expected_total = 7.5 + 3.75 + 7.5 + 0.0  # Met + Partially Met + Met + Not Met = 18.75
+        
+        assert breakdown['total_score'] == expected_total, f"Expected {expected_total}, got {breakdown['total_score']}"
+        assert len(breakdown['components']) == 4, f"Expected 4 components, got {len(breakdown['components'])}"
+        
+        # Verify individual component parsing
+        for component in ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION']:
+            assert component in breakdown['components'], f"Missing component: {component}"
+            assert breakdown['components'][component]['score'] >= 0, f"Invalid score for {component}"
+        
+        print("✅ PDF scoring fix works correctly - bold markdown produces correct scores")
+        return True
+        
+    except Exception as e:
+        print(f"❌ PDF scoring fix test error: {e}")
+        traceback.print_exc()
+        return False
+
 def test_chat_utils():
     """Test chat utilities functionality."""
     try:
@@ -141,6 +173,7 @@ def main():
         ("Scoring Functionality", test_scoring_functionality),
         ("Feedback Formatting", test_feedback_formatting),
         ("PDF Generation", test_pdf_generation),
+        ("PDF Scoring Fix", test_pdf_scoring_fix),
         ("Chat Utils", test_chat_utils),
     ]
     
