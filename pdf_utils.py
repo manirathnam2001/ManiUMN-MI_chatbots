@@ -113,23 +113,42 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
         data = [headers]
         
+        # Create paragraph style for feedback column with word wrapping
+        feedback_style = ParagraphStyle(
+            'FeedbackCell',
+            parent=styles['Normal'],
+            fontSize=9,
+            leading=11,
+            wordWrap='LTR',
+            alignment=0,  # Left alignment
+            spaceAfter=2
+        )
+        
         # Add component data with improved formatting
         for component, details in score_breakdown['components'].items():
+            # Create Paragraph object for feedback column to enable word wrapping
+            feedback_paragraph = Paragraph(details['feedback'], feedback_style)
+            
             data.append([
                 component.title(),
                 details['status'],
                 f"{details['score']:.1f}",
                 f"{details['max_score']:.1f}",
-                details['feedback'][:80] + "..." if len(details['feedback']) > 80 else details['feedback']
+                feedback_paragraph  # Use Paragraph instead of plain string
             ])
         
         # Add total score row
+        performance_paragraph = Paragraph(
+            f"Overall Performance: {_get_performance_level(score_breakdown['percentage'])}", 
+            feedback_style
+        )
+        
         data.append([
             'TOTAL SCORE',
             f"{score_breakdown['percentage']:.1f}%",
             f"{score_breakdown['total_score']:.1f}",
             f"{score_breakdown['total_possible']:.1f}",
-            f"Overall Performance: {_get_performance_level(score_breakdown['percentage'])}"
+            performance_paragraph
         ])
         
         # Create and style the enhanced table
