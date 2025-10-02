@@ -14,9 +14,7 @@ from reportlab.lib.units import inch
 import io
 from pdf_utils import generate_pdf_report
 from feedback_template import FeedbackFormatter, FeedbackValidator
-from scoring_utils import validate_student_name, MIScorer
-from logging_utils import get_logger
-from conversation_utils import ConversationEndDetector, format_closing_response
+from scoring_utils import validate_student_name
 
 # --- Motivational Interviewing System Prompt (HPV) ---
 PERSONAS = {
@@ -220,10 +218,6 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 # --- Initialize session state for persona selection ---
 if "selected_persona" not in st.session_state:
     st.session_state.selected_persona = None
-if "conversation_ended" not in st.session_state:
-    st.session_state.conversation_ended = False
-if "session_logged" not in st.session_state:
-    st.session_state.session_logged = False
 
 # --- Persona Selection ---
 if st.session_state.selected_persona is None:
@@ -304,14 +298,6 @@ if st.session_state.selected_persona is not None:
         current_timestamp = get_formatted_utc_time()
         user_login = "manirathnam2001"
         
-        # Log session end
-        logger = get_logger()
-        logger.log_session_end(
-            student_name, "HPV Vaccine",
-            len(st.session_state.chat_history),
-            'feedback_requested'
-        )
-        
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
 
         # Retrieve relevant rubric content
@@ -331,21 +317,6 @@ if st.session_state.selected_persona is not None:
             ]
         )
         feedback = feedback_response.choices[0].message.content
-        
-        # Calculate score for logging
-        try:
-            score_breakdown = MIScorer.get_score_breakdown(feedback)
-            total_score = score_breakdown['total_score']
-            percentage = score_breakdown['percentage']
-        except Exception:
-            total_score = 0.0
-            percentage = 0.0
-        
-        # Log feedback generation
-        logger.log_feedback_generated(
-            student_name, "HPV Vaccine", total_score, percentage,
-            st.session_state.selected_persona
-        )
         
         # Store feedback in session state to prevent disappearing
         st.session_state.feedback = {
@@ -398,8 +369,7 @@ if st.session_state.selected_persona is not None:
                 student_name=validated_name,
                 raw_feedback=formatted_feedback,
                 chat_history=st.session_state.chat_history,
-                session_type="HPV Vaccine",
-                persona=st.session_state.selected_persona
+                session_type="HPV Vaccine"
             )
             
             # Generate standardized filename
@@ -432,87 +402,35 @@ if st.session_state.selected_persona is not None:
             st.info("There was an issue generating the PDF. Please try again.")
         
     # --- User Input ---
-    # Log session start once
-    if not st.session_state.get('session_logged', False):
-        logger = get_logger()
-        logger.log_session_start(
-            student_name, "HPV Vaccine",
-            st.session_state.selected_persona
-        )
-        st.session_state.session_logged = True
+    user_prompt = st.chat_input("Your response...")
     
-    # Check if conversation ended
-    if st.session_state.get('conversation_ended', False):
-        st.info("This conversation has ended. Please click 'Finish Session & Get Feedback' to get your evaluation, or start a new conversation.")
-    else:
-        user_prompt = st.chat_input("Your response...")
-        
-        if user_prompt:
-            # Check for end-of-conversation phrases
-            is_end_phrase, detected_phrase = ConversationEndDetector.detect_end_phrase(user_prompt)
-            
-            st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-            st.chat_message("user").markdown(user_prompt)
-            
-            # If end phrase detected, provide closing message
-            if is_end_phrase:
-                logger = get_logger()
-                logger.log_end_phrase_detected(
-                    student_name, "HPV Vaccine",
-                    detected_phrase,
-                    len(st.session_state.chat_history)
-                )
-                
-                # Generate closing response
-                closing_message = ConversationEndDetector.get_closing_message(
-                    len(st.session_state.chat_history)
-                )
-                assistant_response = format_closing_response(detected_phrase, closing_message)
-                
-                # Mark conversation as ended
-                st.session_state.conversation_ended = True
-            else:
-                # Normal conversation flow
-                turn_instruction = {
-                    "role": "system",
-                    "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
-                }
-                messages = [
-                    {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
-                    turn_instruction,
-                    *st.session_state.chat_history
-                ]
+    if user_prompt:
+        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+        st.chat_message("user").markdown(user_prompt)
 
-                response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=messages
-                )
-                assistant_response = response.choices[0].message.content
-            
-            st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-            with st.chat_message("assistant"):
-                st.markdown(assistant_response)
-            
-            # Show feedback prompt if conversation naturally ended
-            if is_end_phrase or ConversationEndDetector.should_show_feedback_prompt(
-                user_prompt, len(st.session_state.chat_history)
-            ):
-                st.info("💡 Ready for feedback? Click 'Finish Session & Get Feedback' to receive your detailed MI assessment.")
+        turn_instruction = {
+            "role": "system",
+            "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
+        }
+        messages = [
+            {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
+            turn_instruction,
+            *st.session_state.chat_history
+        ]
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages
+        )
+        assistant_response = response.choices[0].message.content
+        
+        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+        with st.chat_message("assistant"):
+            st.markdown(assistant_response)
 
     # Add a button to start a new conversation with a different persona
     if st.button("Start New Conversation"):
-        # Log session end if there was an active session
-        if st.session_state.chat_history:
-            logger = get_logger()
-            logger.log_session_end(
-                student_name, "HPV Vaccine",
-                len(st.session_state.chat_history),
-                'new_conversation_started'
-            )
-        
         st.session_state.selected_persona = None
         st.session_state.chat_history = []
         st.session_state.feedback = None  # Clear feedback when starting new conversation
-        st.session_state.conversation_ended = False
-        st.session_state.session_logged = False
         st.rerun()
