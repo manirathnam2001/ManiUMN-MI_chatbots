@@ -66,15 +66,13 @@ class PdfGenerator
 {
     private $dompdf;
     private $defaultOptions;
-    private $logger;
     
     /**
      * Initialize PDF Generator with Dompdf
      * 
      * @param array $options Dompdf options
-     * @param Logger $logger Logger instance (optional)
      */
-    public function __construct($options = [], $logger = null)
+    public function __construct($options = [])
     {
         $defaultOptions = [
             'enable_php' => true,
@@ -97,7 +95,6 @@ class PdfGenerator
         ];
         
         $this->defaultOptions = array_merge($defaultOptions, $options);
-        $this->logger = $logger;
         
         // Initialize Dompdf - using mock for demonstration
         if (class_exists('Dompdf\Dompdf')) {
@@ -119,103 +116,24 @@ class PdfGenerator
      */
     public function generatePdfReport($studentName, $rawFeedback, $chatHistory, $sessionType = 'General', $persona = null)
     {
-        $startTime = microtime(true);
-        $sessionId = uniqid('pdf_', true);
+        // Validate and sanitize inputs
+        $studentName = FeedbackUtils::validateStudentName($studentName);
+        $rawFeedback = FeedbackUtils::sanitizeSpecialCharacters($rawFeedback);
         
-        // Log PDF generation attempt
-        if ($this->logger) {
-            $this->logger->log(
-                Logger::INFO,
-                Logger::EVENT_PDF_GENERATED,
-                "PDF generation attempt for student: {$studentName}",
-                [
-                    'student_name' => $studentName,
-                    'session_type' => $sessionType,
-                    'persona' => $persona
-                ],
-                $sessionId
-            );
-        }
+        // Parse feedback for structured data
+        $scoreBreakdown = FeedbackUtils::getScoreBreakdown($rawFeedback);
         
-        try {
-            // Validate and sanitize inputs
-            if (empty($studentName)) {
-                throw new Exception('Student name is required');
-            }
-            
-            if (empty($rawFeedback)) {
-                throw new Exception('Feedback content is required');
-            }
-            
-            if (empty($chatHistory) || !is_array($chatHistory)) {
-                throw new Exception('Valid chat history is required');
-            }
-            
-            $studentName = FeedbackUtils::validateStudentName($studentName);
-            $rawFeedback = FeedbackUtils::sanitizeSpecialCharacters($rawFeedback);
-            
-            // Parse feedback for structured data
-            $scoreBreakdown = FeedbackUtils::getScoreBreakdown($rawFeedback);
-            
-            // Validate score breakdown
-            if (empty($scoreBreakdown) || !isset($scoreBreakdown['total_score'])) {
-                if ($this->logger) {
-                    $this->logger->log(
-                        Logger::WARNING,
-                        'validation_warning',
-                        'Score breakdown parsing may have issues',
-                        ['student_name' => $studentName],
-                        $sessionId
-                    );
-                }
-            }
-            
-            // Generate HTML content
-            $html = $this->generateHtmlContent($studentName, $rawFeedback, $scoreBreakdown, $chatHistory, $sessionType, $persona);
-            
-            // Configure PDF settings
-            $this->dompdf->loadHtml($html);
-            $this->dompdf->setPaper('letter', 'portrait');
-            
-            // Render PDF
-            $this->dompdf->render();
-            
-            $pdfOutput = $this->dompdf->output();
-            $generationTime = microtime(true) - $startTime;
-            $fileSize = strlen($pdfOutput);
-            
-            // Log successful PDF generation
-            if ($this->logger) {
-                $this->logger->logPdfGenerated(
-                    $sessionId,
-                    "{$sessionType}_MI_Report_{$studentName}.pdf",
-                    $fileSize,
-                    $generationTime
-                );
-            }
-            
-            return $pdfOutput;
-            
-        } catch (Exception $e) {
-            // Log PDF generation error
-            if ($this->logger) {
-                $this->logger->log(
-                    Logger::ERROR,
-                    Logger::EVENT_ERROR_OCCURRED,
-                    "PDF generation failed: {$e->getMessage()}",
-                    [
-                        'student_name' => $studentName,
-                        'session_type' => $sessionType,
-                        'persona' => $persona,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
-                    ],
-                    $sessionId
-                );
-            }
-            
-            throw $e;
-        }
+        // Generate HTML content
+        $html = $this->generateHtmlContent($studentName, $rawFeedback, $scoreBreakdown, $chatHistory, $sessionType, $persona);
+        
+        // Configure PDF settings
+        $this->dompdf->loadHtml($html);
+        $this->dompdf->setPaper('letter', 'portrait');
+        
+        // Render PDF
+        $this->dompdf->render();
+        
+        return $this->dompdf->output();
     }
     
     /**
