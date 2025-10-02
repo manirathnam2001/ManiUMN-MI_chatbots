@@ -11,8 +11,9 @@ from reportlab.pdfbase.ttfonts import TTFont
 # Import our standardized utilities
 from scoring_utils import MIScorer, validate_student_name
 from feedback_template import FeedbackFormatter, FeedbackValidator
+from logging_utils import get_logger
 
-def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="HPV Vaccine"):
+def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="HPV Vaccine", persona=None):
     """
     Generate a standardized PDF report with consistent MI feedback formatting.
     
@@ -21,15 +22,35 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         raw_feedback (str): The exact feedback text displayed in the app
         chat_history (list): List of conversation messages
         session_type (str): Type of session (e.g., "HPV Vaccine", "OHI")
+        persona (str, optional): Name of the patient persona used in the session
         
     Returns:
         io.BytesIO: PDF buffer ready for download
     """
+    logger = get_logger()
+    
+    # Log PDF generation attempt
+    logger.log_pdf_generation_attempt(student_name, session_type, persona)
+    
     # Input validation
     try:
         validated_name = validate_student_name(student_name)
     except ValueError as e:
-        raise ValueError(f"Invalid student name: {e}")
+        error_msg = f"Invalid student name: {e}"
+        logger.log_pdf_generation_error(student_name, session_type, error_msg, 'validation_error', persona)
+        raise ValueError(error_msg)
+    
+    # Validate chat history
+    if not chat_history or not isinstance(chat_history, list):
+        error_msg = "Chat history is empty or invalid"
+        logger.log_validation_error('chat_history', error_msg, {'student_name': student_name})
+        raise ValueError(error_msg)
+    
+    # Validate feedback
+    if not raw_feedback or not isinstance(raw_feedback, str):
+        error_msg = "Feedback is empty or invalid"
+        logger.log_validation_error('feedback', error_msg, {'student_name': student_name})
+        raise ValueError(error_msg)
     
     # Sanitize feedback text for special characters
     clean_feedback = FeedbackValidator.sanitize_special_characters(raw_feedback)
@@ -37,7 +58,11 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     # Validate feedback completeness
     validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
     if not validation['is_valid']:
-        print(f"Warning: Feedback may be incomplete - missing: {validation['missing_components']}")
+        warning_msg = f"Feedback may be incomplete - missing: {validation['missing_components']}"
+        logger.log_validation_error('feedback_completeness', warning_msg, 
+                                   {'student_name': student_name, 
+                                    'missing': validation['missing_components']})
+        print(f"Warning: {warning_msg}")
     
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -90,6 +115,10 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     )
     elements.append(Paragraph(f"<b>Student:</b> {validated_name}", info_style))
     
+    # Add persona information if available
+    if persona:
+        elements.append(Paragraph(f"<b>Patient Persona:</b> {persona}", info_style))
+    
     # Add evaluation timestamp if available
     timestamp_pattern = r'Evaluation Timestamp \(UTC\): ([^\n]+)'
     import re
@@ -97,6 +126,10 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     if timestamp_match:
         timestamp = timestamp_match.group(1)
         elements.append(Paragraph(f"<b>Evaluation Date:</b> {timestamp}", info_style))
+    else:
+        # If no timestamp in feedback, add current timestamp
+        current_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+        elements.append(Paragraph(f"<b>Generated Date:</b> {current_time}", info_style))
     
     # Add horizontal line with better styling
     line_style = ParagraphStyle('Line', parent=styles['Normal'], spaceBefore=10, spaceAfter=10)
@@ -280,13 +313,30 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     # Build PDF with error handling
     try:
         doc.build(elements)
+        
+        # Log successful PDF generation
+        buffer.seek(0)
+        file_size = len(buffer.getvalue())
+        logger.log_pdf_generation_success(
+            student_name, session_type, 
+            f"{session_type}_MI_Report_{validated_name}.pdf",
+            file_size, persona
+        )
+        
     except Exception as e:
         # If PDF build fails, try with simplified content
-        print(f"Warning: PDF build failed, attempting simplified version: {e}")
+        error_msg = f"PDF build failed, attempting simplified version: {e}"
+        print(f"Warning: {error_msg}")
+        logger.log_validation_error('pdf_build', error_msg, 
+                                   {'student_name': student_name, 
+                                    'session_type': session_type})
+        
         elements = []
         elements.append(Paragraph(f"MI Performance Report - {session_type}", title_style))
         elements.append(Spacer(1, 12))
         elements.append(Paragraph(f"Student: {validated_name}", info_style))
+        if persona:
+            elements.append(Paragraph(f"Patient Persona: {persona}", info_style))
         elements.append(Spacer(1, 12))
         elements.append(Paragraph("Feedback Content", section_style))
         
@@ -294,9 +344,28 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         simple_style = ParagraphStyle('Simple', parent=styles['Normal'], fontSize=11)
         for line in clean_feedback.split('\n')[:20]:  # Limit lines to prevent issues
             if line.strip():
-                elements.append(Paragraph(line.strip(), simple_style))
+                try:
+                    elements.append(Paragraph(line.strip(), simple_style))
+                except Exception:
+                    # Skip problematic lines
+                    pass
         
-        doc.build(elements)
+        try:
+            doc.build(elements)
+            
+            # Log success with simplified PDF
+            buffer.seek(0)
+            file_size = len(buffer.getvalue())
+            logger.log_pdf_generation_success(
+                student_name, session_type,
+                f"{session_type}_MI_Report_{validated_name}.pdf",
+                file_size, persona
+            )
+        except Exception as e2:
+            error_msg = f"Even simplified PDF build failed: {e2}"
+            logger.log_pdf_generation_error(student_name, session_type, error_msg, 
+                                           'pdf_build_critical', persona)
+            raise Exception(error_msg)
     
     buffer.seek(0)
     return buffer
