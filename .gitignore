@@ -19,7 +19,11 @@ coverage.xml
 # Temporary files
 /tmp/
 *.tmp
+
+# Log files and directories
 *.log
+/logs/
+/var/log/mi_logs/
 
 # OS generated files
 .DS_Store
