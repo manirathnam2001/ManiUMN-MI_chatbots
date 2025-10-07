@@ -5,7 +5,7 @@ This module provides functionality to send PDF reports to Box via email upload a
 Includes error handling for various failure scenarios and integration with the logging system.
 
 Features:
-- Email sending to Box upload addresses
+- Email sending to Box upload addresses using secure email_utils
 - Separate handling for OHI and HPV bots
 - Comprehensive error handling
 - Integration with upload_logs.py for tracking
@@ -25,6 +25,7 @@ from typing import Optional, Dict, Any
 import io
 
 from upload_logs import BoxUploadLogger
+from email_utils import SecureEmailSender, EmailSendError, EmailConfigError
 
 
 class BoxIntegrationError(Exception):
@@ -71,6 +72,9 @@ class BoxUploader:
         self.config = self._load_config(config_path)
         self.logger = BoxUploadLogger(self.bot_type, 
                                       log_directory=self.config['logging']['log_directory'])
+        
+        # Initialize secure email sender
+        self.email_sender = SecureEmailSender(self.config, self.logger.logger)
         
         # Validate configuration
         self._validate_config()
@@ -271,7 +275,7 @@ class BoxUploader:
     def _send_email(self, student_name: str, pdf_buffer: io.BytesIO, 
                    filename: str, recipient: str) -> None:
         """
-        Send email with PDF attachment.
+        Send email with PDF attachment using secure email utilities.
         
         Args:
             student_name: Name of the student
@@ -280,18 +284,13 @@ class BoxUploader:
             recipient: Email recipient address
             
         Raises:
-            smtplib.SMTPException: If email sending fails
+            EmailSendError: If email sending fails
+            smtplib.SMTPException: For backward compatibility
         """
-        email_config = self.config['email']
-        
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = email_config['sender_email']
-        msg['To'] = recipient
-        msg['Subject'] = f'MI Assessment Report - {student_name} - {self.bot_type}'
-        
-        # Add body
-        body = f"""
+        try:
+            # Create email subject and body
+            subject = f'MI Assessment Report - {student_name} - {self.bot_type}'
+            body = f"""
 MI Assessment Report
 
 Bot Type: {self.bot_type}
@@ -300,29 +299,24 @@ Filename: {filename}
 
 This is an automated upload to Box.
 """
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # Attach PDF
-        pdf_buffer.seek(0)
-        attachment = MIMEBase('application', 'pdf')
-        attachment.set_payload(pdf_buffer.read())
-        encoders.encode_base64(attachment)
-        attachment.add_header('Content-Disposition', f'attachment; filename={filename}')
-        msg.attach(attachment)
-        
-        # Send email
-        with smtplib.SMTP(email_config['smtp_server'], 
-                         email_config['smtp_port'], 
-                         timeout=30) as server:
-            if email_config.get('use_tls', True):
-                server.starttls()
             
-            # Login only if credentials provided
-            if email_config.get('sender_password'):
-                server.login(email_config['sender_email'], 
-                           email_config['sender_password'])
+            # Send email using secure email sender
+            success = self.email_sender.send_email_with_attachment(
+                recipient=recipient,
+                subject=subject,
+                body=body,
+                attachment_buffer=pdf_buffer,
+                attachment_filename=filename,
+                attachment_type='application/pdf',
+                timeout=30
+            )
             
-            server.send_message(msg)
+            if not success:
+                raise EmailSendError("Email sending returned false")
+                
+        except (EmailSendError, EmailConfigError) as e:
+            # Convert to SMTPException for backward compatibility
+            raise smtplib.SMTPException(str(e))
     
     def test_connection(self) -> Dict[str, Any]:
         """
@@ -335,7 +329,7 @@ This is an automated upload to Box.
             'box_upload_enabled': self.config['box_upload'].get('enabled', False),
             'bot_type': self.bot_type,
             'box_email': self._get_box_email(),
-            'smtp_configured': bool(self.config['email'].get('smtp_server')),
+            'smtp_configured': False,
             'connection_test': 'not_attempted'
         }
         
@@ -343,29 +337,24 @@ This is an automated upload to Box.
             results['message'] = 'Box upload is disabled in configuration'
             return results
         
-        if not results['smtp_configured']:
-            results['message'] = 'SMTP server not configured'
-            return results
-        
-        # Try to connect to SMTP server
+        # Test SMTP connection using email_utils
         try:
-            email_config = self.config['email']
-            with smtplib.SMTP(email_config['smtp_server'], 
-                            email_config['smtp_port'], 
-                            timeout=10) as server:
-                if email_config.get('use_tls', True):
-                    server.starttls()
-                
-                results['connection_test'] = 'success'
-                results['message'] = 'SMTP connection successful'
+            test_result = self.email_sender.test_connection()
+            results['smtp_configured'] = True
+            results['connection_test'] = test_result['status']
+            results['message'] = test_result['message']
+            results['smtp_server'] = test_result.get('smtp_server')
+            results['smtp_port'] = test_result.get('smtp_port')
+            results['authentication'] = test_result.get('authentication', False)
+            
         except Exception as e:
             results['connection_test'] = 'failed'
-            results['message'] = f'SMTP connection failed: {str(e)}'
+            results['message'] = f'Connection test error: {str(e)}'
             
             self.logger.log_error(
                 'CONNECTION_TEST_FAILED',
                 str(e),
-                {'smtp_server': email_config['smtp_server']}
+                {'bot_type': self.bot_type}
             )
         
         return results
