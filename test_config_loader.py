@@ -21,17 +21,12 @@ class TestConfigLoader(unittest.TestCase):
         # Create a test config file
         self.config_path = os.path.join(self.test_dir, 'test_config.json')
         self.test_config = {
-            "box_upload": {
-                "enabled": False
-            },
             "email_config": {
                 "smtp_server": "smtp.test.com",
                 "smtp_port": 587,
                 "smtp_use_ssl": True,
                 "smtp_username": "test@test.com",
-                "smtp_app_password": "test_password",
-                "ohi_box_email": "ohi_test@box.com",
-                "hpv_box_email": "hpv_test@box.com"
+                "smtp_app_password": "test_password"
             },
             "logging": {
                 "log_level": "INFO"
@@ -44,7 +39,7 @@ class TestConfigLoader(unittest.TestCase):
         # Save original environment variables
         self.original_env = {}
         env_vars = ['GROQ_API_KEY', 'SMTP_USERNAME', 'SMTP_APP_PASSWORD',
-                   'OHI_BOX_EMAIL', 'HPV_BOX_EMAIL', 'SMTP_SERVER', 'SMTP_PORT']
+                   'SMTP_SERVER', 'SMTP_PORT']
         for var in env_vars:
             self.original_env[var] = os.environ.get(var)
             if var in os.environ:
@@ -109,36 +104,6 @@ class TestConfigLoader(unittest.TestCase):
         # Should get defaults since env vars not set
         self.assertEqual(smtp_config['smtp_server'], 'smtp.gmail.com')
         self.assertEqual(smtp_config['smtp_port'], 587)
-    
-    def test_get_box_email_from_env(self):
-        """Test getting Box email from environment variables."""
-        os.environ['OHI_BOX_EMAIL'] = 'env_ohi@box.com'
-        os.environ['HPV_BOX_EMAIL'] = 'env_hpv@box.com'
-        
-        loader = ConfigLoader(self.config_path, load_dotenv_file=False)
-        
-        ohi_email = loader.get_box_email('OHI')
-        hpv_email = loader.get_box_email('HPV')
-        
-        self.assertEqual(ohi_email, 'env_ohi@box.com')
-        self.assertEqual(hpv_email, 'env_hpv@box.com')
-    
-    def test_get_box_email_from_config(self):
-        """Test getting Box email from config file."""
-        loader = ConfigLoader(self.config_path, load_dotenv_file=False)
-        
-        ohi_email = loader.get_box_email('OHI')
-        hpv_email = loader.get_box_email('HPV')
-        
-        self.assertEqual(ohi_email, 'ohi_test@box.com')
-        self.assertEqual(hpv_email, 'hpv_test@box.com')
-    
-    def test_get_box_email_invalid_type(self):
-        """Test error with invalid bot type."""
-        loader = ConfigLoader(self.config_path, load_dotenv_file=False)
-        
-        with self.assertRaises(ValueError):
-            loader.get_box_email('INVALID')
     
     def test_validate_required_env_vars(self):
         """Test validation of required environment variables."""

@@ -1,9 +1,4 @@
 {
-    "box_upload": {
-        "ohi_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
-        "hpv_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com",
-        "enabled": false
-    },
     "email_config": {
         "smtp_server": "smtp.gmail.com",
         "smtp_port": 587,
@@ -18,7 +13,7 @@
         "backup_count": 5,
         "cleanup_days": 90,
         "enable_monitoring": true,
-        "log_file": "git_logs/box_uploads.log",
+        "log_file": "git_logs/chatbot.log",
         "max_size": 10485760,
         "log_level": "INFO"
     }

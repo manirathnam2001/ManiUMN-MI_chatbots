@@ -129,60 +129,6 @@ class ConfigLoader:
         
         return smtp_config
     
-    def get_box_email(self, bot_type: str) -> Optional[str]:
-        """
-        Get Box email address for the specified bot type.
-        
-        Args:
-            bot_type: 'OHI' or 'HPV'
-            
-        Returns:
-            Box email address or None if not found
-        """
-        bot_type = bot_type.upper()
-        
-        # Check environment variables first
-        if bot_type == 'OHI':
-            box_email = os.environ.get('OHI_BOX_EMAIL')
-        elif bot_type == 'HPV':
-            box_email = os.environ.get('HPV_BOX_EMAIL')
-        else:
-            raise ValueError(f"Unknown bot type: {bot_type}")
-        
-        if box_email:
-            self.logger.debug(f"Using {bot_type} Box email from environment variable")
-            return box_email
-        
-        # Check config file
-        if 'email_config' in self.config:
-            if bot_type == 'OHI':
-                box_email = self.config['email_config'].get('ohi_box_email')
-            elif bot_type == 'HPV':
-                box_email = self.config['email_config'].get('hpv_box_email')
-            
-            if box_email:
-                self.logger.warning(
-                    f"{bot_type} Box email found in config file. "
-                    "For security, use environment variable instead."
-                )
-                return box_email
-        
-        # Check legacy box_upload section
-        if 'box_upload' in self.config:
-            if bot_type == 'OHI':
-                box_email = self.config['box_upload'].get('ohi_email')
-            elif bot_type == 'HPV':
-                box_email = self.config['box_upload'].get('hpv_email')
-            
-            if box_email:
-                self.logger.warning(
-                    f"{bot_type} Box email found in legacy config. "
-                    "For security, use environment variable instead."
-                )
-                return box_email
-        
-        return None
-    
     def get_config(self) -> Dict[str, Any]:
         """
         Get the full configuration dictionary.
@@ -241,8 +187,7 @@ if __name__ == '__main__':
     loader = ConfigLoader()
     
     print("=== Environment Variables Check ===")
-    required_vars = ['GROQ_API_KEY', 'SMTP_USERNAME', 'SMTP_APP_PASSWORD', 
-                    'OHI_BOX_EMAIL', 'HPV_BOX_EMAIL']
+    required_vars = ['GROQ_API_KEY', 'SMTP_USERNAME', 'SMTP_APP_PASSWORD']
     validation = loader.validate_required_env_vars(required_vars)
     
     for var, is_set in validation.items():
@@ -263,8 +208,3 @@ if __name__ == '__main__':
     smtp_config = loader.get_smtp_config()
     print(f"SMTP Server: {smtp_config.get('smtp_server', 'Not configured')}")
     print(f"SMTP Credentials: {'✅ Configured' if smtp_config.get('smtp_username') else '❌ Not configured'}")
-    
-    ohi_email = loader.get_box_email('OHI')
-    hpv_email = loader.get_box_email('HPV')
-    print(f"OHI Box Email: {'✅ Configured' if ohi_email else '❌ Not configured'}")
-    print(f"HPV Box Email: {'✅ Configured' if hpv_email else '❌ Not configured'}")

@@ -13,8 +13,6 @@ cp .env.example .env
 GROQ_API_KEY=your-actual-groq-api-key-here
 SMTP_USERNAME=your-email@umn.edu
 SMTP_APP_PASSWORD=your-gmail-app-password
-OHI_BOX_EMAIL=your-ohi-box-email@u.box.com
-HPV_BOX_EMAIL=your-hpv-box-email@u.box.com
 ```
 
 ### Step 3: Get Gmail App Password
@@ -142,7 +140,6 @@ python3 email_utils.py
 # Run all tests
 python3 test_config_loader.py
 python3 test_email_utils.py
-python3 test_box_integration.py
 
 # Run the chatbot
 streamlit run HPV.py

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `email_utils.py` module provides secure SMTP email sending functionality for the MI Chatbots Box integration system. It includes support for environment variables, SSL/TLS connections, comprehensive error handling, and logging.
+The `email_utils.py` module provides secure SMTP email sending functionality for the MI Chatbots. It includes support for environment variables, SSL/TLS connections, comprehensive error handling, and logging.
 
 ## Features
 
@@ -59,9 +59,7 @@ Update `config.json`:
     "smtp_port": 587,
     "smtp_use_ssl": true,
     "smtp_username": "your-email@umn.edu",
-    "smtp_app_password": "your-app-password",
-    "ohi_box_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
-    "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com"
+    "smtp_app_password": "your-app-password"
   }
 }
 ```
@@ -97,22 +95,6 @@ success = sender.send_email_with_attachment(
 
 if success:
     print("Email sent successfully!")
-```
-
-### Box Upload Email (Convenience Function)
-
-```python
-from email_utils import send_box_upload_email
-import io
-
-# Send PDF to Box
-success = send_box_upload_email(
-    config=config,
-    bot_type='OHI',  # or 'HPV'
-    student_name='John Doe',
-    pdf_buffer=pdf_buffer,
-    filename='assessment_report.pdf'
-)
 ```
 
 ### Testing Connection
@@ -183,22 +165,6 @@ Test the SMTP connection without sending an email.
 - `smtp_port`: SMTP port number
 - `authentication`: Boolean indicating if authentication succeeded
 
-### Convenience Functions
-
-#### `send_box_upload_email(config, bot_type, student_name, pdf_buffer, filename, logger=None)`
-
-Send a Box upload email for assessment reports.
-
-**Parameters:**
-- `config` (dict): Configuration dictionary
-- `bot_type` (str): Type of bot ('OHI' or 'HPV')
-- `student_name` (str): Name of the student
-- `pdf_buffer` (io.BytesIO): PDF data buffer
-- `filename` (str): PDF filename
-- `logger` (logging.Logger, optional): Logger instance
-
-**Returns:** `True` if successful, `False` otherwise
-
 ## Error Handling
 
 ### Exception Types
@@ -247,31 +213,6 @@ Test coverage includes:
 - Email sending with attachments
 - Error handling scenarios
 - Connection testing
-
-## Integration with Box Upload
-
-The `email_utils.py` module is integrated with `box_integration.py`:
-
-```python
-from box_integration import BoxUploader
-
-# Initialize uploader (automatically uses email_utils)
-uploader = BoxUploader('OHI')
-
-# Upload PDF to Box
-success = uploader.upload_pdf_to_box(
-    student_name='John Doe',
-    pdf_buffer=pdf_buffer,
-    filename='report.pdf'
-)
-```
-
-The `BoxUploader` class automatically uses `SecureEmailSender` for all email operations, providing:
-- Secure credential handling
-- SSL/TLS connections
-- Comprehensive logging
-- Retry logic
-- Error handling
 
 ## Troubleshooting
 
@@ -328,34 +269,7 @@ else:
     print(f"❌ Error: {result['message']}")
 ```
 
-### Example 2: Send PDF Report
-
-```python
-from email_utils import send_box_upload_email
-from pdf_utils import generate_pdf_report
-import json
-
-# Generate PDF
-pdf_buffer = generate_pdf_report(student_name, transcript, scores)
-
-# Load config
-with open('config.json') as f:
-    config = json.load(f)
-
-# Send to Box
-success = send_box_upload_email(
-    config=config,
-    bot_type='OHI',
-    student_name='John Doe',
-    pdf_buffer=pdf_buffer,
-    filename='john_doe_report.pdf'
-)
-
-if success:
-    print("Report uploaded to Box!")
-```
-
-### Example 3: Using Environment Variables
+### Example 2: Using Environment Variables
 
 ```python
 import os
@@ -375,9 +289,8 @@ print(f"Connection status: {result['status']}")
 
 ## Related Documentation
 
-- [Box Integration Setup Guide](BOX_SETUP.md)
-- [Box Integration Documentation](BOX_INTEGRATION.md)
 - [Main README](README.md)
+- [Configuration Guide](config.json)
 
 ## Support
 
