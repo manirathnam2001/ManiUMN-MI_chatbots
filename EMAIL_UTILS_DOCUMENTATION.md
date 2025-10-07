@@ -269,34 +269,7 @@ else:
     print(f"❌ Error: {result['message']}")
 ```
 
-### Example 2: Send PDF Report
-
-```python
-from email_utils import send_box_upload_email
-from pdf_utils import generate_pdf_report
-import json
-
-# Generate PDF
-pdf_buffer = generate_pdf_report(student_name, transcript, scores)
-
-# Load config
-with open('config.json') as f:
-    config = json.load(f)
-
-# Send to Box
-success = send_box_upload_email(
-    config=config,
-    bot_type='OHI',
-    student_name='John Doe',
-    pdf_buffer=pdf_buffer,
-    filename='john_doe_report.pdf'
-)
-
-if success:
-    print("Report uploaded to Box!")
-```
-
-### Example 3: Using Environment Variables
+### Example 2: Using Environment Variables
 
 ```python
 import os
