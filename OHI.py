@@ -322,20 +322,19 @@ if st.button("Finish Session & Get Feedback"):
         'timestamp': current_timestamp,
         'evaluator': user_login
     }
+
+# Show only PDF download section if feedback exists
+if st.session_state.feedback is not None:
+    feedback_data = st.session_state.feedback
     
-    # Display feedback using standardized formatting
-    formatted_feedback = FeedbackFormatter.format_feedback_for_display(
-        feedback, current_timestamp, user_login
-    )
-    st.markdown(formatted_feedback)
-
-    # PDF Generation section
-    st.markdown("### 📄 Download PDF Report")
-
     # Format feedback for PDF using standardized template
     formatted_feedback = FeedbackFormatter.format_feedback_for_pdf(
-        feedback, current_timestamp, user_login
+        feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
     )
+
+    # Show only PDF download section
+    st.markdown("### 📄 Download Feedback Report")
+    st.info("Your feedback has been generated! Click below to download the PDF report.")
 
     # Validate student name and generate PDF
     try:
@@ -359,16 +358,8 @@ if st.button("Finish Session & Get Feedback"):
             data=pdf_buffer.getvalue(),
             file_name=download_filename,
             mime="application/pdf",
-            help="Download a comprehensive PDF report with scores, feedback, and conversation transcript"
+            help="Download your complete feedback report as a PDF"
         )
-        
-        # Display score summary if parsing is successful
-        try:
-            from scoring_utils import MIScorer
-            score_breakdown = MIScorer.get_score_breakdown(formatted_feedback)
-            st.success(f"**Total Score: {score_breakdown['total_score']:.1f} / {score_breakdown['total_possible']:.1f} ({score_breakdown['percentage']:.1f}%)**")
-        except Exception:
-            pass  # Skip score display if parsing fails
             
     except ValueError as e:
         st.error(f"Error generating PDF: {e}")
@@ -376,17 +367,6 @@ if st.button("Finish Session & Get Feedback"):
     except Exception as e:
         st.error(f"Unexpected error: {e}")
         st.info("There was an issue generating the PDF. Please try again.")
-
-# Display existing feedback if it exists (prevents disappearing after PDF download)
-elif st.session_state.feedback is not None:
-    feedback_data = st.session_state.feedback
-    formatted_feedback = FeedbackFormatter.format_feedback_for_display(
-        feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
-    )
-    st.markdown(formatted_feedback)
-    
-    # Show PDF download section for existing feedback
-    st.markdown("### 📄 Download PDF Report")
 
 # --- Handle chat input ---
 if st.session_state.selected_persona is not None:
