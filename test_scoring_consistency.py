@@ -120,17 +120,22 @@ def test_score_range_validation():
     print("🧪 Testing Score Range Validation")
     
     try:
-        # Valid scores
+        # Valid base scores
         assert MIScorer.validate_score_range(0.0), "0.0 should be valid"
         assert MIScorer.validate_score_range(15.0), "15.0 should be valid"
         assert MIScorer.validate_score_range(30.0), "30.0 should be valid"
         
+        # Valid scores with bonuses (up to ~13% extra for effort + time)
+        assert MIScorer.validate_score_range(31.0), "31.0 should be valid (with bonuses)"
+        assert MIScorer.validate_score_range(33.0), "33.0 should be valid (with bonuses)"
+        assert MIScorer.validate_score_range(33.9), "33.9 should be valid (max with bonuses)"
+        
         # Invalid scores
         assert not MIScorer.validate_score_range(-1.0), "-1.0 should be invalid"
-        assert not MIScorer.validate_score_range(31.0), "31.0 should be invalid"
+        assert not MIScorer.validate_score_range(35.0), "35.0 should be invalid (exceeds max with bonuses)"
         assert not MIScorer.validate_score_range(100.0), "100.0 should be invalid"
         
-        print("✅ Score range validation works correctly")
+        print("✅ Score range validation works correctly (allows bonuses)")
         return True
         
     except Exception as e:

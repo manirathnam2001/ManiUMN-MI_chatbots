@@ -85,6 +85,71 @@ def validate_response_role(response_content):
     return True, response_content
 
 
+def track_message_engagement(message_content: str, role: str):
+    """
+    Track engagement metrics for a message.
+    
+    Args:
+        message_content: The content of the message
+        role: The role of the message sender ('user' or 'assistant')
+    """
+    if role == 'user':
+        # Update engagement metrics
+        st.session_state.engagement_metrics['total_user_messages'] += 1
+        st.session_state.engagement_metrics['total_user_characters'] += len(message_content)
+        
+        # Track quality responses (>50 characters)
+        if len(message_content) >= 50:
+            st.session_state.engagement_metrics['quality_responses'] += 1
+        
+        # Track timestamp
+        from time_utils import get_formatted_utc_time
+        st.session_state.message_timestamps.append({
+            'role': role,
+            'timestamp': get_formatted_utc_time(),
+            'length': len(message_content)
+        })
+
+
+def get_engagement_summary() -> dict:
+    """
+    Get a summary of conversation engagement metrics.
+    
+    Returns:
+        Dictionary with engagement metrics
+    """
+    metrics = st.session_state.engagement_metrics
+    total_msgs = metrics['total_user_messages']
+    
+    if total_msgs == 0:
+        return {
+            'avg_message_length': 0,
+            'quality_ratio': 0.0,
+            'total_messages': 0,
+            'engagement_level': 'none'
+        }
+    
+    avg_length = metrics['total_user_characters'] / total_msgs
+    quality_ratio = metrics['quality_responses'] / total_msgs
+    
+    # Determine engagement level
+    if total_msgs >= 12 and quality_ratio >= 0.7:
+        engagement_level = 'excellent'
+    elif total_msgs >= 8 and quality_ratio >= 0.5:
+        engagement_level = 'good'
+    elif total_msgs >= 4 and quality_ratio >= 0.3:
+        engagement_level = 'moderate'
+    else:
+        engagement_level = 'low'
+    
+    return {
+        'avg_message_length': avg_length,
+        'quality_ratio': quality_ratio,
+        'total_messages': total_msgs,
+        'engagement_level': engagement_level
+    }
+
+
 def initialize_session_state():
     """Initialize common session state variables."""
     if "selected_persona" not in st.session_state:
@@ -95,6 +160,14 @@ def initialize_session_state():
         st.session_state.conversation_state = "active"  # active or ended
     if "turn_count" not in st.session_state:
         st.session_state.turn_count = 0
+    if "message_timestamps" not in st.session_state:
+        st.session_state.message_timestamps = []
+    if "engagement_metrics" not in st.session_state:
+        st.session_state.engagement_metrics = {
+            'total_user_messages': 0,
+            'total_user_characters': 0,
+            'quality_responses': 0
+        }
 
 
 def display_persona_selection(personas_dict, app_title):
@@ -282,6 +355,9 @@ def handle_chat_input(personas_dict, client):
             
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             st.chat_message("user").markdown(user_prompt)
+            
+            # Track engagement for user message
+            track_message_engagement(user_prompt, "user")
             
             # Increment turn count
             st.session_state.turn_count += 1

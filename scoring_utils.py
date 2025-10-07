@@ -31,7 +31,7 @@ class MIScorer:
         'COMPASSION': 7.5
     }
     
-    # Valid status values and their scoring multipliers
+    # Valid status values and their scoring multipliers (more lenient)
     STATUS_MULTIPLIERS = {
         'Met': 1.0,
         'Partially Met': 0.5,
@@ -62,10 +62,128 @@ class MIScorer:
     
     TOTAL_POSSIBLE_SCORE = sum(COMPONENTS.values())
     
+    # Effort tracking thresholds
+    EFFORT_THRESHOLDS = {
+        'min_response_length': 20,  # Minimum characters for quality response
+        'quality_response_length': 50,  # Length for high-quality response
+        'min_turns': 4,  # Minimum conversation turns for engagement
+        'good_engagement_turns': 8,  # Turns for good engagement
+        'excellent_engagement_turns': 12  # Turns for excellent engagement
+    }
+    
+    # Time-based scoring modifiers
+    TIME_BONUSES = {
+        'quick_thoughtful': 0.05,  # 5% bonus for quick but thoughtful (10-30s)
+        'reasonable': 0.02,  # 2% bonus for reasonable time (30-60s)
+        'slow_but_complete': 0.01  # 1% bonus for slower but thorough responses
+    }
+    
+    @classmethod
+    def calculate_effort_bonus(cls, chat_history: List[Dict], debug: bool = False) -> Dict[str, any]:
+        """
+        Calculate effort-based bonus points based on conversation metrics.
+        
+        Args:
+            chat_history: List of chat messages with 'role' and 'content'
+            debug: Enable debug logging
+            
+        Returns:
+            Dictionary with effort metrics and bonus points
+        """
+        if not chat_history:
+            return {'bonus': 0.0, 'metrics': {}}
+        
+        # Extract user messages only
+        user_messages = [msg for msg in chat_history if msg.get('role') == 'user']
+        
+        # Calculate metrics
+        num_turns = len(user_messages)
+        avg_length = sum(len(msg.get('content', '')) for msg in user_messages) / max(len(user_messages), 1)
+        total_length = sum(len(msg.get('content', '')) for msg in user_messages)
+        
+        # Calculate response quality score (0-1)
+        quality_score = 0.0
+        if avg_length >= cls.EFFORT_THRESHOLDS['quality_response_length']:
+            quality_score = 1.0
+        elif avg_length >= cls.EFFORT_THRESHOLDS['min_response_length']:
+            quality_score = 0.5
+        
+        # Calculate engagement score (0-1)
+        engagement_score = 0.0
+        if num_turns >= cls.EFFORT_THRESHOLDS['excellent_engagement_turns']:
+            engagement_score = 1.0
+        elif num_turns >= cls.EFFORT_THRESHOLDS['good_engagement_turns']:
+            engagement_score = 0.7
+        elif num_turns >= cls.EFFORT_THRESHOLDS['min_turns']:
+            engagement_score = 0.4
+        
+        # Calculate effort bonus (max 3 points - 10% of total possible)
+        effort_bonus = (quality_score + engagement_score) * 1.5
+        
+        metrics = {
+            'num_turns': num_turns,
+            'avg_response_length': avg_length,
+            'total_response_length': total_length,
+            'quality_score': quality_score,
+            'engagement_score': engagement_score
+        }
+        
+        if debug:
+            print(f"DEBUG: Effort tracking - turns: {num_turns}, avg_length: {avg_length:.1f}")
+            print(f"DEBUG: Quality score: {quality_score}, Engagement score: {engagement_score}")
+            print(f"DEBUG: Effort bonus: {effort_bonus:.2f} points")
+        
+        return {'bonus': effort_bonus, 'metrics': metrics}
+    
+    @classmethod
+    def calculate_time_bonus(cls, response_times: List[float], debug: bool = False) -> Dict[str, any]:
+        """
+        Calculate time-based bonus for response patterns.
+        
+        Args:
+            response_times: List of response times in seconds
+            debug: Enable debug logging
+            
+        Returns:
+            Dictionary with time metrics and bonus multiplier
+        """
+        if not response_times:
+            return {'multiplier': 0.0, 'metrics': {}}
+        
+        avg_time = sum(response_times) / len(response_times)
+        
+        # Determine time category and bonus
+        time_multiplier = 0.0
+        time_category = 'timeout'
+        
+        if 10 <= avg_time <= 30:
+            time_multiplier = cls.TIME_BONUSES['quick_thoughtful']
+            time_category = 'quick_thoughtful'
+        elif 30 < avg_time <= 60:
+            time_multiplier = cls.TIME_BONUSES['reasonable']
+            time_category = 'reasonable'
+        elif 60 < avg_time <= 120:
+            time_multiplier = cls.TIME_BONUSES['slow_but_complete']
+            time_category = 'slow_but_complete'
+        
+        metrics = {
+            'avg_response_time': avg_time,
+            'time_category': time_category,
+            'num_responses': len(response_times)
+        }
+        
+        if debug:
+            print(f"DEBUG: Time tracking - avg: {avg_time:.1f}s, category: {time_category}")
+            print(f"DEBUG: Time multiplier: {time_multiplier:.2%}")
+        
+        return {'multiplier': time_multiplier, 'metrics': metrics}
+    
     @classmethod
     def validate_score_range(cls, score: float) -> bool:
-        """Validate that a score is within acceptable range."""
-        return 0.0 <= score <= cls.TOTAL_POSSIBLE_SCORE
+        """Validate that a score is within acceptable range (including bonuses)."""
+        # Allow for bonuses up to ~13% extra (3 effort + 5% time)
+        max_with_bonus = cls.TOTAL_POSSIBLE_SCORE * 1.13
+        return 0.0 <= score <= max_with_bonus
     
     @classmethod
     def validate_score_consistency(cls, breakdown: Dict[str, any]) -> bool:
@@ -190,8 +308,17 @@ class MIScorer:
         return total
     
     @classmethod
-    def get_score_breakdown(cls, feedback_text: str, debug: bool = False) -> Dict[str, any]:
-        """Get complete score breakdown from feedback text."""
+    def get_score_breakdown(cls, feedback_text: str, chat_history: List[Dict] = None, 
+                          response_times: List[float] = None, debug: bool = False) -> Dict[str, any]:
+        """
+        Get complete score breakdown from feedback text with optional effort/time bonuses.
+        
+        Args:
+            feedback_text: The feedback text to parse
+            chat_history: Optional list of chat messages for effort tracking
+            response_times: Optional list of response times for time bonuses
+            debug: Enable debug logging
+        """
         if debug:
             print(f"DEBUG: Starting score breakdown for feedback of length {len(feedback_text)}")
         
@@ -233,34 +360,64 @@ class MIScorer:
                     'feedback': 'No feedback found for this component'
                 }
         
-        # Calculate total from the deduplicated components (ensures consistency)
-        total_score = sum(c['score'] for c in all_components.values())
+        # Calculate base total from the deduplicated components (ensures consistency)
+        base_score = sum(c['score'] for c in all_components.values())
         
-        # Validate that total score is within acceptable range
+        # Calculate effort bonus if chat history provided
+        effort_data = {'bonus': 0.0, 'metrics': {}}
+        if chat_history:
+            effort_data = cls.calculate_effort_bonus(chat_history, debug=debug)
+        
+        # Calculate time bonus if response times provided
+        time_data = {'multiplier': 0.0, 'metrics': {}}
+        if response_times:
+            time_data = cls.calculate_time_bonus(response_times, debug=debug)
+        
+        # Apply bonuses
+        effort_bonus = effort_data['bonus']
+        time_multiplier = time_data['multiplier']
+        time_bonus = base_score * time_multiplier
+        
+        total_score = base_score + effort_bonus + time_bonus
+        
+        # Validate that total score is within acceptable range (with bonuses)
         if not cls.validate_score_range(total_score):
-            raise ValueError(f"Total score {total_score} is outside valid range (0-{cls.TOTAL_POSSIBLE_SCORE})")
+            # If over max, cap at max with bonus
+            max_with_bonus = cls.TOTAL_POSSIBLE_SCORE * 1.13
+            total_score = min(total_score, max_with_bonus)
+            if debug:
+                print(f"DEBUG: Score capped at maximum: {total_score}")
         
         if debug:
-            print(f"DEBUG: Total score calculated from components: {total_score}")
+            print(f"DEBUG: Base score: {base_score:.2f}")
+            print(f"DEBUG: Effort bonus: {effort_bonus:.2f}")
+            print(f"DEBUG: Time bonus: {time_bonus:.2f}")
+            print(f"DEBUG: Total score: {total_score:.2f}")
         
         breakdown = {
             'components': all_components,
+            'base_score': base_score,
+            'effort_bonus': effort_bonus,
+            'time_bonus': time_bonus,
             'total_score': total_score,
             'total_possible': cls.TOTAL_POSSIBLE_SCORE,
-            'percentage': (total_score / cls.TOTAL_POSSIBLE_SCORE) * 100
+            'percentage': (base_score / cls.TOTAL_POSSIBLE_SCORE) * 100,
+            'adjusted_percentage': (total_score / cls.TOTAL_POSSIBLE_SCORE) * 100,
+            'effort_metrics': effort_data.get('metrics', {}),
+            'time_metrics': time_data.get('metrics', {})
         }
         
-        # Validate that component scores sum to total (should always be true now)
+        # Validate that component scores sum to base score (should always be true now)
         component_sum = sum(c['score'] for c in all_components.values())
-        if abs(component_sum - total_score) > 0.001:  # Allow for floating point errors
+        if abs(component_sum - base_score) > 0.001:  # Allow for floating point errors
             raise ValueError(
                 f"Score validation failed: component sum ({component_sum}) "
-                f"does not match total score ({total_score})"
+                f"does not match base score ({base_score})"
             )
         
         if debug:
-            print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']}/{breakdown['total_possible']} ({breakdown['percentage']:.1f}%)")
-            print(f"DEBUG: Validation passed - component sum matches total")
+            print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']:.2f}/{breakdown['total_possible']} ({breakdown['adjusted_percentage']:.1f}%)")
+            print(f"DEBUG: Validation passed - component sum matches base score")
         
         return breakdown
 
