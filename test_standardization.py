@@ -62,12 +62,17 @@ def test_feedback_formatting():
         print("✅ Evaluation prompt generation works")
         
         # Test feedback display formatting
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        feedback_content = """**1. COLLABORATION (7.5 pts): Met** - Good partnership building.
+**2. EVOCATION (7.5 pts): Met** - Effective exploration."""
+        
         display = FeedbackFormatter.format_feedback_for_display(
-            "Sample feedback", timestamp, "test_user"
+            feedback_content, timestamp, "test_user"
         )
-        assert display['header'] == "### Session Feedback", f"Wrong header: {display['header']}"
-        assert timestamp in display['timestamp'], "Timestamp not in display"
+        # Now returns string with only core feedback content
+        assert isinstance(display, str), "Display should return a string"
+        assert "1. COLLABORATION" in display, "Display should contain core feedback"
+        assert "MI Performance Report" not in display, "Display should not contain headers"
         print("✅ Feedback display formatting works")
         
         # Test filename generation
