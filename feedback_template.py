@@ -61,8 +61,24 @@ class FeedbackFormatter:
         """
 
     @staticmethod
-    def format_feedback_common(feedback: str, timestamp: str, evaluator: str = None) -> str:
-        """Common formatting for both display and PDF."""
+    def format_feedback_for_display(feedback: str, timestamp: str, evaluator: str) -> str:
+        """Format feedback for display in app - show only core feedback content."""
+        # Remove any headers or metadata from the feedback content
+        content_lines = feedback.split('\n')
+        
+        # Skip the header lines and get to the actual feedback
+        start_index = 0
+        for i, line in enumerate(content_lines):
+            if line.startswith('1. COLLABORATION') or line.startswith('**1. COLLABORATION'):
+                start_index = i
+                break
+        
+        # Join only the actual feedback content
+        return '\n'.join(content_lines[start_index:])
+
+    @staticmethod
+    def format_feedback_for_pdf(feedback: str, timestamp: str, evaluator: str = None) -> str:
+        """Format feedback for PDF - includes full header and metadata."""
         mn_timestamp = convert_to_minnesota_time(timestamp)
         parts = [
             "MI Performance Report",
@@ -72,16 +88,6 @@ class FeedbackFormatter:
             feedback
         ]
         return "\n".join(filter(None, parts))
-
-    @staticmethod
-    def format_feedback_for_display(feedback: str, timestamp: str, evaluator: str) -> str:
-        """Format feedback for display in app - now matches PDF exactly."""
-        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
-
-    @staticmethod
-    def format_feedback_for_pdf(feedback: str, timestamp: str, evaluator: str = None) -> str:
-        """Format feedback for PDF - uses same format as display."""
-        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
 
     @staticmethod
     def generate_component_breakdown_table(feedback: str) -> List[Dict[str, str]]:
