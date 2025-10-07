@@ -324,15 +324,10 @@ if st.button("Finish Session & Get Feedback"):
     }
     
     # Display feedback using standardized formatting
-    display_format = FeedbackFormatter.format_feedback_for_display(
+    formatted_feedback = FeedbackFormatter.format_feedback_for_display(
         feedback, current_timestamp, user_login
     )
-    
-    st.markdown(display_format['header'])
-    st.markdown(display_format['timestamp'])
-    st.markdown(display_format['evaluator'])
-    st.markdown(display_format['separator'])
-    st.markdown(display_format['content'])
+    st.markdown(formatted_feedback)
 
     # PDF Generation section
     st.markdown("### 📄 Download PDF Report")
@@ -385,15 +380,10 @@ if st.button("Finish Session & Get Feedback"):
 # Display existing feedback if it exists (prevents disappearing after PDF download)
 elif st.session_state.feedback is not None:
     feedback_data = st.session_state.feedback
-    display_format = FeedbackFormatter.format_feedback_for_display(
+    formatted_feedback = FeedbackFormatter.format_feedback_for_display(
         feedback_data['content'], feedback_data['timestamp'], feedback_data['evaluator']
     )
-    
-    st.markdown(display_format['header'])
-    st.markdown(display_format['timestamp'])
-    st.markdown(display_format['evaluator'])
-    st.markdown(display_format['separator'])
-    st.markdown(display_format['content'])
+    st.markdown(formatted_feedback)
     
     # Show PDF download section for existing feedback
     st.markdown("### 📄 Download PDF Report")

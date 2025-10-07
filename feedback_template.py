@@ -6,6 +6,7 @@ Provides consistent feedback formatting between HPV and OHI assessments.
 from datetime import datetime
 from typing import Dict, List, Optional
 from scoring_utils import MIScorer
+from time_utils import convert_to_minnesota_time
 
 
 class FeedbackFormatter:
@@ -60,31 +61,27 @@ class FeedbackFormatter:
         """
 
     @staticmethod
-    def format_feedback_for_display(feedback: str, timestamp: str, evaluator: str) -> Dict[str, str]:
-        """Format feedback for consistent display in Streamlit."""
-        return {
-            'header': "### Session Feedback",
-            'timestamp': f"**Evaluation Timestamp:** {timestamp}",
-            'evaluator': f"**Evaluator:** {evaluator}",
-            'separator': "---",
-            'content': feedback
-        }
+    def format_feedback_common(feedback: str, timestamp: str, evaluator: str = None) -> str:
+        """Common formatting for both display and PDF."""
+        mn_timestamp = convert_to_minnesota_time(timestamp)
+        parts = [
+            "MI Performance Report",
+            f"Evaluation Timestamp (Minnesota): {mn_timestamp}",
+            f"Evaluator: {evaluator}" if evaluator else None,
+            "---",
+            feedback
+        ]
+        return "\n".join(filter(None, parts))
+
+    @staticmethod
+    def format_feedback_for_display(feedback: str, timestamp: str, evaluator: str) -> str:
+        """Format feedback for display in app - now matches PDF exactly."""
+        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
 
     @staticmethod
     def format_feedback_for_pdf(feedback: str, timestamp: str, evaluator: str = None) -> str:
-        """Format feedback for PDF generation with consistent structure."""
-        header_parts = [
-            "Session Feedback",
-            f"Evaluation Timestamp: {timestamp}"
-        ]
-        
-        if evaluator:
-            header_parts.append(f"Evaluator: {evaluator}")
-        
-        header_parts.append("---")
-        header_parts.append(feedback)
-        
-        return "\n".join(header_parts)
+        """Format feedback for PDF - uses same format as display."""
+        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
 
     @staticmethod
     def generate_component_breakdown_table(feedback: str) -> List[Dict[str, str]]:
