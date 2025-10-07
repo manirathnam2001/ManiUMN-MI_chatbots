@@ -62,6 +62,99 @@ class MIScorer:
     
     TOTAL_POSSIBLE_SCORE = sum(COMPONENTS.values())
     
+    # Internal tracking parameters (not displayed to users)
+    # These are used for internal score calculation only
+    _EFFORT_BONUS_THRESHOLD = 0.3  # Effort bonus applied if student shows good engagement
+    _TIME_FACTOR_MAX = 1.05  # Maximum time-based bonus multiplier
+    _INTERNAL_TRACKING_ENABLED = False  # Flag for internal tracking (disabled by default for backwards compatibility)
+    
+    @classmethod
+    def _calculate_internal_effort_bonus(cls, component_scores: List['MIComponentScore'], attempt_number: int = 1, enabled: bool = True) -> float:
+        """
+        Calculate internal effort bonus based on engagement and attempts.
+        This is used internally only and not displayed to users.
+        More lenient for multiple attempts.
+        
+        Args:
+            component_scores: List of component scores
+            attempt_number: Attempt number (1 for first attempt, higher for retries)
+            enabled: Whether to calculate bonus (should be True when called)
+            
+        Returns:
+            float: Effort bonus in absolute points (0.0 to 3.0)
+        """
+        if not enabled:
+            return 0.0
+        
+        # Count components with any effort (Met or Partially Met)
+        effort_count = sum(1 for score in component_scores if score.score > 0)
+        total_components = len(cls.COMPONENTS)
+        
+        # Calculate effort ratio
+        effort_ratio = effort_count / total_components if total_components > 0 else 0
+        
+        # Base effort bonus - more lenient, any effort gets some bonus
+        base_bonus = 0.0
+        if effort_count > 0:  # Any effort at all gets a bonus
+            base_bonus = min(2.0, effort_ratio * 2.5)  # Up to 2 points for full effort
+        
+        # Additional bonus for multiple attempts (encourages retry)
+        attempt_bonus = min(1.0, (attempt_number - 1) * 0.5) if attempt_number > 1 else 0.0
+        
+        # Total bonus capped at 3 points
+        return min(3.0, base_bonus + attempt_bonus)
+    
+    @classmethod
+    def _calculate_internal_time_factor(cls, feedback_text: str, enabled: bool = True) -> float:
+        """
+        Calculate internal time factor based on response length/quality.
+        This is used internally only and not displayed to users.
+        
+        Args:
+            feedback_text: The feedback text to analyze
+            enabled: Whether to calculate factor (should be True when called)
+            
+        Returns:
+            float: Time factor multiplier (1.0 to 1.05)
+        """
+        if not enabled:
+            return 1.0
+        
+        # Use feedback length as a proxy for engagement time
+        feedback_length = len(feedback_text.strip())
+        
+        # Longer, more detailed feedback suggests more time invested
+        # More lenient: even moderate engagement gets a bonus
+        if feedback_length > 800:
+            return 1.05  # 5% bonus for substantial engagement
+        elif feedback_length > 400:
+            return 1.03  # 3% bonus for moderate engagement
+        
+        return 1.0  # No time bonus
+    
+    @classmethod
+    def _apply_internal_adjustments(cls, base_score: float, effort_bonus: float, time_factor: float) -> float:
+        """
+        Apply internal adjustments to score while maintaining 30-point cap.
+        This method is internal only and adjustments are not visible to users.
+        
+        Args:
+            base_score: Base score before adjustments
+            effort_bonus: Effort bonus in absolute points
+            time_factor: Time factor multiplier
+            
+        Returns:
+            float: Adjusted score, capped at maximum
+        """
+        # Apply time factor first (multiplicative)
+        adjusted_score = base_score * time_factor
+        
+        # Add effort bonus (additive)
+        adjusted_score += effort_bonus
+        
+        # Ensure we never exceed the maximum score
+        return min(adjusted_score, cls.TOTAL_POSSIBLE_SCORE)
+    
     @classmethod
     def validate_score_range(cls, score: float) -> bool:
         """Validate that a score is within acceptable range."""
@@ -70,7 +163,8 @@ class MIScorer:
     @classmethod
     def validate_score_consistency(cls, breakdown: Dict[str, any]) -> bool:
         """
-        Validate that component scores sum to the total score.
+        Validate that score is consistent and within valid range.
+        Note: With internal adjustments enabled, the total score may differ from component sum.
         
         Args:
             breakdown: Score breakdown dictionary from get_score_breakdown
@@ -84,8 +178,25 @@ class MIScorer:
         component_sum = sum(c['score'] for c in breakdown['components'].values())
         total_score = breakdown['total_score']
         
-        # Allow for small floating point errors
-        return abs(component_sum - total_score) < 0.001
+        # Check if internal tracking was enabled
+        internal_tracking_enabled = '_internal_tracking' in breakdown and breakdown['_internal_tracking'].get('enabled', False)
+        
+        if internal_tracking_enabled:
+            # With internal adjustments, total may be higher than component sum
+            # but should never exceed maximum score
+            if total_score > cls.TOTAL_POSSIBLE_SCORE:
+                return False
+            
+            # Total score should be >= component sum (due to bonuses)
+            # but within reasonable bounds (component sum + max possible bonus)
+            max_possible_bonus = 3.0  # Max effort bonus
+            max_possible_adjusted = (component_sum * 1.05) + max_possible_bonus  # time factor * base + effort
+            
+            return component_sum <= total_score <= min(max_possible_adjusted, cls.TOTAL_POSSIBLE_SCORE)
+        else:
+            # Without internal adjustments, total should match component sum exactly
+            # Allow for small floating point errors
+            return abs(component_sum - total_score) < 0.001
     
     @classmethod
     def calculate_component_score(cls, component: str, status: str) -> float:
@@ -190,10 +301,26 @@ class MIScorer:
         return total
     
     @classmethod
-    def get_score_breakdown(cls, feedback_text: str, debug: bool = False) -> Dict[str, any]:
-        """Get complete score breakdown from feedback text."""
+    def get_score_breakdown(cls, feedback_text: str, debug: bool = False, 
+                          enable_internal_adjustments: bool = None, attempt_number: int = 1) -> Dict[str, any]:
+        """
+        Get complete score breakdown from feedback text.
+        
+        Args:
+            feedback_text: The feedback text to parse
+            debug: Enable debug output
+            enable_internal_adjustments: Enable internal time/effort tracking adjustments.
+                                        If None, uses cls._INTERNAL_TRACKING_ENABLED
+            attempt_number: Attempt number for multi-attempt scenarios (1 = first attempt)
+        
+        Returns:
+            Dict with score breakdown including total_score, components, etc.
+        """
         if debug:
             print(f"DEBUG: Starting score breakdown for feedback of length {len(feedback_text)}")
+        
+        # Determine if internal adjustments should be enabled
+        use_internal_tracking = enable_internal_adjustments if enable_internal_adjustments is not None else cls._INTERNAL_TRACKING_ENABLED
         
         component_scores = cls.parse_feedback_scores(feedback_text, debug=debug)
         
@@ -233,15 +360,37 @@ class MIScorer:
                     'feedback': 'No feedback found for this component'
                 }
         
-        # Calculate total from the deduplicated components (ensures consistency)
-        total_score = sum(c['score'] for c in all_components.values())
+        # Calculate base total from the deduplicated components
+        base_total_score = sum(c['score'] for c in all_components.values())
+        
+        # Calculate internal adjustments if enabled (not visible to users)
+        effort_bonus = 0.0
+        time_factor = 1.0
+        if use_internal_tracking:
+            effort_bonus = cls._calculate_internal_effort_bonus(component_scores, attempt_number, enabled=True)
+            time_factor = cls._calculate_internal_time_factor(feedback_text, enabled=True)
+            
+            if debug:
+                print(f"DEBUG: Internal tracking enabled")
+                print(f"DEBUG: Base score before adjustments: {base_total_score}")
+                print(f"DEBUG: Internal effort bonus: {effort_bonus} points")
+                print(f"DEBUG: Internal time factor: {time_factor}x")
+        
+        # Apply internal adjustments to get final score (only if enabled)
+        if use_internal_tracking:
+            total_score = cls._apply_internal_adjustments(base_total_score, effort_bonus, time_factor)
+        else:
+            total_score = base_total_score
+        
+        # Ensure score is capped at maximum
+        total_score = min(total_score, cls.TOTAL_POSSIBLE_SCORE)
         
         # Validate that total score is within acceptable range
         if not cls.validate_score_range(total_score):
             raise ValueError(f"Total score {total_score} is outside valid range (0-{cls.TOTAL_POSSIBLE_SCORE})")
         
         if debug:
-            print(f"DEBUG: Total score calculated from components: {total_score}")
+            print(f"DEBUG: Final total score: {total_score}")
         
         breakdown = {
             'components': all_components,
@@ -250,17 +399,26 @@ class MIScorer:
             'percentage': (total_score / cls.TOTAL_POSSIBLE_SCORE) * 100
         }
         
-        # Validate that component scores sum to total (should always be true now)
-        component_sum = sum(c['score'] for c in all_components.values())
-        if abs(component_sum - total_score) > 0.001:  # Allow for floating point errors
+        # Include internal tracking data if enabled (not displayed to users)
+        if use_internal_tracking:
+            breakdown['_internal_tracking'] = {
+                'base_score': base_total_score,
+                'effort_bonus': effort_bonus,
+                'time_factor': time_factor,
+                'attempt_number': attempt_number,
+                'enabled': True
+            }
+        
+        # Validate that final score doesn't exceed maximum
+        if total_score > cls.TOTAL_POSSIBLE_SCORE:
             raise ValueError(
-                f"Score validation failed: component sum ({component_sum}) "
-                f"does not match total score ({total_score})"
+                f"Score validation failed: final score ({total_score}) "
+                f"exceeds maximum ({cls.TOTAL_POSSIBLE_SCORE})"
             )
         
         if debug:
             print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']}/{breakdown['total_possible']} ({breakdown['percentage']:.1f}%)")
-            print(f"DEBUG: Validation passed - component sum matches total")
+            print(f"DEBUG: Validation passed - score within valid range")
         
         return breakdown
 
