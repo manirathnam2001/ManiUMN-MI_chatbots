@@ -23,8 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from email_utils import (
     SecureEmailSender, 
     EmailConfigError, 
-    EmailSendError,
-    send_box_upload_email
+    EmailSendError
 )
 
 
@@ -39,9 +38,7 @@ class TestSecureEmailSender(unittest.TestCase):
                 'smtp_port': 587,
                 'smtp_use_ssl': True,
                 'smtp_username': 'test@example.com',
-                'smtp_app_password': 'test_password',
-                'ohi_box_email': 'ohi@box.com',
-                'hpv_box_email': 'hpv@box.com'
+                'smtp_app_password': 'test_password'
             },
             'email': {
                 'smtp_server': 'smtp.gmail.com',
@@ -49,10 +46,6 @@ class TestSecureEmailSender(unittest.TestCase):
                 'sender_email': 'legacy@example.com',
                 'sender_password': 'legacy_password',
                 'use_tls': True
-            },
-            'box_upload': {
-                'ohi_email': 'ohi@box.com',
-                'hpv_email': 'hpv@box.com'
             }
         }
     
@@ -226,103 +219,6 @@ class TestSecureEmailSender(unittest.TestCase):
         self.assertEqual(result['status'], 'config_error')
 
 
-class TestSendBoxUploadEmail(unittest.TestCase):
-    """Test cases for send_box_upload_email convenience function."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.test_config = {
-            'email_config': {
-                'smtp_server': 'smtp.gmail.com',
-                'smtp_port': 587,
-                'smtp_use_ssl': True,
-                'smtp_username': 'test@example.com',
-                'smtp_app_password': 'test_password',
-                'ohi_box_email': 'ohi@box.com',
-                'hpv_box_email': 'hpv@box.com'
-            },
-            'box_upload': {
-                'ohi_email': 'ohi@box.com',
-                'hpv_email': 'hpv@box.com'
-            }
-        }
-    
-    @patch('email_utils.SecureEmailSender.send_email_with_attachment')
-    def test_send_box_upload_email_ohi(self, mock_send):
-        """Test sending Box upload email for OHI bot."""
-        mock_send.return_value = True
-        
-        pdf_buffer = io.BytesIO(b'%PDF-1.4 test content')
-        result = send_box_upload_email(
-            config=self.test_config,
-            bot_type='OHI',
-            student_name='John Doe',
-            pdf_buffer=pdf_buffer,
-            filename='test.pdf'
-        )
-        
-        self.assertTrue(result)
-        mock_send.assert_called_once()
-        
-        # Check that correct recipient was used
-        call_args = mock_send.call_args
-        self.assertEqual(call_args[1]['recipient'], 'ohi@box.com')
-    
-    @patch('email_utils.SecureEmailSender.send_email_with_attachment')
-    def test_send_box_upload_email_hpv(self, mock_send):
-        """Test sending Box upload email for HPV bot."""
-        mock_send.return_value = True
-        
-        pdf_buffer = io.BytesIO(b'%PDF-1.4 test content')
-        result = send_box_upload_email(
-            config=self.test_config,
-            bot_type='HPV',
-            student_name='Jane Smith',
-            pdf_buffer=pdf_buffer,
-            filename='test.pdf'
-        )
-        
-        self.assertTrue(result)
-        
-        # Check that correct recipient was used
-        call_args = mock_send.call_args
-        self.assertEqual(call_args[1]['recipient'], 'hpv@box.com')
-    
-    def test_send_box_upload_email_invalid_bot_type(self):
-        """Test error with invalid bot type."""
-        pdf_buffer = io.BytesIO(b'%PDF-1.4 test content')
-        
-        with self.assertRaises(ValueError):
-            send_box_upload_email(
-                config=self.test_config,
-                bot_type='INVALID',
-                student_name='John Doe',
-                pdf_buffer=pdf_buffer,
-                filename='test.pdf'
-            )
-    
-    def test_send_box_upload_email_missing_config(self):
-        """Test error with missing Box email configuration."""
-        config = {
-            'email_config': {
-                'smtp_server': 'smtp.gmail.com',
-                'smtp_username': 'test@example.com',
-                'smtp_app_password': 'test_password'
-            }
-        }
-        
-        pdf_buffer = io.BytesIO(b'%PDF-1.4 test content')
-        
-        with self.assertRaises(EmailConfigError):
-            send_box_upload_email(
-                config=config,
-                bot_type='OHI',
-                student_name='John Doe',
-                pdf_buffer=pdf_buffer,
-                filename='test.pdf'
-            )
-
-
 def run_tests():
     """Run all tests."""
     print("🧪 Running Email Utils Tests\n")
@@ -334,7 +230,6 @@ def run_tests():
     
     # Add test classes
     suite.addTests(loader.loadTestsFromTestCase(TestSecureEmailSender))
-    suite.addTests(loader.loadTestsFromTestCase(TestSendBoxUploadEmail))
     
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)
