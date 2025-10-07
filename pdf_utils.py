@@ -107,7 +107,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     elements.append(Paragraph(f"<b>Student:</b> {validated_name}", info_style))
 
     # Add evaluation timestamp if available
-    timestamp_pattern = r'Evaluation Timestamp: ([^\n]+)'
+    timestamp_pattern = r'Evaluation Timestamp \(Minnesota\): ([^\n]+)'
     import re
     timestamp_match = re.search(timestamp_pattern, clean_feedback)
     if timestamp_match:
