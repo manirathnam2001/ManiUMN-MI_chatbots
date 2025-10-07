@@ -357,11 +357,19 @@ if st.button(feedback_button_label, disabled=not feedback_enabled):
     )
     feedback = feedback_response.choices[0].message.content
     
-    # Store feedback in session state to prevent disappearing
+    # Calculate internal metrics (not displayed to users)
+    from time_utils import calculate_response_times
+    from scoring_utils import calculate_engagement_metrics
+    engagement_metrics = calculate_engagement_metrics(st.session_state.chat_history)
+    time_metrics = calculate_response_times(st.session_state.chat_history)
+    
+    # Store feedback and metrics in session state to prevent disappearing
     st.session_state.feedback = {
         'content': feedback,
         'timestamp': current_timestamp,
-        'evaluator': user_login
+        'evaluator': user_login,
+        'engagement_metrics': engagement_metrics,
+        'time_metrics': time_metrics
     }
 
 # Show only PDF download section if feedback exists
@@ -401,6 +409,25 @@ if st.session_state.feedback is not None:
             mime="application/pdf",
             help="Download your complete feedback report as a PDF"
         )
+        
+        # Display score summary with internal modifiers applied
+        try:
+            from scoring_utils import MIScorer
+            
+            # Get engagement and time metrics from feedback data
+            engagement_metrics = feedback_data.get('engagement_metrics')
+            time_metrics = feedback_data.get('time_metrics')
+            
+            # Get score breakdown with internal modifiers
+            score_breakdown = MIScorer.get_score_breakdown(
+                formatted_feedback,
+                engagement_metrics=engagement_metrics,
+                time_metrics=time_metrics
+            )
+            
+            st.success(f"**Total Score: {score_breakdown['total_score']:.1f} / {score_breakdown['total_possible']:.1f} ({score_breakdown['percentage']:.1f}%)**")
+        except Exception:
+            pass  # Skip score display if parsing fails
             
     except ValueError as e:
         st.error(f"Error generating PDF: {e}")
