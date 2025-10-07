@@ -68,6 +68,26 @@ class MIScorer:
         return 0.0 <= score <= cls.TOTAL_POSSIBLE_SCORE
     
     @classmethod
+    def validate_score_consistency(cls, breakdown: Dict[str, any]) -> bool:
+        """
+        Validate that component scores sum to the total score.
+        
+        Args:
+            breakdown: Score breakdown dictionary from get_score_breakdown
+            
+        Returns:
+            bool: True if scores are consistent, False otherwise
+        """
+        if 'components' not in breakdown or 'total_score' not in breakdown:
+            return False
+        
+        component_sum = sum(c['score'] for c in breakdown['components'].values())
+        total_score = breakdown['total_score']
+        
+        # Allow for small floating point errors
+        return abs(component_sum - total_score) < 0.001
+    
+    @classmethod
     def calculate_component_score(cls, component: str, status: str) -> float:
         """Calculate score for a specific component based on status."""
         if component not in cls.COMPONENTS:
@@ -182,17 +202,20 @@ class MIScorer:
             for score in component_scores:
                 print(f"  - {score.component}: {score.status} = {score.score} pts")
         
-        total_score = cls.calculate_total_score(component_scores)
-        
-        if debug:
-            print(f"DEBUG: Total score calculated: {total_score}")
-        
         # Ensure all required components are present with 0 scores if missing
+        # AND handle duplicates by taking the LAST occurrence of each component
         all_components = {}
         for component in cls.COMPONENTS.keys():
-            # Find matching component score or create empty one
-            found_score = next((s for s in component_scores if s.component == component), None)
-            if found_score:
+            # Find ALL matching scores for this component
+            matching_scores = [s for s in component_scores if s.component == component]
+            
+            if matching_scores:
+                # Take the LAST occurrence (most recent/final evaluation)
+                found_score = matching_scores[-1]
+                
+                if debug and len(matching_scores) > 1:
+                    print(f"DEBUG: Component {component} has {len(matching_scores)} occurrences, using last one")
+                
                 all_components[component] = {
                     'status': found_score.status,
                     'score': found_score.score,
@@ -210,6 +233,16 @@ class MIScorer:
                     'feedback': 'No feedback found for this component'
                 }
         
+        # Calculate total from the deduplicated components (ensures consistency)
+        total_score = sum(c['score'] for c in all_components.values())
+        
+        # Validate that total score is within acceptable range
+        if not cls.validate_score_range(total_score):
+            raise ValueError(f"Total score {total_score} is outside valid range (0-{cls.TOTAL_POSSIBLE_SCORE})")
+        
+        if debug:
+            print(f"DEBUG: Total score calculated from components: {total_score}")
+        
         breakdown = {
             'components': all_components,
             'total_score': total_score,
@@ -217,8 +250,17 @@ class MIScorer:
             'percentage': (total_score / cls.TOTAL_POSSIBLE_SCORE) * 100
         }
         
+        # Validate that component scores sum to total (should always be true now)
+        component_sum = sum(c['score'] for c in all_components.values())
+        if abs(component_sum - total_score) > 0.001:  # Allow for floating point errors
+            raise ValueError(
+                f"Score validation failed: component sum ({component_sum}) "
+                f"does not match total score ({total_score})"
+            )
+        
         if debug:
             print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']}/{breakdown['total_possible']} ({breakdown['percentage']:.1f}%)")
+            print(f"DEBUG: Validation passed - component sum matches total")
         
         return breakdown
 
