@@ -1,17 +1,10 @@
 import os
-import json
 import streamlit as st
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-from datetime import datetime
 from time_utils import get_formatted_utc_time
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-import io
 from pdf_utils import generate_pdf_report
 from feedback_template import FeedbackFormatter, FeedbackValidator
 from scoring_utils import validate_student_name

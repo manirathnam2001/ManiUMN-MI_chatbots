@@ -4,7 +4,7 @@ Provides consistent feedback formatting between HPV and OHI assessments.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 from scoring_utils import MIScorer
 from time_utils import convert_to_minnesota_time
 
