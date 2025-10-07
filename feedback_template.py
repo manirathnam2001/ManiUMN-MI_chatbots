@@ -64,7 +64,7 @@ class FeedbackFormatter:
         """Format feedback for consistent display in Streamlit."""
         return {
             'header': "### Session Feedback",
-            'timestamp': f"**Evaluation Timestamp (UTC):** {timestamp}",
+            'timestamp': f"**Evaluation Timestamp:** {timestamp}",
             'evaluator': f"**Evaluator:** {evaluator}",
             'separator': "---",
             'content': feedback
@@ -75,7 +75,7 @@ class FeedbackFormatter:
         """Format feedback for PDF generation with consistent structure."""
         header_parts = [
             "Session Feedback",
-            f"Evaluation Timestamp (UTC): {timestamp}"
+            f"Evaluation Timestamp: {timestamp}"
         ]
         
         if evaluator:
