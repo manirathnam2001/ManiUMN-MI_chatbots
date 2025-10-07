@@ -25,6 +25,13 @@ coverage.xml
 logs/
 /logs/
 
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
 # OS generated files
 .DS_Store
 .DS_Store?
