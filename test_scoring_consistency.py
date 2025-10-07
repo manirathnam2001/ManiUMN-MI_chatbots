@@ -27,21 +27,21 @@ def test_duplicate_components():
         collab_score = breakdown['components']['COLLABORATION']['score']
         collab_status = breakdown['components']['COLLABORATION']['status']
         
-        # Last occurrence was "Partially Met" = 3.75 points
-        assert collab_score == 3.75, f"Expected 3.75 (last occurrence), got {collab_score}"
+        # Last occurrence was "Partially Met" = 4.5 points (with lenient 0.6 multiplier)
+        assert collab_score == 4.5, f"Expected 4.5 (last occurrence), got {collab_score}"
         assert collab_status == "Partially Met", f"Expected 'Partially Met', got '{collab_status}'"
         
         # Check total score consistency
         component_sum = sum(c['score'] for c in breakdown['components'].values())
-        total_score = breakdown['total_score']
+        base_score = breakdown['_internal']['base_score']
         
-        assert component_sum == total_score, f"Component sum ({component_sum}) != Total ({total_score})"
+        assert component_sum == base_score, f"Component sum ({component_sum}) != Base score ({base_score})"
         
-        # Expected: COLLABORATION (3.75) + EVOCATION (7.5) + ACCEPTANCE (0) + COMPASSION (0) = 11.25
-        expected_total = 11.25
-        assert total_score == expected_total, f"Expected {expected_total}, got {total_score}"
+        # Expected: COLLABORATION (4.5) + EVOCATION (7.5) + ACCEPTANCE (0) + COMPASSION (0) = 12.0
+        expected_base = 12.0
+        assert base_score == expected_base, f"Expected {expected_base}, got {base_score}"
         
-        print(f"✅ Duplicate components handled correctly: {total_score}/30.0")
+        print(f"✅ Duplicate components handled correctly: {breakdown['total_score']}/30.0")
         return True
         
     except Exception as e:
@@ -70,12 +70,13 @@ def test_score_consistency_validation():
         
         # Verify the actual values
         component_sum = sum(c['score'] for c in breakdown['components'].values())
+        base_score = breakdown['_internal']['base_score']
         total_score = breakdown['total_score']
         
-        assert abs(component_sum - total_score) < 0.001, f"Scores don't match: {component_sum} vs {total_score}"
+        assert abs(component_sum - base_score) < 0.001, f"Component sum doesn't match base: {component_sum} vs {base_score}"
         
-        # Expected: 7.5 + 3.75 + 7.5 + 0 = 18.75
-        assert total_score == 18.75, f"Expected 18.75, got {total_score}"
+        # Expected: 7.5 + 4.5 + 7.5 + 0 = 19.5 (with lenient 0.6 multiplier)
+        assert total_score == 19.5, f"Expected 19.5, got {total_score}"
         
         print(f"✅ Score consistency validation works: {total_score}/30.0")
         return True
