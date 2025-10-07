@@ -61,14 +61,25 @@ def test_feedback_formatting():
         assert "User: Hello" in prompt, "Transcript not found in prompt"
         print("✅ Evaluation prompt generation works")
         
-        # Test feedback display formatting
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+        # Test feedback display formatting - should remove headers
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sample_feedback = "**1. COLLABORATION (7.5 pts): Met** - Good work"
         display = FeedbackFormatter.format_feedback_for_display(
-            "Sample feedback", timestamp, "test_user"
+            sample_feedback, timestamp, "test_user"
         )
-        assert display['header'] == "### Session Feedback", f"Wrong header: {display['header']}"
-        assert timestamp in display['timestamp'], "Timestamp not in display"
-        print("✅ Feedback display formatting works")
+        assert isinstance(display, str), "Display should return a string"
+        assert "MI Performance Report" not in display, "Display should not contain header"
+        assert "COLLABORATION" in display, "Display should contain feedback content"
+        print("✅ Feedback display formatting works (headers removed)")
+        
+        # Test PDF formatting - should include headers
+        pdf_output = FeedbackFormatter.format_feedback_for_pdf(
+            sample_feedback, timestamp, "test_user"
+        )
+        assert "MI Performance Report" in pdf_output, "PDF should contain header"
+        assert "Evaluation Timestamp" in pdf_output, "PDF should contain timestamp"
+        assert "COLLABORATION" in pdf_output, "PDF should contain feedback content"
+        print("✅ Feedback PDF formatting works (headers included)")
         
         # Test filename generation
         filename = FeedbackFormatter.create_download_filename("John Doe", "HPV", "Alex")

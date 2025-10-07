@@ -75,13 +75,35 @@ class FeedbackFormatter:
 
     @staticmethod
     def format_feedback_for_display(feedback: str, timestamp: str, evaluator: str) -> str:
-        """Format feedback for display in app - now matches PDF exactly."""
-        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
+        """Format feedback for display in app - show only core feedback content."""
+        # Remove headers and metadata, only return the core feedback
+        feedback_lines = feedback.split('\n')
+        
+        # Find where the actual feedback content starts
+        start_idx = 0
+        for idx, line in enumerate(feedback_lines):
+            # Look for lines that start with "1. ", "2. ", "3. ", or "4. " (component numbers)
+            # or lines that start with "**1.", "**2.", etc. (bold markdown)
+            stripped = line.strip()
+            if any(stripped.startswith(f"{i}. ") or stripped.startswith(f"**{i}.") for i in range(1, 5)):
+                start_idx = idx
+                break
+        
+        # Join only the feedback content lines
+        return '\n'.join(feedback_lines[start_idx:])
 
     @staticmethod
     def format_feedback_for_pdf(feedback: str, timestamp: str, evaluator: str = None) -> str:
-        """Format feedback for PDF - uses same format as display."""
-        return FeedbackFormatter.format_feedback_common(feedback, timestamp, evaluator)
+        """Format feedback for PDF with complete header information."""
+        mn_timestamp = convert_to_minnesota_time(timestamp)
+        parts = [
+            "MI Performance Report",
+            f"Evaluation Timestamp (Minnesota): {mn_timestamp}",
+            f"Evaluator: {evaluator}" if evaluator else None,
+            "---",
+            feedback
+        ]
+        return '\n'.join(filter(None, parts))
 
     @staticmethod
     def generate_component_breakdown_table(feedback: str) -> List[Dict[str, str]]:
