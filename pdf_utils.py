@@ -1,5 +1,14 @@
 """
 PDF report generation utilities for MI assessment feedback.
+
+This module handles the creation of professional PDF reports containing:
+- Standardized MI feedback with component scores
+- Detailed score breakdowns with performance levels
+- Conversation transcripts with proper formatting
+- Improvement suggestions and recommendations
+
+The PDF generator ensures consistent formatting across OHI and HPV assessments
+and handles special character sanitization for proper PDF rendering.
 """
 
 import io

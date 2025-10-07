@@ -1,3 +1,17 @@
+"""
+Time utilities for consistent timezone handling across MI chatbot applications.
+
+This module provides timezone conversion functions to ensure all timestamps
+are displayed in the Minnesota timezone (America/Chicago) for consistency
+across the OHI and HPV assessment applications.
+
+Functions:
+- get_formatted_utc_time(): Returns current time in Minnesota timezone
+- convert_to_minnesota_time(): Converts UTC time strings to Minnesota timezone
+
+All timestamps in the application use the format: 'YYYY-MM-DD HH:MM:SS'
+"""
+
 from datetime import datetime
 import pytz
 

@@ -11,15 +11,23 @@ We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation
 ---
 ## 📁 Project Structure
 
-    anwesha-umn/
+    ManiUMN-MI_chatbots/
     ├── .devcontainer/         # Dev Container setup (for VS Code Remote/Containers)
     ├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format)
     ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
     ├── HPV.py                 # Streamlit app for HPV vaccine MI chatbot
     ├── OHI.py                 # Streamlit app for Oral Health MI chatbot
-    ├── README.md              # Instructions to set up and run the app
-    ├── requirements.txt       # Python dependencies for the chatbot
-    └── runtime.txt            # (Optional) Python version for deployment environments (e.g., Streamlit Cloud)
+    ├── chat_utils.py          # Shared chat handling utilities
+    ├── pdf_utils.py           # PDF report generation utilities
+    ├── feedback_template.py   # Standardized feedback formatting
+    ├── scoring_utils.py       # MI component scoring and validation
+    ├── time_utils.py          # Timezone handling utilities
+    ├── config_loader.py       # Configuration and environment variable management
+    ├── email_utils.py         # Email sending utilities (optional Box integration)
+    ├── README.md              # This file - setup and usage instructions
+    ├── requirements.txt       # Python dependencies (optimized)
+    ├── runtime.txt            # Python version for deployment environments
+    └── .env.example           # Example environment variables file
 
 > You can add more `.txt` transcripts with MI feedback in the `hpv_rubrics/` or `ohi_rubrics/` folders to improve the RAG-based evaluation.
 
@@ -164,13 +172,41 @@ This will show which environment variables are configured and which are missing.
 **"Missing environment variable" error:**
 - Ensure your `.env` file exists and has the correct values
 - Or verify system environment variables are set correctly
+- Run `python3 config_loader.py` to check configuration status
 
 **GROQ API key not working:**
 - Verify the key is correct at [Groq Console](https://console.groq.com)
 - Check that GROQ_API_KEY is set in environment variables
+- Ensure there are no extra spaces or quotes around the key
 
 **Email/Box integration not working:**
-- Verify Gmail App Password is correct
+- Verify Gmail App Password is correct (16 characters without spaces)
 - Ensure 2-factor authentication is enabled on your Gmail account
 - Check that Box email addresses are correct
-- Run `python3 config_loader.py` to verify configuration
+- Run `python3 email_utils.py` to test SMTP connection
+
+**"Module not found" errors:**
+- Ensure all dependencies are installed: `pip install -r requirements.txt`
+- Try upgrading pip: `pip install --upgrade pip`
+- For Mac M1/M2 users with faiss-cpu issues, try: `conda install -c pytorch faiss-cpu`
+
+**Streamlit app not loading or crashing:**
+- Check Python version (3.10+ recommended)
+- Clear Streamlit cache: `streamlit cache clear`
+- Verify GROQ API key is valid and has available quota
+- Check internet connection for API calls
+
+**PDF generation fails:**
+- Ensure student name is provided and doesn't contain special characters
+- Check that conversation has at least a few exchanges
+- Verify reportlab is installed correctly
+
+**Conversation not ending or feedback button disabled:**
+- Continue conversation for at least 8 turns (4 exchanges)
+- Look for natural conversation ending cues
+- Ensure conversation state hasn't encountered an error
+
+For additional help, check the logs in the Streamlit console or run the test scripts:
+- `python3 config_loader.py` - Test configuration
+- `python3 email_utils.py` - Test email setup
+- `python3 test_scoring_consistency.py` - Test scoring system

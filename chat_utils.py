@@ -1,6 +1,15 @@
 """
 Shared utilities for chat handling across MI assessment applications.
-Provides common functions to reduce code redundancy between HPV.py and OHI.py.
+
+This module provides common functions to reduce code redundancy between HPV.py and OHI.py,
+including:
+- Session state initialization and management
+- Chat history display and interaction handling
+- Conversation ending detection and role validation
+- Feedback generation and PDF creation
+- Persona selection UI components
+
+All functions maintain consistent behavior across both OHI and HPV assessment bots.
 """
 
 import streamlit as st

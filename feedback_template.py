@@ -1,6 +1,16 @@
 """
 Standardized feedback template system for MI assessments.
-Provides consistent feedback formatting between HPV and OHI assessments.
+
+This module provides consistent feedback formatting between HPV and OHI assessments,
+including:
+- Evaluation prompt generation for LLM-based assessment
+- Feedback formatting for display and PDF output
+- Component score breakdown and table generation
+- Feedback validation and completeness checking
+- Special character sanitization for PDF compatibility
+
+The FeedbackFormatter class ensures consistent evaluation across both assessment types
+while the FeedbackValidator class maintains data quality and completeness.
 """
 
 from datetime import datetime
