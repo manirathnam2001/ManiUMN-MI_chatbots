@@ -15,6 +15,7 @@ import io
 from pdf_utils import generate_pdf_report
 from feedback_template import FeedbackFormatter, FeedbackValidator
 from scoring_utils import validate_student_name
+from box_utils import send_to_box, is_box_enabled
 
 # --- Motivational Interviewing System Prompt (Dental Hygiene) ---
 
@@ -401,6 +402,39 @@ if st.session_state.feedback is not None:
             mime="application/pdf",
             help="Download your complete feedback report as a PDF"
         )
+        
+        # Box upload functionality
+        if is_box_enabled():
+            st.markdown("---")
+            st.markdown("### 📤 Upload to Box")
+            
+            if st.button("📤 Upload Report to Box", key="upload_ohi_box"):
+                with st.spinner("Uploading to Box..."):
+                    try:
+                        # Create a fresh copy of the buffer for upload
+                        upload_buffer = io.BytesIO(pdf_buffer.getvalue())
+                        
+                        # Send to Box
+                        result = send_to_box(
+                            student_name=validated_name,
+                            pdf_buffer=upload_buffer,
+                            filename=download_filename,
+                            bot_type="OHI"
+                        )
+                        
+                        if result['success']:
+                            st.success(f"✅ {result['message']}")
+                            st.info(f"📧 Sent to: {result['box_email']}")
+                        else:
+                            st.warning(f"⚠️ {result['message']}")
+                            st.info("Your report is still available for download above.")
+                            
+                    except Exception as e:
+                        st.error(f"Upload error: {e}")
+                        st.info("Your report is still available for download above.")
+        else:
+            # Show info message if Box upload is not enabled
+            st.info("💡 Box upload is currently disabled. Contact your administrator to enable this feature.")
             
     except ValueError as e:
         st.error(f"Error generating PDF: {e}")
