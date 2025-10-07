@@ -50,8 +50,9 @@ def test_box_upload_logger():
         logger = BoxUploadLogger("OHI", log_directory=test_log_dir)
         assert logger.bot_type == "OHI", "Bot type should be OHI"
         
-        # Test log file creation
-        log_file = os.path.join(test_log_dir, "box_uploads_ohi.log")
+        # Test log file creation - now includes UTC date
+        log_filename = logger._get_log_filename()
+        log_file = os.path.join(test_log_dir, log_filename)
         assert os.path.exists(log_file), "Log file should be created"
         
         # Test various logging methods
@@ -266,15 +267,17 @@ def test_log_cleanup():
         for i in range(5):
             logger.log_upload_attempt(f"Student {i}", f"file{i}.pdf", "ohi@box.com")
         
-        # Test cleanup (should not remove recent entries)
+        # Test cleanup (should not remove recent files)
         analyzer = LogAnalyzer(test_log_dir)
         cleanup_results = analyzer.cleanup_old_logs(days=90)
         
         assert 'OHI' in cleanup_results, "Cleanup results should include OHI"
-        assert cleanup_results['OHI'] == 0, "Should not remove recent logs"
+        assert cleanup_results['OHI'] == 0, "Should not remove recent log files"
         
-        # Verify log file still has entries
-        log_file = os.path.join(test_log_dir, "box_uploads_ohi.log")
+        # Verify log file still exists and has entries
+        log_filename = logger._get_log_filename()
+        log_file = os.path.join(test_log_dir, log_filename)
+        assert os.path.exists(log_file), "Log file should still exist"
         with open(log_file, 'r') as f:
             lines = f.readlines()
             assert len(lines) > 0, "Log file should still have entries"

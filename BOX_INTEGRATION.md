@@ -74,7 +74,7 @@ Configuration file with Box and logging settings.
     "enabled": false
   },
   "logging": {
-    "log_directory": "logs",
+    "log_directory": "git_logs",
     "max_log_size_mb": 10,
     "backup_count": 5,
     "cleanup_days": 90,
@@ -219,16 +219,17 @@ The system handles various error scenarios:
 
 ## Log Files
 
-Log files are stored in the `logs/` directory (configurable):
+Log files are stored in the `git_logs/` directory (configurable):
 
-- `logs/box_uploads_ohi.log` - OHI bot upload logs
-- `logs/box_uploads_hpv.log` - HPV bot upload logs
+- `git_logs/box_uploads_ohi_{YYYY-MM-DD}.log` - OHI bot daily upload logs
+- `git_logs/box_uploads_hpv_{YYYY-MM-DD}.log` - HPV bot daily upload logs
 
 Each log file:
-- Rotates at 10MB (configurable)
-- Keeps 5 backup files (configurable)
+- Created daily based on UTC date
+- Named with format: `box_uploads_{bot_type}_{YYYY-MM-DD}.log`
 - Uses JSON format for structured logging
 - Contains UTC timestamps
+- Tracked in git (rotated files with .log.* extension are ignored)
 
 ## Monitoring
 
@@ -328,7 +329,7 @@ Recent Errors (Last 5):
 ```json
 {
   "logging": {
-    "log_directory": "logs",
+    "log_directory": "git_logs",
     "max_log_size_mb": 10,
     "backup_count": 5,
     "cleanup_days": 90,

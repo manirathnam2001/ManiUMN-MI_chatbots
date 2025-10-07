@@ -42,7 +42,7 @@ class BoxUploadLogger:
     ERROR = logging.ERROR
     CRITICAL = logging.CRITICAL
     
-    def __init__(self, bot_type: str, log_directory: str = "logs", 
+    def __init__(self, bot_type: str, log_directory: str = "git_logs", 
                  max_bytes: int = 10 * 1024 * 1024, backup_count: int = 5):
         """
         Initialize the Box upload logger.
@@ -64,9 +64,20 @@ class BoxUploadLogger:
         # Setup logger
         self.logger = self._setup_logger()
         
+    def _get_log_filename(self) -> str:
+        """
+        Get the log filename with UTC date.
+        
+        Returns:
+            Log filename with UTC date in format: box_uploads_{bot_type}_{YYYY-MM-DD}.log
+        """
+        from datetime import timezone
+        utc_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        return f"box_uploads_{self.bot_type.lower()}_{utc_date}.log"
+    
     def _setup_logger(self) -> logging.Logger:
         """
-        Setup the logger with rotating file handler.
+        Setup the logger with daily log file based on UTC date.
         
         Returns:
             Configured logger instance
@@ -78,15 +89,13 @@ class BoxUploadLogger:
         # Remove existing handlers to avoid duplicates
         logger.handlers = []
         
-        # Create log file path
-        log_file = os.path.join(self.log_directory, 
-                                f"box_uploads_{self.bot_type.lower()}.log")
+        # Create log file path with UTC date
+        log_file = os.path.join(self.log_directory, self._get_log_filename())
         
-        # Create rotating file handler
-        handler = logging.handlers.RotatingFileHandler(
+        # Create file handler for daily log
+        handler = logging.FileHandler(
             log_file,
-            maxBytes=self.max_bytes,
-            backupCount=self.backup_count,
+            mode='a',
             encoding='utf-8'
         )
         
@@ -327,7 +336,7 @@ class LogAnalyzer:
     Utilities for analyzing and reporting on Box upload logs.
     """
     
-    def __init__(self, log_directory: str = "logs"):
+    def __init__(self, log_directory: str = "git_logs"):
         """
         Initialize the log analyzer.
         
@@ -338,33 +347,43 @@ class LogAnalyzer:
     
     def _read_log_file(self, bot_type: str) -> List[Dict[str, Any]]:
         """
-        Read and parse log file for a specific bot.
+        Read and parse log files for a specific bot (all daily log files).
         
         Args:
             bot_type: Type of bot ('OHI' or 'HPV')
             
         Returns:
-            List of parsed log entries
+            List of parsed log entries from all log files
         """
-        log_file = os.path.join(self.log_directory, 
-                               f"box_uploads_{bot_type.lower()}.log")
+        entries = []
         
-        if not os.path.exists(log_file):
+        # Get all log files for this bot type
+        pattern = f"box_uploads_{bot_type.lower()}_*.log"
+        log_files = []
+        
+        try:
+            for filename in os.listdir(self.log_directory):
+                if filename.startswith(f"box_uploads_{bot_type.lower()}_") and filename.endswith(".log"):
+                    # Exclude rotated files (those with .log.1, .log.2, etc.)
+                    if filename.count('.') == 1:
+                        log_files.append(os.path.join(self.log_directory, filename))
+        except FileNotFoundError:
             return []
         
-        entries = []
-        try:
-            with open(log_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        try:
-                            entries.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            continue
-        except Exception as e:
-            print(f"Error reading log file: {e}")
-            
+        # Read all log files
+        for log_file in sorted(log_files):
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                entries.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                continue
+            except Exception as e:
+                print(f"Error reading log file {log_file}: {e}")
+                
         return entries
     
     def get_upload_statistics(self, bot_type: str, 
@@ -466,53 +485,47 @@ class LogAnalyzer:
     
     def cleanup_old_logs(self, days: int = 90) -> Dict[str, int]:
         """
-        Clean up log entries older than specified days.
+        Delete log files older than specified days.
         
-        This creates new log files without old entries for both OHI and HPV bots.
+        This deletes entire daily log files that are older than the specified days.
         
         Args:
             days: Number of days to keep (default: 90)
             
         Returns:
-            Dictionary with cleanup statistics
+            Dictionary with cleanup statistics (number of files deleted per bot)
         """
-        from datetime import timezone
-        cutoff_time = datetime.now(timezone.utc)
-        cutoff_time = cutoff_time.replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        cutoff_time = cutoff_time.timestamp() - (days * 86400)
+        from datetime import timezone, timedelta
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date_str = cutoff_date.strftime('%Y-%m-%d')
         
         results = {}
         
         for bot_type in ['OHI', 'HPV']:
-            log_file = os.path.join(self.log_directory, 
-                                   f"box_uploads_{bot_type.lower()}.log")
+            deleted_count = 0
             
-            if not os.path.exists(log_file):
-                results[bot_type] = 0
-                continue
-            
-            entries = self._read_log_file(bot_type)
-            
-            # Filter to keep only recent entries
-            kept_entries = [
-                e for e in entries 
-                if datetime.strptime(e['timestamp'], '%Y-%m-%d %H:%M:%S').timestamp() >= cutoff_time
-            ]
-            
-            removed_count = len(entries) - len(kept_entries)
-            
-            # Rewrite log file with kept entries
+            # Find all log files for this bot
             try:
-                with open(log_file, 'w', encoding='utf-8') as f:
-                    for entry in kept_entries:
-                        f.write(json.dumps(entry) + '\n')
-                
-                results[bot_type] = removed_count
-            except Exception as e:
-                print(f"Error cleaning up log file for {bot_type}: {e}")
-                results[bot_type] = 0
+                for filename in os.listdir(self.log_directory):
+                    if filename.startswith(f"box_uploads_{bot_type.lower()}_") and filename.endswith(".log"):
+                        # Extract date from filename
+                        # Format: box_uploads_{bot_type}_{YYYY-MM-DD}.log
+                        # After splitting by '_', we have: ['box', 'uploads', 'ohi', 'YYYY-MM-DD']
+                        parts = filename.replace('.log', '').split('_')
+                        if len(parts) >= 4:
+                            file_date_str = parts[-1]  # Get YYYY-MM-DD (last part)
+                            try:
+                                # Check if this file is older than cutoff
+                                if file_date_str < cutoff_date_str:
+                                    log_file = os.path.join(self.log_directory, filename)
+                                    os.remove(log_file)
+                                    deleted_count += 1
+                            except (ValueError, OSError) as e:
+                                print(f"Error processing {filename}: {e}")
+            except FileNotFoundError:
+                pass
+            
+            results[bot_type] = deleted_count
         
         return results
 
@@ -522,7 +535,7 @@ class BoxUploadMonitor:
     Real-time monitoring and alerting for Box upload activities.
     """
     
-    def __init__(self, log_directory: str = "logs"):
+    def __init__(self, log_directory: str = "git_logs"):
         """
         Initialize the monitor.
         
@@ -614,7 +627,7 @@ if __name__ == "__main__":
     print("Box Upload Logger - Test Mode\n")
     
     # Test OHI logger
-    ohi_logger = BoxUploadLogger("OHI", log_directory="./logs")
+    ohi_logger = BoxUploadLogger("OHI", log_directory="./git_logs")
     ohi_logger.log_upload_attempt("John Doe", "feedback_report.pdf", 
                                   "OHI_dir.zcdwwmukjr9ab546@u.box.com", 
                                   file_size=52000)
@@ -623,7 +636,7 @@ if __name__ == "__main__":
                                   delivery_time=1.5)
     
     # Test HPV logger
-    hpv_logger = BoxUploadLogger("HPV", log_directory="./logs")
+    hpv_logger = BoxUploadLogger("HPV", log_directory="./git_logs")
     hpv_logger.log_upload_attempt("Jane Smith", "assessment.pdf", 
                                   "HPV_Dir.yqz3brxlhcurhp2l@u.box.com")
     hpv_logger.log_upload_failure("Jane Smith", "assessment.pdf", 
@@ -632,7 +645,7 @@ if __name__ == "__main__":
     
     # Test monitoring
     print("\nGenerating statistics...")
-    analyzer = LogAnalyzer("./logs")
+    analyzer = LogAnalyzer("./git_logs")
     ohi_stats = analyzer.get_upload_statistics("OHI")
     print(f"\nOHI Statistics: {json.dumps(ohi_stats, indent=2)}")
     
@@ -640,7 +653,7 @@ if __name__ == "__main__":
     print(f"\nHPV Statistics: {json.dumps(hpv_stats, indent=2)}")
     
     # Test monitoring
-    monitor = BoxUploadMonitor("./logs")
+    monitor = BoxUploadMonitor("./git_logs")
     print("\n" + monitor.generate_status_report("OHI"))
     print("\n" + monitor.generate_status_report("HPV"))
     

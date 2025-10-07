@@ -122,11 +122,11 @@ January 7, 2025
 
 ### OHI Bot
 - Email: `OHI_dir.zcdwwmukjr9ab546@u.box.com`
-- Log file: `logs/box_uploads_ohi.log`
+- Log file: `git_logs/box_uploads_ohi_YYYY-MM-DD.log`
 
 ### HPV Bot
 - Email: `HPV_Dir.yqz3brxlhcurhp2l@u.box.com`
-- Log file: `logs/box_uploads_hpv.log`
+- Log file: `git_logs/box_uploads_hpv_YYYY-MM-DD.log`
 
 ## Key Features Implemented
 
@@ -366,7 +366,7 @@ All requirements from the problem statement have been implemented:
 
 ✅ 1. Separate Box email addresses for OHI and HPV bots
 ✅ 2. Logging system with timestamps, success/failure tracking, error messages
-✅ 3. JSON format logs at `logs/box_uploads_*.log` with rotation
+✅ 3. JSON format logs at `git_logs/box_uploads_*_YYYY-MM-DD.log` with rotation
 ✅ 4. Configuration in `config.json` with email and log settings
 ✅ 5. Error handling for all specified scenarios
 ✅ 6. Monitoring utilities with log analysis and statistics
