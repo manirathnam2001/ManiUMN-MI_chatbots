@@ -1,3 +1,33 @@
+"""
+PDF report generation utilities for MI assessment feedback.
+"""
+
+import io
+import re
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+
+from scoring_utils import MIScorer, validate_student_name
+from feedback_template import FeedbackValidator, FeedbackFormatter
+
+
+def _get_performance_level(percentage: float) -> str:
+    """Get performance level description based on percentage score."""
+    if percentage >= 90:
+        return "Excellent"
+    elif percentage >= 80:
+        return "Very Good"
+    elif percentage >= 70:
+        return "Good"
+    elif percentage >= 60:
+        return "Satisfactory"
+    else:
+        return "Needs Improvement"
+
+
 def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="HPV Vaccine"):
     """
     Generate a standardized PDF report with consistent MI feedback formatting.
