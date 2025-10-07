@@ -4,6 +4,12 @@ PDF report generation utilities for MI assessment feedback.
 
 import io
 import re
+import smtplib
+import time
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from typing import Optional, Tuple
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12,6 +18,7 @@ from reportlab.lib import colors
 
 from scoring_utils import MIScorer, validate_student_name
 from feedback_template import FeedbackValidator, FeedbackFormatter
+from box_config import BoxConfig, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY
 
 
 def _get_performance_level(percentage: float) -> str:
@@ -296,3 +303,122 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+class BoxUploadError(Exception):
+    """Custom exception for Box upload errors."""
+    pass
+
+
+def upload_pdf_to_box(
+    pdf_buffer: io.BytesIO,
+    filename: str,
+    config: Optional[BoxConfig] = None,
+    subject: Optional[str] = None,
+    body: Optional[str] = None
+) -> Tuple[bool, str]:
+    """
+    Upload a PDF to Box by emailing it to the Box upload email address.
+    
+    Args:
+        pdf_buffer: BytesIO buffer containing the PDF data
+        filename: Name for the PDF file
+        config: BoxConfig instance (if None, uses default configuration)
+        subject: Email subject (if None, uses default)
+        body: Email body text (if None, uses default)
+        
+    Returns:
+        Tuple[bool, str]: (success, message) where success is True if upload succeeded,
+                         and message contains success/error details
+                         
+    Raises:
+        BoxUploadError: If configuration is invalid or max retries exceeded
+    """
+    # Use default config if none provided
+    if config is None:
+        config = BoxConfig()
+    
+    # Validate configuration
+    if not config.is_configured():
+        missing = config.get_missing_settings()
+        raise BoxUploadError(
+            f"Box integration not properly configured. Missing settings: {', '.join(missing)}. "
+            f"Please set the required environment variables: SMTP_USERNAME, SMTP_PASSWORD"
+        )
+    
+    # Prepare email
+    subject = subject or DEFAULT_EMAIL_SUBJECT
+    body = body or DEFAULT_EMAIL_BODY
+    
+    # Ensure filename ends with .pdf
+    if not filename.lower().endswith('.pdf'):
+        filename = f"{filename}.pdf"
+    
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = config.sender_email
+    msg['To'] = config.box_email
+    msg['Subject'] = subject
+    
+    # Attach body
+    msg.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    pdf_buffer.seek(0)
+    pdf_data = pdf_buffer.read()
+    pdf_attachment = MIMEApplication(pdf_data, _subtype='pdf')
+    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
+    msg.attach(pdf_attachment)
+    
+    # Attempt to send with retry logic
+    last_error = None
+    for attempt in range(1, config.max_retry_attempts + 1):
+        try:
+            # Connect to SMTP server
+            if config.use_tls:
+                server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30)
+                server.starttls()
+            else:
+                server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30)
+            
+            # Login
+            server.login(config.smtp_username, config.smtp_password)
+            
+            # Send email
+            server.send_message(msg)
+            server.quit()
+            
+            # Success!
+            return True, f"PDF '{filename}' successfully uploaded to Box via email"
+            
+        except smtplib.SMTPAuthenticationError as e:
+            error_msg = f"SMTP authentication failed: {str(e)}"
+            raise BoxUploadError(error_msg)
+            
+        except smtplib.SMTPException as e:
+            last_error = f"SMTP error on attempt {attempt}/{config.max_retry_attempts}: {str(e)}"
+            print(f"Warning: {last_error}")
+            
+            # Don't retry on authentication errors
+            if "authentication" in str(e).lower():
+                raise BoxUploadError(f"SMTP authentication failed: {str(e)}")
+            
+            # Wait before retry (with exponential backoff)
+            if attempt < config.max_retry_attempts:
+                delay = config.retry_delay * (config.retry_backoff ** (attempt - 1))
+                print(f"Retrying in {delay:.1f} seconds...")
+                time.sleep(delay)
+                
+        except Exception as e:
+            last_error = f"Unexpected error on attempt {attempt}/{config.max_retry_attempts}: {str(e)}"
+            print(f"Warning: {last_error}")
+            
+            # Wait before retry (with exponential backoff)
+            if attempt < config.max_retry_attempts:
+                delay = config.retry_delay * (config.retry_backoff ** (attempt - 1))
+                print(f"Retrying in {delay:.1f} seconds...")
+                time.sleep(delay)
+    
+    # All retries failed
+    error_msg = f"Failed to upload PDF to Box after {config.max_retry_attempts} attempts. Last error: {last_error}"
+    raise BoxUploadError(error_msg)
