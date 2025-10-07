@@ -5,26 +5,25 @@ This module provides functionality to send PDF reports to Box via email upload a
 Includes error handling for various failure scenarios and integration with the logging system.
 
 Features:
-- Email sending to Box upload addresses
+- Email sending to Box upload addresses with secure SMTP
 - Separate handling for OHI and HPV bots
 - Comprehensive error handling
 - Integration with upload_logs.py for tracking
 - Network timeout handling
 - Retry logic for transient failures
+- SSL/TLS support for secure connections
+- Secure password handling
 """
 
-import smtplib
 import json
 import os
 import time
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from typing import Optional, Dict, Any
 import io
+import logging
 
 from upload_logs import BoxUploadLogger
+from email_utils import SecureEmailSender, EmailAuthenticationError, EmailConnectionError, EmailSendError
 
 
 class BoxIntegrationError(Exception):
@@ -70,7 +69,31 @@ class BoxUploader:
         self.bot_type = bot_type.upper()
         self.config = self._load_config(config_path)
         self.logger = BoxUploadLogger(self.bot_type, 
-                                      log_directory=self.config['logging']['log_directory'])
+                                      log_directory=self.config['logging'].get('log_directory', 'logs'))
+        
+        # Initialize secure email sender if email_config exists
+        self.email_sender = None
+        if 'email_config' in self.config:
+            try:
+                # Create a simple logger for email_utils
+                email_logger = logging.getLogger(f'email_sender_{self.bot_type.lower()}')
+                email_logger.setLevel(logging.INFO)
+                
+                self.email_sender = SecureEmailSender(
+                    self.config['email_config'],
+                    logger=email_logger
+                )
+                self.logger.log_warning(
+                    'EMAIL_CONFIG',
+                    'Using new email_config for secure email sending',
+                    {'smtp_server': self.config['email_config']['smtp_server']}
+                )
+            except Exception as e:
+                self.logger.log_error(
+                    'EMAIL_SENDER_INIT',
+                    f'Failed to initialize SecureEmailSender: {str(e)}',
+                    {'bot_type': self.bot_type}
+                )
         
         # Validate configuration
         self._validate_config()
@@ -98,7 +121,7 @@ class BoxUploader:
         Raises:
             BoxIntegrationError: If configuration is invalid
         """
-        required_keys = ['box_upload', 'logging', 'email']
+        required_keys = ['box_upload', 'logging']
         
         for key in required_keys:
             if key not in self.config:
@@ -114,13 +137,31 @@ class BoxUploader:
         
         # Check email settings (only if enabled)
         if self.config['box_upload'].get('enabled', False):
-            email_config = self.config['email']
-            if not email_config.get('smtp_server') or not email_config.get('sender_email'):
+            # First check for new email_config
+            if 'email_config' in self.config:
+                email_config = self.config['email_config']
+                if not email_config.get('smtp_server') or not email_config.get('from_email'):
+                    self.logger.log_warning(
+                        'CONFIG_WARNING',
+                        'Email settings incomplete. Box upload may fail.',
+                        {'smtp_server': email_config.get('smtp_server'),
+                         'from_email': email_config.get('from_email')}
+                    )
+            # Fallback to old email config
+            elif 'email' in self.config:
+                email_config = self.config['email']
+                if not email_config.get('smtp_server') or not email_config.get('sender_email'):
+                    self.logger.log_warning(
+                        'CONFIG_WARNING',
+                        'Email settings incomplete. Box upload disabled.',
+                        {'smtp_server': email_config.get('smtp_server'),
+                         'sender_email': email_config.get('sender_email')}
+                    )
+            else:
                 self.logger.log_warning(
                     'CONFIG_WARNING',
-                    'Email settings incomplete. Box upload disabled.',
-                    {'smtp_server': email_config.get('smtp_server'),
-                     'sender_email': email_config.get('sender_email')}
+                    'No email configuration found. Box upload disabled.',
+                    {}
                 )
     
     def _get_box_email(self) -> str:
@@ -130,6 +171,18 @@ class BoxUploader:
         Returns:
             Box upload email address
         """
+        # First check new email_config for Box email addresses
+        if 'email_config' in self.config:
+            if self.bot_type == 'OHI':
+                box_email = self.config['email_config'].get('ohi_box_email')
+                if box_email:
+                    return box_email
+            elif self.bot_type == 'HPV':
+                box_email = self.config['email_config'].get('hpv_box_email')
+                if box_email:
+                    return box_email
+        
+        # Fallback to box_upload section
         if self.bot_type == 'OHI':
             return self.config['box_upload']['ohi_email']
         elif self.bot_type == 'HPV':
@@ -230,16 +283,24 @@ class BoxUploader:
                 
                 return True
                 
-            except smtplib.SMTPServerDisconnected as e:
-                last_error = NetworkTimeoutError(f"SMTP server disconnected: {e}")
-                self.logger.log_warning(
-                    'NETWORK_ERROR',
+            except EmailAuthenticationError as e:
+                last_error = e
+                self.logger.log_error(
+                    'AUTHENTICATION_ERROR',
                     f'Attempt {attempt}/{max_retries} failed: {str(e)}',
                     {'student_name': student_name, 'filename': filename}
                 )
                 
-            except smtplib.SMTPException as e:
-                last_error = EmailDeliveryError(f"SMTP error: {e}")
+            except EmailConnectionError as e:
+                last_error = NetworkTimeoutError(f"Connection error: {e}")
+                self.logger.log_warning(
+                    'CONNECTION_ERROR',
+                    f'Attempt {attempt}/{max_retries} failed: {str(e)}',
+                    {'student_name': student_name, 'filename': filename}
+                )
+                
+            except EmailSendError as e:
+                last_error = EmailDeliveryError(f"Send error: {e}")
                 self.logger.log_warning(
                     'EMAIL_ERROR',
                     f'Attempt {attempt}/{max_retries} failed: {str(e)}',
@@ -271,7 +332,7 @@ class BoxUploader:
     def _send_email(self, student_name: str, pdf_buffer: io.BytesIO, 
                    filename: str, recipient: str) -> None:
         """
-        Send email with PDF attachment.
+        Send email with PDF attachment using secure SMTP.
         
         Args:
             student_name: Name of the student
@@ -280,18 +341,14 @@ class BoxUploader:
             recipient: Email recipient address
             
         Raises:
-            smtplib.SMTPException: If email sending fails
+            EmailAuthenticationError: If authentication fails
+            EmailConnectionError: If connection fails
+            EmailSendError: If email sending fails
         """
-        email_config = self.config['email']
-        
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = email_config['sender_email']
-        msg['To'] = recipient
-        msg['Subject'] = f'MI Assessment Report - {student_name} - {self.bot_type}'
-        
-        # Add body
-        body = f"""
+        # Use new email_config if available, otherwise fallback to old config
+        if self.email_sender:
+            # Use SecureEmailSender
+            body = f"""
 MI Assessment Report
 
 Bot Type: {self.bot_type}
@@ -300,29 +357,65 @@ Filename: {filename}
 
 This is an automated upload to Box.
 """
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # Attach PDF
-        pdf_buffer.seek(0)
-        attachment = MIMEBase('application', 'pdf')
-        attachment.set_payload(pdf_buffer.read())
-        encoders.encode_base64(attachment)
-        attachment.add_header('Content-Disposition', f'attachment; filename={filename}')
-        msg.attach(attachment)
-        
-        # Send email
-        with smtplib.SMTP(email_config['smtp_server'], 
-                         email_config['smtp_port'], 
-                         timeout=30) as server:
-            if email_config.get('use_tls', True):
-                server.starttls()
             
-            # Login only if credentials provided
-            if email_config.get('sender_password'):
-                server.login(email_config['sender_email'], 
-                           email_config['sender_password'])
+            self.email_sender.send_email_with_attachment(
+                recipient=recipient,
+                subject=f'MI Assessment Report - {student_name} - {self.bot_type}',
+                body=body,
+                attachment_buffer=pdf_buffer,
+                attachment_filename=filename,
+                attachment_type='application/pdf',
+                timeout=30
+            )
+        else:
+            # Fallback to old method for backward compatibility
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            from email.mime.base import MIMEBase
+            from email import encoders
             
-            server.send_message(msg)
+            email_config = self.config['email']
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = email_config['sender_email']
+            msg['To'] = recipient
+            msg['Subject'] = f'MI Assessment Report - {student_name} - {self.bot_type}'
+            
+            # Add body
+            body = f"""
+MI Assessment Report
+
+Bot Type: {self.bot_type}
+Student: {student_name}
+Filename: {filename}
+
+This is an automated upload to Box.
+"""
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Attach PDF
+            pdf_buffer.seek(0)
+            attachment = MIMEBase('application', 'pdf')
+            attachment.set_payload(pdf_buffer.read())
+            encoders.encode_base64(attachment)
+            attachment.add_header('Content-Disposition', f'attachment; filename={filename}')
+            msg.attach(attachment)
+            
+            # Send email
+            with smtplib.SMTP(email_config['smtp_server'], 
+                             email_config['smtp_port'], 
+                             timeout=30) as server:
+                if email_config.get('use_tls', True):
+                    server.starttls()
+                
+                # Login only if credentials provided
+                if email_config.get('sender_password'):
+                    server.login(email_config['sender_email'], 
+                               email_config['sender_password'])
+                
+                server.send_message(msg)
     
     def test_connection(self) -> Dict[str, Any]:
         """
@@ -335,38 +428,65 @@ This is an automated upload to Box.
             'box_upload_enabled': self.config['box_upload'].get('enabled', False),
             'bot_type': self.bot_type,
             'box_email': self._get_box_email(),
-            'smtp_configured': bool(self.config['email'].get('smtp_server')),
-            'connection_test': 'not_attempted'
+            'smtp_configured': False,
+            'connection_test': 'not_attempted',
+            'using_email_config': 'email_config' in self.config
         }
         
         if not results['box_upload_enabled']:
             results['message'] = 'Box upload is disabled in configuration'
             return results
         
-        if not results['smtp_configured']:
-            results['message'] = 'SMTP server not configured'
-            return results
-        
-        # Try to connect to SMTP server
-        try:
-            email_config = self.config['email']
-            with smtplib.SMTP(email_config['smtp_server'], 
-                            email_config['smtp_port'], 
-                            timeout=10) as server:
-                if email_config.get('use_tls', True):
-                    server.starttls()
-                
-                results['connection_test'] = 'success'
-                results['message'] = 'SMTP connection successful'
-        except Exception as e:
-            results['connection_test'] = 'failed'
-            results['message'] = f'SMTP connection failed: {str(e)}'
+        # Check which email config is being used
+        if self.email_sender:
+            # Use new SecureEmailSender
+            results['smtp_configured'] = True
+            results['message'] = 'Using secure email configuration'
             
-            self.logger.log_error(
-                'CONNECTION_TEST_FAILED',
-                str(e),
-                {'smtp_server': email_config['smtp_server']}
-            )
+            try:
+                test_results = self.email_sender.test_connection()
+                results['connection_test'] = test_results['connection']
+                results['authentication_test'] = test_results['authentication']
+                results['message'] = test_results['message']
+            except Exception as e:
+                results['connection_test'] = 'failed'
+                results['message'] = f'Connection test failed: {str(e)}'
+                self.logger.log_error(
+                    'CONNECTION_TEST_FAILED',
+                    str(e),
+                    {'smtp_server': self.config['email_config']['smtp_server']}
+                )
+        elif 'email' in self.config:
+            # Fallback to old method
+            email_config = self.config['email']
+            results['smtp_configured'] = bool(email_config.get('smtp_server'))
+            
+            if not results['smtp_configured']:
+                results['message'] = 'SMTP server not configured'
+                return results
+            
+            # Try to connect to SMTP server
+            try:
+                import smtplib
+                with smtplib.SMTP(email_config['smtp_server'], 
+                                email_config['smtp_port'], 
+                                timeout=10) as server:
+                    if email_config.get('use_tls', True):
+                        server.starttls()
+                    
+                    results['connection_test'] = 'success'
+                    results['message'] = 'SMTP connection successful (legacy config)'
+            except Exception as e:
+                results['connection_test'] = 'failed'
+                results['message'] = f'SMTP connection failed: {str(e)}'
+                
+                self.logger.log_error(
+                    'CONNECTION_TEST_FAILED',
+                    str(e),
+                    {'smtp_server': email_config['smtp_server']}
+                )
+        else:
+            results['message'] = 'No email configuration found'
         
         return results
 
