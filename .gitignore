@@ -25,6 +25,13 @@ coverage.xml
 logs/
 /logs/
 
+# Keep git_logs directory
+!git_logs/
+!git_logs/*.log
+
+# Ignore rotated log files
+git_logs/*.log.*
+
 # Environment variables and secrets
 .env
 .env.local
