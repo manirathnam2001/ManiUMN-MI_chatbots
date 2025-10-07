@@ -33,13 +33,15 @@ Your task:
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
    - Examples of **how the provider could rephrase or improve** their questions, reflections, or affirmations.
 
-**Guidelines for Conversation:**
-- Play the patient role ONLY during the conversation.
-- Use realistic, conversational language (e.g., "I just don't know much about the HPV vaccine" or "I'm still young, why is this needed?").
-- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input.
-- Avoid giving the provider any hints or feedback until the end of the session.
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language (e.g., "I just don't know much about the HPV vaccine" or "I'm still young, why is this needed?")
+- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
-**Evaluation Focus:**
+**Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
@@ -67,13 +69,15 @@ Your task:
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
    - Examples of **how the provider could rephrase or improve** their questions, reflections, or affirmations.
 
-**Guidelines for Conversation:**
-- Play the patient role ONLY during the conversation.
-- Use realistic, conversational language (e.g., "I'm pretty busy with school" or "I haven't really thought about vaccines much").
-- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input.
-- Avoid giving the provider any hints or feedback until the end of the session.
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language (e.g., "I'm pretty busy with school" or "I haven't really thought about vaccines much")
+- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
-**Evaluation Focus:**
+**Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
@@ -101,13 +105,15 @@ Your task:
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
    - Examples of **how the provider could rephrase or improve** their questions, reflections, or affirmations.
 
-**Guidelines for Conversation:**
-- Play the patient role ONLY during the conversation.
-- Use realistic, conversational language (e.g., "My kids are still young" or "I want to understand the long-term effects").
-- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input.
-- Avoid giving the provider any hints or feedback until the end of the session.
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language (e.g., "My kids are still young" or "I want to understand the long-term effects")
+- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
-**Evaluation Focus:**
+**Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
@@ -135,13 +141,15 @@ Your task:
    - **Specific feedback**: what worked, what was missed, and suggestions for improvement.
    - Examples of **how the provider could rephrase or improve** their questions, reflections, or affirmations.
 
-**Guidelines for Conversation:**
-- Play the patient role ONLY during the conversation.
-- Use realistic, conversational language (e.g., "I've read some concerning things online" or "I prefer natural approaches").
-- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input.
-- Avoid giving the provider any hints or feedback until the end of the session.
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language (e.g., "I've read some concerning things online" or "I prefer natural approaches")
+- Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
-**Evaluation Focus:**
+**Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
 - **Acceptance:** Did they respect your autonomy, affirm your feelings, and reflect your statements?
@@ -198,6 +206,10 @@ if not student_name:
 # --- Set API key and initialize client ---
 os.environ["GROQ_API_KEY"] = api_key
 client = Groq()
+
+# --- Initialize session state ---
+from chat_utils import initialize_session_state
+initialize_session_state()
 
 # --- Step 1: Load Knowledge Document (MI Rubric) for RAG feedback ---
 # for multiple example rubrics inside the ohi_rubrics folder
@@ -293,7 +305,17 @@ if st.session_state.selected_persona is not None:
         st.session_state.feedback = None
 
     # --- Finish Session Button (Feedback with RAG) ---
-    if st.button("Finish Session & Get Feedback"):
+    # Only enable feedback button based on conversation state
+    from chat_utils import should_enable_feedback_button
+    
+    feedback_enabled = should_enable_feedback_button()
+    feedback_button_label = "Finish Session & Get Feedback"
+    
+    if not feedback_enabled:
+        if st.session_state.turn_count < 8:
+            st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
+        
+    if st.button(feedback_button_label, disabled=not feedback_enabled):
         # Get current UTC timestamp and user login
         current_timestamp = get_formatted_utc_time()
         user_login = "manirathnam2001"
@@ -370,36 +392,10 @@ if st.session_state.selected_persona is not None:
             st.error(f"Unexpected error: {e}")
             st.info("There was an issue generating the PDF. Please try again.")
         
-    # --- User Input ---
-    user_prompt = st.chat_input("Your response...")
-    
-    if user_prompt:
-        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-        st.chat_message("user").markdown(user_prompt)
-
-        turn_instruction = {
-            "role": "system",
-            "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
-        }
-        messages = [
-            {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
-            turn_instruction,
-            *st.session_state.chat_history
-        ]
-
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages
-        )
-        assistant_response = response.choices[0].message.content
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-        with st.chat_message("assistant"):
-            st.markdown(assistant_response)
+    # --- User Input (Using improved chat_utils) ---
+    from chat_utils import handle_chat_input
+    handle_chat_input(PERSONAS, client)
 
     # Add a button to start a new conversation with a different persona
-    if st.button("Start New Conversation"):
-        st.session_state.selected_persona = None
-        st.session_state.chat_history = []
-        st.session_state.feedback = None  # Clear feedback when starting new conversation
-        st.rerun()
+    from chat_utils import handle_new_conversation_button
+    handle_new_conversation_button()

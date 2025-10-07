@@ -11,12 +11,90 @@ from scoring_utils import validate_student_name
 from pdf_utils import generate_pdf_report
 
 
+def detect_conversation_ending(chat_history, turn_count):
+    """
+    Detect if the conversation should naturally end.
+    
+    Args:
+        chat_history: List of chat messages
+        turn_count: Current number of turns
+        
+    Returns:
+        bool: True if conversation should end, False otherwise
+    """
+    # Check if we've reached reasonable conversation length (8-12 turns)
+    if turn_count >= 12:
+        return True
+    
+    # Check last assistant message for natural ending phrases
+    if len(chat_history) > 0:
+        last_message = chat_history[-1].get('content', '').lower()
+        
+        # Natural ending phrases that indicate conversation closure
+        ending_phrases = [
+            'thank you for',
+            'best of luck',
+            'take care',
+            'good luck',
+            'feel free to reach out',
+            'i appreciate your time',
+            'have a good day',
+            'talk to you later',
+            'see you',
+            'goodbye',
+            'bye',
+        ]
+        
+        if any(phrase in last_message for phrase in ending_phrases):
+            return True
+    
+    return False
+
+
+def validate_response_role(response_content):
+    """
+    Validate that the response maintains patient role and doesn't switch to evaluator.
+    
+    Args:
+        response_content: The assistant's response text
+        
+    Returns:
+        tuple: (is_valid, cleaned_response) - is_valid is True if role is maintained
+    """
+    # Check for evaluator/feedback mode indicators
+    evaluator_indicators = [
+        'feedback report',
+        'evaluation:',
+        'score:',
+        'rubric category',
+        'criteria met',
+        'partially met',
+        'not met',
+        'performance evaluation',
+        'strengths:',
+        'areas for improvement',
+        'suggestions for improvement',
+    ]
+    
+    response_lower = response_content.lower()
+    
+    # If response contains evaluator indicators, it's breaking role
+    if any(indicator in response_lower for indicator in evaluator_indicators):
+        return False, response_content
+    
+    return True, response_content
+
+
 def initialize_session_state():
     """Initialize common session state variables."""
     if "selected_persona" not in st.session_state:
         st.session_state.selected_persona = None
     if "feedback" not in st.session_state:
         st.session_state.feedback = None
+    if "conversation_state" not in st.session_state:
+        st.session_state.conversation_state = "active"  # active or ended
+    if "turn_count" not in st.session_state:
+        st.session_state.turn_count = 0
 
 
 def display_persona_selection(personas_dict, app_title):
@@ -46,6 +124,8 @@ def display_persona_selection(personas_dict, app_title):
         if st.button("Start Conversation"):
             st.session_state.selected_persona = selected
             st.session_state.chat_history = []
+            st.session_state.conversation_state = "active"
+            st.session_state.turn_count = 0
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": f"Hello! I'm {selected}, nice to meet you today."
@@ -178,15 +258,46 @@ def handle_pdf_generation(student_name, session_type, app_name):
 def handle_chat_input(personas_dict, client):
     """Handle user chat input and AI response."""
     if st.session_state.selected_persona is not None:
+        # Check conversation state
+        if st.session_state.conversation_state == "ended":
+            st.info("💬 This conversation has ended. Please click 'Finish Session & Get Feedback' to receive your evaluation, or start a new conversation.")
+            return
+            
         user_prompt = st.chat_input("Your response...")
 
         if user_prompt:
+            # Block feedback requests during conversation
+            feedback_request_phrases = [
+                'feedback',
+                'evaluate',
+                'how did i do',
+                'rate my performance',
+                'score',
+                'assessment',
+            ]
+            
+            if any(phrase in user_prompt.lower() for phrase in feedback_request_phrases):
+                st.warning("⏸️ Feedback will be provided after the conversation ends. Please continue the conversation naturally.")
+                return
+            
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             st.chat_message("user").markdown(user_prompt)
+            
+            # Increment turn count
+            st.session_state.turn_count += 1
 
+            # Enhanced turn instruction with conciseness and role consistency
             turn_instruction = {
                 "role": "system",
-                "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
+                "content": """Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
+
+CRITICAL INSTRUCTIONS:
+- Keep your responses CONCISE (2-3 sentences maximum)
+- Stay in character as the PATIENT throughout the entire conversation
+- DO NOT provide feedback, evaluation, or scores during the conversation
+- DO NOT switch to evaluator role until explicitly asked at the end
+- Respond naturally as the patient would, showing emotions and reactions
+- Wait for the conversation to naturally conclude before any evaluation"""
             }
             messages = [
                 {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
@@ -196,13 +307,28 @@ def handle_chat_input(personas_dict, client):
             
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=messages
+                messages=messages,
+                max_tokens=150,  # Limit response length to enforce conciseness
+                temperature=0.7
             )
             assistant_response = response.choices[0].message.content
+            
+            # Validate role consistency
+            is_valid_role, cleaned_response = validate_response_role(assistant_response)
+            
+            if not is_valid_role:
+                # If bot breaks role, provide a generic patient response instead
+                assistant_response = "I appreciate you taking the time to talk with me. Is there anything else you'd like to discuss?"
+                st.session_state.conversation_state = "ended"
             
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
+            
+            # Check if conversation should end
+            if detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
+                st.session_state.conversation_state = "ended"
+                st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
 
 
 def handle_new_conversation_button():
@@ -211,4 +337,27 @@ def handle_new_conversation_button():
         st.session_state.selected_persona = None
         st.session_state.chat_history = []
         st.session_state.feedback = None  # Clear feedback when starting new conversation
+        st.session_state.conversation_state = "active"
+        st.session_state.turn_count = 0
         st.rerun()
+
+
+def should_enable_feedback_button():
+    """
+    Determine if the feedback button should be enabled.
+    
+    Returns:
+        bool: True if feedback can be requested, False otherwise
+    """
+    # Only enable feedback if:
+    # 1. A persona is selected
+    # 2. There's a conversation history with at least a few exchanges
+    # 3. The conversation has ended OR we have enough turns
+    if st.session_state.selected_persona is None:
+        return False
+    
+    if len(st.session_state.chat_history) < 4:  # At least 2 exchanges
+        return False
+    
+    # Enable if conversation ended or if sufficient turns have occurred
+    return st.session_state.conversation_state == "ended" or st.session_state.turn_count >= 8
