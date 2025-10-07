@@ -29,6 +29,13 @@ Your habits:
 - Rarely flosses
 - Uses mouthwash occasionally
 - Has some gingivitis concerns
+
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 """,
 
     "Bob": """
@@ -41,6 +48,13 @@ Your habits:
 - Never flosses
 - Doesn't use mouthwash
 - Has visible plaque buildup and bleeding gums
+
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 """,
 
     "Charles": """
@@ -53,6 +67,13 @@ Your habits:
 - Flosses daily
 - Uses prescription mouthwash
 - Interested in advanced dental care techniques
+
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- Use realistic, conversational language
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 """,
 
     "Diana": """
@@ -65,6 +86,12 @@ Your habits:
 - Flosses occasionally
 - Uses regular mouthwash
 - Resistant to changing routine
+
+**CRITICAL - Response Guidelines:**
+- **Keep ALL responses CONCISE - maximum 2-3 sentences per reply**
+- **Stay in patient role ONLY during the conversation - NO evaluation or feedback until the end**
+- **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
+- **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
 ## Use Chain-of-Thought Reasoning:
 For each reply:
@@ -209,6 +236,10 @@ client = Groq()
 # os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 # client = Groq()
 
+# --- Initialize session state ---
+from chat_utils import initialize_session_state
+initialize_session_state()
+
 # --- Step 1: Load Knowledge Document (MI Rubric) for RAG feedback ---
 # for multiple example rubrics inside the ohi_rubrics folder
 rubrics_dir = os.path.join(working_dir, "ohi_rubrics")
@@ -292,7 +323,17 @@ if "feedback" not in st.session_state:
   st.session_state.feedback = None
     
 # --- Finish Session Button (Feedback with RAG) ---
-if st.button("Finish Session & Get Feedback"):
+# Only enable feedback button based on conversation state
+from chat_utils import should_enable_feedback_button
+
+feedback_enabled = should_enable_feedback_button()
+feedback_button_label = "Finish Session & Get Feedback"
+
+if not feedback_enabled:
+    if st.session_state.turn_count < 8:
+        st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
+
+if st.button(feedback_button_label, disabled=not feedback_enabled):
     # Define current_timestamp at the beginning of this block
     current_timestamp = get_formatted_utc_time()
     user_login = "manirathnam2001"
@@ -368,36 +409,10 @@ if st.session_state.feedback is not None:
         st.error(f"Unexpected error: {e}")
         st.info("There was an issue generating the PDF. Please try again.")
 
-# --- Handle chat input ---
-if st.session_state.selected_persona is not None:
-    user_prompt = st.chat_input("Your response...")
-
-    if user_prompt:
-        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-        st.chat_message("user").markdown(user_prompt)
-
-        turn_instruction = {
-            "role": "system",
-            "content": "Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan."
-        }
-        messages = [
-            {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
-            turn_instruction,
-            *st.session_state.chat_history
-        ]
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages
-        )
-        assistant_response = response.choices[0].message.content
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-        with st.chat_message("assistant"):
-            st.markdown(assistant_response)
+# --- Handle chat input (Using improved chat_utils) ---
+from chat_utils import handle_chat_input
+handle_chat_input(PERSONAS, client)
 
 # Add a button to start a new conversation with a different persona
-if st.button("Start New Conversation"):
-    st.session_state.selected_persona = None
-    st.session_state.chat_history = []
-    st.session_state.feedback = None  # Clear feedback when starting new conversation
-    st.rerun()
+from chat_utils import handle_new_conversation_button
+handle_new_conversation_button()
