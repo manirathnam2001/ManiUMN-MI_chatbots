@@ -102,90 +102,44 @@ class BoxUploader:
         Raises:
             BoxIntegrationError: If configuration is invalid
         """
-        # Required keys - email_config is preferred, email is for backward compatibility
-        required_keys = ['box_upload', 'logging']
+        required_keys = ['box_upload', 'logging', 'email']
         
         for key in required_keys:
             if key not in self.config:
                 raise BoxIntegrationError(f"Missing required config section: {key}")
         
-        # Check that we have either email_config or email section
-        if 'email_config' not in self.config and 'email' not in self.config:
-            raise BoxIntegrationError("Missing email configuration. Need 'email_config' or 'email' section")
-        
-        # Check Box upload emails (now supporting environment variables)
+        # Check Box upload emails
         if self.bot_type == 'OHI':
-            ohi_email = os.environ.get('OHI_BOX_EMAIL')
-            if not ohi_email:
-                ohi_email = self.config.get('email_config', {}).get('ohi_box_email')
-            if not ohi_email:
-                ohi_email = self.config['box_upload'].get('ohi_email')
-            if not ohi_email:
+            if not self.config['box_upload'].get('ohi_email'):
                 raise BoxIntegrationError("OHI Box email not configured")
         elif self.bot_type == 'HPV':
-            hpv_email = os.environ.get('HPV_BOX_EMAIL')
-            if not hpv_email:
-                hpv_email = self.config.get('email_config', {}).get('hpv_box_email')
-            if not hpv_email:
-                hpv_email = self.config['box_upload'].get('hpv_email')
-            if not hpv_email:
+            if not self.config['box_upload'].get('hpv_email'):
                 raise BoxIntegrationError("HPV Box email not configured")
         
         # Check email settings (only if enabled)
-        # SecureEmailSender will handle validation of SMTP settings
         if self.config['box_upload'].get('enabled', False):
-            try:
-                # Try to get credentials to verify they're configured
-                self.email_sender.get_smtp_credentials()
-            except Exception as e:
+            email_config = self.config['email']
+            if not email_config.get('smtp_server') or not email_config.get('sender_email'):
                 self.logger.log_warning(
                     'CONFIG_WARNING',
-                    f'Email settings incomplete: {e}. Box upload may fail.',
-                    {'error': str(e)}
+                    'Email settings incomplete. Box upload disabled.',
+                    {'smtp_server': email_config.get('smtp_server'),
+                     'sender_email': email_config.get('sender_email')}
                 )
     
     def _get_box_email(self) -> str:
         """
         Get the Box upload email address for this bot type.
         
-        Priority:
-        1. Environment variables (OHI_BOX_EMAIL, HPV_BOX_EMAIL)
-        2. email_config section (ohi_box_email, hpv_box_email)
-        3. box_upload section (ohi_email, hpv_email)
-        
         Returns:
             Box upload email address
         """
-        box_email = None
-        
         if self.bot_type == 'OHI':
-            # Check environment variable first
-            box_email = os.environ.get('OHI_BOX_EMAIL')
-            # Fall back to email_config
-            if not box_email and 'email_config' in self.config:
-                box_email = self.config['email_config'].get('ohi_box_email')
-            # Fall back to box_upload
-            if not box_email:
-                box_email = self.config['box_upload'].get('ohi_email')
+            return self.config['box_upload']['ohi_email']
         elif self.bot_type == 'HPV':
-            # Check environment variable first
-            box_email = os.environ.get('HPV_BOX_EMAIL')
-            # Fall back to email_config
-            if not box_email and 'email_config' in self.config:
-                box_email = self.config['email_config'].get('hpv_box_email')
-            # Fall back to box_upload
-            if not box_email:
-                box_email = self.config['box_upload'].get('hpv_email')
+            return self.config['box_upload']['hpv_email']
         else:
             raise BoxIntegrationError(f"Unknown bot type: {self.bot_type}")
-        
-        if not box_email:
-            raise BoxIntegrationError(
-                f"Box email not configured for {self.bot_type}. "
-                f"Set {self.bot_type}_BOX_EMAIL environment variable or configure in config file."
-            )
-        
-        return box_email
     
     def _validate_pdf(self, pdf_buffer: io.BytesIO) -> bool:
         """

@@ -14,4 +14,3 @@ transformers
 wandb
 reportlab
 pytz
-python-dotenv

@@ -1,4 +1,5 @@
 {
+    "GROQ_API_KEY": "YOUR GROQ API KEY",
     "box_upload": {
         "ohi_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
         "hpv_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com",
@@ -8,9 +9,10 @@
         "smtp_server": "smtp.gmail.com",
         "smtp_port": 587,
         "smtp_use_ssl": true,
-        "connection_timeout": 30,
-        "retry_attempts": 3,
-        "retry_delay": 5
+        "smtp_username": "mogan014@umn.edu",
+        "smtp_app_password": "ynpx zorq rmof wssy",
+        "ohi_box_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
+        "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com"
     },
     "logging": {
         "log_directory": "git_logs",
@@ -21,5 +23,12 @@
         "log_file": "git_logs/box_uploads.log",
         "max_size": 10485760,
         "log_level": "INFO"
+    },
+    "email": {
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "",
+        "sender_password": "",
+        "use_tls": true
     }
 }
