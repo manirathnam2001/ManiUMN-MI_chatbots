@@ -114,7 +114,8 @@ class SecureEmailSender:
         Get SMTP server settings from config or environment variables.
         
         Returns:
-            Dictionary with smtp_server, smtp_port, and use_ssl settings
+            Dictionary with smtp_server, smtp_port, use_ssl, connection_timeout, 
+            retry_attempts, and retry_delay settings
             
         Raises:
             EmailConfigError: If settings cannot be determined
@@ -123,7 +124,10 @@ class SecureEmailSender:
         settings = {
             'smtp_server': 'smtp.gmail.com',
             'smtp_port': 587,
-            'use_ssl': True
+            'use_ssl': True,
+            'connection_timeout': 30,
+            'retry_attempts': 3,
+            'retry_delay': 5
         }
         
         # Check environment variables
@@ -133,6 +137,12 @@ class SecureEmailSender:
             settings['smtp_port'] = int(os.environ.get('SMTP_PORT'))
         if os.environ.get('SMTP_USE_SSL'):
             settings['use_ssl'] = os.environ.get('SMTP_USE_SSL').lower() == 'true'
+        if os.environ.get('CONNECTION_TIMEOUT'):
+            settings['connection_timeout'] = int(os.environ.get('CONNECTION_TIMEOUT'))
+        if os.environ.get('RETRY_ATTEMPTS'):
+            settings['retry_attempts'] = int(os.environ.get('RETRY_ATTEMPTS'))
+        if os.environ.get('RETRY_DELAY'):
+            settings['retry_delay'] = int(os.environ.get('RETRY_DELAY'))
         
         # Override with config if present
         if 'email_config' in self.config:
@@ -140,6 +150,9 @@ class SecureEmailSender:
             settings['smtp_server'] = email_config.get('smtp_server', settings['smtp_server'])
             settings['smtp_port'] = email_config.get('smtp_port', settings['smtp_port'])
             settings['use_ssl'] = email_config.get('smtp_use_ssl', settings['use_ssl'])
+            settings['connection_timeout'] = email_config.get('connection_timeout', settings['connection_timeout'])
+            settings['retry_attempts'] = email_config.get('retry_attempts', settings['retry_attempts'])
+            settings['retry_delay'] = email_config.get('retry_delay', settings['retry_delay'])
         elif 'email' in self.config:
             email_config = self.config['email']
             settings['smtp_server'] = email_config.get('smtp_server', settings['smtp_server'])
@@ -340,24 +353,35 @@ def send_box_upload_email(config: Dict[str, Any],
     
     # Determine recipient email
     bot_type = bot_type.upper()
-    if 'email_config' in config:
+    recipient = None
+    
+    # Check environment variables first
+    if bot_type == 'OHI':
+        recipient = os.environ.get('OHI_BOX_EMAIL')
+    elif bot_type == 'HPV':
+        recipient = os.environ.get('HPV_BOX_EMAIL')
+    else:
+        raise ValueError(f"Unknown bot type: {bot_type}")
+    
+    # Fall back to config if env var not set
+    if not recipient and 'email_config' in config:
         if bot_type == 'OHI':
             recipient = config['email_config'].get('ohi_box_email')
         elif bot_type == 'HPV':
             recipient = config['email_config'].get('hpv_box_email')
-        else:
-            raise ValueError(f"Unknown bot type: {bot_type}")
-    else:
-        # Fallback to box_upload config
+    
+    # Fall back to box_upload config
+    if not recipient and 'box_upload' in config:
         if bot_type == 'OHI':
             recipient = config['box_upload'].get('ohi_email')
         elif bot_type == 'HPV':
             recipient = config['box_upload'].get('hpv_email')
-        else:
-            raise ValueError(f"Unknown bot type: {bot_type}")
     
     if not recipient:
-        raise EmailConfigError(f"Box email not configured for {bot_type}")
+        raise EmailConfigError(
+            f"Box email not configured for {bot_type}. "
+            f"Set {bot_type}_BOX_EMAIL environment variable or configure in config file."
+        )
     
     # Create email content
     subject = f'MI Assessment Report - {student_name} - {bot_type}'
