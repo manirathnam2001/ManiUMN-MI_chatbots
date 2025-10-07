@@ -53,17 +53,130 @@ To run this app on your own computer, follow these steps:
    ```bash
    git clone https://github.com/anwesha-umn/MI_chatbots.git
    cd MI_chatbots
+   ```
 
 ### How to run it on your own machine
 
 2. Install the requirements 
 
-   ```
+   ```bash
    $ pip install -r requirements.txt
    ```
 
 3. Run the app on local machine 
 
-   ```
+   ```bash
    $ streamlit run HPV.py
    ```
+
+---
+
+## 📧 Email Configuration (For Box Upload Feature)
+
+The application can automatically upload PDF reports to Box via email. To enable this feature, you need to configure SMTP settings.
+
+### SMTP Configuration
+
+The SMTP settings are configured in `config.json` under the `email_config` section:
+
+```json
+{
+  "email_config": {
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_ssl": true,
+    "smtp_user": "your-email@umn.edu",
+    "smtp_password": "PLACEHOLDER",
+    "ohi_box_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
+    "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com"
+  }
+}
+```
+
+### Setting Up Environment Variables
+
+**For security reasons, SMTP passwords should never be stored in config files.** Instead, use environment variables:
+
+#### On Linux/Mac:
+```bash
+export SMTP_PASSWORD="your-app-password"
+```
+
+To make it permanent, add it to your `~/.bashrc` or `~/.bash_profile`:
+```bash
+echo 'export SMTP_PASSWORD="your-app-password"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### On Windows (Command Prompt):
+```cmd
+set SMTP_PASSWORD=your-app-password
+```
+
+#### On Windows (PowerShell):
+```powershell
+$env:SMTP_PASSWORD="your-app-password"
+```
+
+To make it permanent on Windows, add it as a system environment variable:
+1. Search for "Environment Variables" in Windows settings
+2. Click "New" under User variables
+3. Variable name: `SMTP_PASSWORD`
+4. Variable value: Your app password
+
+### Gmail App Password Setup
+
+If using Gmail, you need to create an App Password:
+
+1. **Enable 2-Factor Authentication** on your Google account
+   - Go to [Google Account Security](https://myaccount.google.com/security)
+   - Enable 2-Step Verification
+
+2. **Generate an App Password**
+   - Go to [App Passwords](https://myaccount.google.com/apppasswords)
+   - Select "Mail" and "Other (Custom name)"
+   - Enter "MI Chatbots" as the name
+   - Click "Generate"
+   - Copy the 16-character password
+
+3. **Set the environment variable** with the generated App Password
+   ```bash
+   export SMTP_PASSWORD="xxxx xxxx xxxx xxxx"
+   ```
+
+### Testing Email Configuration
+
+Test your email configuration:
+
+```bash
+python3 email_config.py
+```
+
+This will verify:
+- Configuration file loads correctly
+- Box email addresses are configured
+- Environment variable is set
+- SMTP connection works
+
+### Enabling Box Upload
+
+To enable automatic Box uploads:
+
+1. Set up email configuration (above)
+2. Edit `config.json` and set `box_upload.enabled` to `true`:
+   ```json
+   {
+     "box_upload": {
+       "enabled": true
+     }
+   }
+   ```
+
+### Security Best Practices
+
+- ✅ **DO** use environment variables for passwords
+- ✅ **DO** use Gmail App Passwords (not your main password)
+- ✅ **DO** keep `config.json` with placeholder values in version control
+- ❌ **DON'T** commit real passwords to version control
+- ❌ **DON'T** share your App Password with others
+- ❌ **DON'T** use your main email password

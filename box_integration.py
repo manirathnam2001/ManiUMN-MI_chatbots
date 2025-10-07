@@ -26,6 +26,14 @@ import io
 
 from upload_logs import BoxUploadLogger
 
+# Try to import email_config for secure credential handling
+try:
+    from email_config import EmailConfig, EmailConfigError
+    EMAIL_CONFIG_AVAILABLE = True
+except ImportError:
+    EMAIL_CONFIG_AVAILABLE = False
+    EmailConfigError = Exception
+
 
 class BoxIntegrationError(Exception):
     """Base exception for Box integration errors."""
@@ -71,6 +79,18 @@ class BoxUploader:
         self.config = self._load_config(config_path)
         self.logger = BoxUploadLogger(self.bot_type, 
                                       log_directory=self.config['logging']['log_directory'])
+        
+        # Try to use new email_config module if available
+        self.email_config = None
+        if EMAIL_CONFIG_AVAILABLE and 'email_config' in self.config:
+            try:
+                self.email_config = EmailConfig(config_path)
+            except EmailConfigError as e:
+                self.logger.log_warning(
+                    'EMAIL_CONFIG_ERROR',
+                    f'Failed to load email_config, falling back to legacy config: {e}',
+                    {'bot_type': self.bot_type}
+                )
         
         # Validate configuration
         self._validate_config()
@@ -282,6 +302,29 @@ class BoxUploader:
         Raises:
             smtplib.SMTPException: If email sending fails
         """
+        # Use new email_config module if available
+        if self.email_config:
+            subject = f'MI Assessment Report - {student_name} - {self.bot_type}'
+            body = f"""
+MI Assessment Report
+
+Bot Type: {self.bot_type}
+Student: {student_name}
+Filename: {filename}
+
+This is an automated upload to Box.
+"""
+            self.email_config.send_email(
+                recipient=recipient,
+                subject=subject,
+                body=body,
+                attachment_data=pdf_buffer,
+                attachment_filename=filename,
+                attachment_type='application/pdf'
+            )
+            return
+        
+        # Fall back to legacy email configuration
         email_config = self.config['email']
         
         # Create message
