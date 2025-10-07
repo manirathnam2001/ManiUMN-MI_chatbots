@@ -21,6 +21,10 @@ coverage.xml
 *.tmp
 *.log
 
+# Log directories
+logs/
+/logs/
+
 # OS generated files
 .DS_Store
 .DS_Store?
