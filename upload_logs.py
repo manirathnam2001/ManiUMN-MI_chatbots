@@ -510,9 +510,10 @@ class LogAnalyzer:
                     if filename.startswith(f"box_uploads_{bot_type.lower()}_") and filename.endswith(".log"):
                         # Extract date from filename
                         # Format: box_uploads_{bot_type}_{YYYY-MM-DD}.log
+                        # After splitting by '_', we have: ['box', 'uploads', 'ohi', 'YYYY-MM-DD']
                         parts = filename.replace('.log', '').split('_')
-                        if len(parts) >= 3:
-                            file_date_str = '_'.join(parts[-3:])  # Get YYYY-MM-DD
+                        if len(parts) >= 4:
+                            file_date_str = parts[-1]  # Get YYYY-MM-DD (last part)
                             try:
                                 # Check if this file is older than cutoff
                                 if file_date_str < cutoff_date_str:
