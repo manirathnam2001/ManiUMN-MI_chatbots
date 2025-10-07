@@ -1,1 +1,22 @@
-{"GROQ_API_KEY": "YOUR GROQ API KEY"}
+{
+    "GROQ_API_KEY": "YOUR GROQ API KEY",
+    "box_upload": {
+        "ohi_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
+        "hpv_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com",
+        "enabled": false
+    },
+    "logging": {
+        "log_directory": "logs",
+        "max_log_size_mb": 10,
+        "backup_count": 5,
+        "cleanup_days": 90,
+        "enable_monitoring": true
+    },
+    "email": {
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "",
+        "sender_password": "",
+        "use_tls": true
+    }
+}
