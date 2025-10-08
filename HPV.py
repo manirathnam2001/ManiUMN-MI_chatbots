@@ -32,7 +32,7 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-from time_utils import get_formatted_utc_time
+from time_utils import get_current_utc_time
 from pdf_utils import generate_pdf_report
 from feedback_template import FeedbackFormatter, FeedbackValidator
 from scoring_utils import validate_student_name
@@ -342,7 +342,7 @@ if st.session_state.selected_persona is not None:
         
     if st.button(feedback_button_label, disabled=not feedback_enabled):
         # Get current timestamp and bot name
-        current_timestamp = get_formatted_utc_time()
+        current_timestamp = get_current_utc_time()
         evaluator = "HPV Assessment Bot"
         
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
