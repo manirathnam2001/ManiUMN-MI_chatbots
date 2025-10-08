@@ -38,6 +38,23 @@ def _get_performance_level(percentage: float) -> str:
         return "Needs Improvement"
 
 
+def _format_markdown_to_html(text: str) -> str:
+    """Convert markdown bold (**text**) to HTML bold (<b>text</b>) for PDF rendering.
+    
+    Args:
+        text: Text with markdown formatting
+        
+    Returns:
+        Text with HTML bold tags suitable for ReportLab Paragraph
+    """
+    # Replace **text** with <b>text</b>
+    # Use regex to handle multiple occurrences
+    import re
+    # Match **text** but not *** (which might be a separator)
+    text = re.sub(r'\*\*([^\*]+?)\*\*', r'<b>\1</b>', text)
+    return text
+
+
 def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="HPV Vaccine"):
     """
     Generate a standardized PDF report with consistent MI feedback formatting.
@@ -139,16 +156,29 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         try:
             score_breakdown = MIScorer.get_score_breakdown(clean_feedback)
 
-            # Table construction (unchanged)
+            # Table construction with Paragraph wrapping for feedback column
             headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
             data = [headers]
+            
+            # Create style for table cell paragraphs with word wrapping
+            cell_style = ParagraphStyle(
+                'TableCell',
+                parent=styles['Normal'],
+                fontSize=9,
+                leading=11
+            )
+            
             for component, details in score_breakdown['components'].items():
+                # Wrap feedback text in Paragraph for word wrapping
+                feedback_text = details['feedback']
+                feedback_para = Paragraph(feedback_text, cell_style)
+                
                 data.append([
                     component.title(),
                     details['status'],
                     f"{details['score']:.1f}",
                     f"{details['max_score']:.1f}",
-                    details['feedback'][:80] + "..." if len(details['feedback']) > 80 else details['feedback']
+                    feedback_para
                 ])
             data.append([
                 'TOTAL SCORE',
@@ -233,7 +263,9 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         if suggestions:
             for suggestion in suggestions:
                 clean_suggestion = FeedbackValidator.sanitize_special_characters(suggestion)
-                elements.append(Paragraph(f"• {clean_suggestion}", suggestion_style))
+                # Convert markdown bold to HTML bold for proper PDF rendering
+                formatted_suggestion = _format_markdown_to_html(clean_suggestion)
+                elements.append(Paragraph(f"• {formatted_suggestion}", suggestion_style))
         else:
             # Fallback: show raw feedback content after component analysis
             feedback_lines = clean_feedback.split('\n')
@@ -241,7 +273,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 line = line.strip()
                 if line and not any(comp in line.upper() for comp in MIScorer.COMPONENTS.keys()):
                     if not line.startswith('Session Feedback') and not line.startswith('Evaluation Timestamp'):
-                        elements.append(Paragraph(line, suggestion_style))
+                        formatted_line = _format_markdown_to_html(line)
+                        elements.append(Paragraph(formatted_line, suggestion_style))
     else:
         elements.append(Paragraph("No suggestions available (no user responses were given, so no evaluation was performed).", styles['Normal']))
 
