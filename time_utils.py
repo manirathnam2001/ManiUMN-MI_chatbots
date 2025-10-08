@@ -16,10 +16,19 @@ from datetime import datetime
 import pytz
 
 def get_formatted_utc_time():
-    """Returns current time in Minnesota timezone (America/Chicago) in YYYY-MM-DD HH:MM:SS format"""
+    """Returns current time in Minnesota timezone (America/Chicago) in YYYY-MM-DD HH:MM:SS format
+    
+    Note: Despite the function name, this returns Minnesota time for backward compatibility.
+    The timestamp is properly localized to US/Central (America/Chicago) timezone.
+    """
     minnesota_tz = pytz.timezone('America/Chicago')
     mn_time = datetime.now(minnesota_tz)
     return mn_time.strftime("%Y-%m-%d %H:%M:%S")
+
+def get_current_utc_time():
+    """Returns current time in UTC timezone in YYYY-MM-DD HH:MM:SS format"""
+    utc_time = datetime.now(pytz.UTC)
+    return utc_time.strftime("%Y-%m-%d %H:%M:%S")
 
 def convert_to_minnesota_time(utc_time_str):
     """Convert UTC time string to Minnesota timezone.

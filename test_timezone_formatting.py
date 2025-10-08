@@ -62,7 +62,7 @@ def test_minnesota_timezone():
 
 
 def test_feedback_formatting_consistency():
-    """Test that display and PDF formatting are consistent."""
+    """Test that display and PDF formatting work correctly."""
     print("\nTesting feedback formatting consistency...")
     
     from feedback_template import FeedbackFormatter
@@ -71,28 +71,29 @@ def test_feedback_formatting_consistency():
     timestamp = "2025-10-06 14:30:00"
     evaluator = "test_evaluator"
     
-    # Test display format
+    # Test display format - shows only core feedback content
     display_format = FeedbackFormatter.format_feedback_for_display(feedback, timestamp, evaluator)
-    print("  Display format:")
+    print("  Display format (core feedback only):")
     print("    " + display_format.replace("\n", "\n    "))
     
-    # Test PDF format
+    # Test PDF format - includes headers
     pdf_format = FeedbackFormatter.format_feedback_for_pdf(feedback, timestamp, evaluator)
-    print("\n  PDF format:")
+    print("\n  PDF format (with headers):")
     print("    " + pdf_format.replace("\n", "\n    "))
     
-    # Verify both formats are identical
-    assert display_format == pdf_format, "Display and PDF formats should be identical"
+    # Display format should contain only the feedback content
+    assert feedback in display_format, "Display format should contain feedback content"
+    assert "MI Performance Report" not in display_format, "Display format should not contain header"
     
-    # Verify format contains expected elements
-    assert "MI Performance Report" in display_format, "Missing 'MI Performance Report' header"
-    assert "Evaluation Timestamp (Minnesota):" in display_format, "Missing Minnesota timestamp label"
-    assert "(UTC)" not in display_format, "Should not contain '(UTC)' label"
-    assert evaluator in display_format, "Missing evaluator"
-    assert feedback in display_format, "Missing feedback content"
-    assert "---" in display_format, "Missing separator"
+    # PDF format should contain headers and feedback
+    assert "MI Performance Report" in pdf_format, "PDF format missing 'MI Performance Report' header"
+    assert "Evaluation Timestamp (Minnesota):" in pdf_format, "PDF format missing Minnesota timestamp label"
+    assert "(UTC)" not in pdf_format, "PDF format should not contain '(UTC)' label"
+    assert evaluator in pdf_format, "PDF format missing evaluator"
+    assert feedback in pdf_format, "PDF format missing feedback content"
+    assert "---" in pdf_format, "PDF format missing separator"
     
-    print("\n  ✅ Feedback formatting is consistent between display and PDF")
+    print("\n  ✅ Feedback formatting works correctly for both display and PDF")
     return True
 
 

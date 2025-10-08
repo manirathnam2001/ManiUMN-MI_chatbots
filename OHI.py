@@ -269,7 +269,10 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+# Use CPU device explicitly to avoid Meta tensor initialization errors
+import torch
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
 # Add after the student name input section:
 

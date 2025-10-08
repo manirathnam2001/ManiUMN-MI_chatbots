@@ -246,7 +246,10 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+# Use CPU device explicitly to avoid Meta tensor initialization errors
+import torch
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
 # --- Initialize session state for persona selection ---
 if "selected_persona" not in st.session_state:
@@ -284,7 +287,8 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+# Device already set above, reuse the same embedding model configuration
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
 if st.button("Start Conversation"):
     st.session_state.selected_persona = selected
