@@ -50,32 +50,51 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         
     Returns:
         io.BytesIO: PDF buffer ready for download
+        
+    Raises:
+        ValueError: If student name is invalid
+        Exception: If PDF generation fails after fallback attempts
     """
     # Input validation
     try:
         validated_name = validate_student_name(student_name)
     except ValueError as e:
+        print(f"PDF Generation Error - Invalid student name: {e}")
         raise ValueError(f"Invalid student name: {e}")
+    except Exception as e:
+        print(f"PDF Generation Error - Unexpected validation error: {e}")
+        raise ValueError(f"Student name validation failed: {e}")
 
     # Sanitize feedback text for special characters
-    clean_feedback = FeedbackValidator.sanitize_special_characters(raw_feedback)
+    try:
+        clean_feedback = FeedbackValidator.sanitize_special_characters(raw_feedback)
+    except Exception as e:
+        print(f"PDF Generation Warning - Feedback sanitization error: {e}")
+        clean_feedback = raw_feedback  # Use original if sanitization fails
 
     # Validate feedback completeness
-    validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
-    if not validation['is_valid']:
-        print(f"Warning: Feedback may be incomplete - missing: {validation['missing_components']}")
+    try:
+        validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
+        if not validation['is_valid']:
+            print(f"PDF Generation Warning - Feedback may be incomplete. Missing components: {validation['missing_components']}")
+    except Exception as e:
+        print(f"PDF Generation Warning - Feedback validation error: {e}")
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=letter, 
-        rightMargin=72, 
-        leftMargin=72,
-        topMargin=72, 
-        bottomMargin=72,
-        title=f"MI Performance Report - {session_type}",
-        author="MI Assessment System"
-    )
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=letter, 
+            rightMargin=72, 
+            leftMargin=72,
+            topMargin=72, 
+            bottomMargin=72,
+            title=f"MI Performance Report - {session_type}",
+            author="MI Assessment System"
+        )
+    except Exception as e:
+        print(f"PDF Generation Error - Document creation failed: {e}")
+        raise Exception(f"Failed to create PDF document structure: {e}")
 
     elements = []
     styles = getSampleStyleSheet()
@@ -117,12 +136,17 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     elements.append(Paragraph(f"<b>Student:</b> {validated_name}", info_style))
 
     # Add evaluation timestamp if available
-    timestamp_pattern = r'Evaluation Timestamp \(Minnesota\): ([^\n]+)'
-    import re
-    timestamp_match = re.search(timestamp_pattern, clean_feedback)
-    if timestamp_match:
-        timestamp = timestamp_match.group(1)
-        elements.append(Paragraph(f"<b>Evaluation Date:</b> {timestamp}", info_style))
+    try:
+        timestamp_pattern = r'Evaluation Timestamp \(Minnesota\): ([^\n]+)'
+        import re
+        timestamp_match = re.search(timestamp_pattern, clean_feedback)
+        if timestamp_match:
+            timestamp = timestamp_match.group(1)
+            elements.append(Paragraph(f"<b>Evaluation Date:</b> {timestamp}", info_style))
+        else:
+            print("PDF Generation Warning - No timestamp found in feedback")
+    except Exception as e:
+        print(f"PDF Generation Warning - Timestamp extraction error: {e}")
 
     # Add horizontal line with better styling
     line_style = ParagraphStyle('Line', parent=styles['Normal'], spaceBefore=10, spaceAfter=10)
@@ -182,8 +206,11 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 ('PADDING', (0, 0), (-1, -1), 6),
             ]))
             elements.append(table)
+            print("PDF Generation Success - Score table created successfully")
         except Exception as e:
-            elements.append(Paragraph("Score parsing unavailable. Raw feedback:", styles['Normal']))
+            print(f"PDF Generation Warning - Score parsing failed: {e}")
+            elements.append(Paragraph(f"Score parsing unavailable: {str(e)}", styles['Normal']))
+            elements.append(Paragraph("Raw feedback:", styles['Normal']))
     else:
         # No user input: show zeros and a clear no-evaluation message
         zero_data = [
@@ -290,20 +317,35 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         else:
             elements.append(Paragraph(clean_content, conversation_style))
         elements.append(Spacer(1, 8))
+    
+    # Build the PDF document with enhanced error handling
     try:
         doc.build(elements)
+        print(f"PDF Generation Success - Document built successfully for {validated_name}")
     except Exception as e:
-        elements = []
-        elements.append(Paragraph(f"MI Performance Report - {session_type}", title_style))
-        elements.append(Spacer(1, 12))
-        elements.append(Paragraph(f"Student: {validated_name}", info_style))
-        elements.append(Spacer(1, 12))
-        elements.append(Paragraph("Feedback Content", section_style))
-        simple_style = ParagraphStyle('Simple', parent=styles['Normal'], fontSize=11)
-        for line in clean_feedback.split('\n')[:20]:
-            if line.strip():
-                elements.append(Paragraph(line.strip(), simple_style))
-        doc.build(elements)
+        print(f"PDF Generation Error - Initial build failed: {e}")
+        print("PDF Generation - Attempting fallback simplified document...")
+        try:
+            # Fallback: Create a simplified document
+            elements = []
+            elements.append(Paragraph(f"MI Performance Report - {session_type}", title_style))
+            elements.append(Spacer(1, 12))
+            elements.append(Paragraph(f"Student: {validated_name}", info_style))
+            elements.append(Spacer(1, 12))
+            elements.append(Paragraph("Feedback Content", section_style))
+            simple_style = ParagraphStyle('Simple', parent=styles['Normal'], fontSize=11)
+            for line in clean_feedback.split('\n')[:20]:
+                if line.strip():
+                    try:
+                        elements.append(Paragraph(line.strip(), simple_style))
+                    except Exception as line_error:
+                        print(f"PDF Generation Warning - Skipping problematic line: {line_error}")
+            doc.build(elements)
+            print("PDF Generation Success - Fallback document built successfully")
+        except Exception as fallback_error:
+            print(f"PDF Generation Error - Fallback build also failed: {fallback_error}")
+            raise Exception(f"PDF generation failed: {fallback_error}")
+    
     buffer.seek(0)
     return buffer
 
