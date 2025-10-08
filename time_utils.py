@@ -21,17 +21,24 @@ def get_formatted_utc_time():
     mn_time = datetime.now(minnesota_tz)
     return mn_time.strftime("%Y-%m-%d %H:%M:%S")
 
-def convert_to_minnesota_time(utc_time_str):
-    """Convert UTC time string to Minnesota timezone.
+def convert_to_minnesota_time(utc_time_str: str) -> str:
+    """Convert UTC time to Minnesota time.
     
     Args:
         utc_time_str: UTC time string in format 'YYYY-MM-DD HH:MM:SS'
         
     Returns:
-        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS'
+        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TZ'
     """
-    minnesota_tz = pytz.timezone('America/Chicago')
-    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
-    utc_dt = pytz.utc.localize(utc_dt)
-    mn_time = utc_dt.astimezone(minnesota_tz)
-    return mn_time.strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        minnesota_tz = pytz.timezone('America/Chicago')
+        # Parse UTC time
+        utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
+        utc_dt = pytz.utc.localize(utc_dt)
+        # Convert to MN time
+        mn_time = utc_dt.astimezone(minnesota_tz)
+        # Format with timezone
+        return mn_time.strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    except Exception as e:
+        print(f"Time conversion error: {e}")
+        return utc_time_str  # Return original if conversion fails
