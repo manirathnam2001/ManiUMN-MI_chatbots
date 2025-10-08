@@ -1,17 +1,38 @@
+"""
+HPV MI Practice Application - Motivational Interviewing Chatbot
+
+This Streamlit application provides an interactive environment for healthcare providers
+to practice Motivational Interviewing (MI) skills in HPV vaccination discussions.
+
+Features:
+- Multiple patient personas with different backgrounds and concerns
+- Real-time conversation with AI-powered patient simulators
+- RAG-based feedback using MI rubrics from hpv_rubrics/ directory
+- Automated scoring on 30-point MI rubric (4 components × 7.5 points)
+- Professional PDF reports with detailed feedback and conversation transcripts
+
+The application uses:
+- Groq LLM API for natural conversation
+- FAISS for vector similarity search in rubric retrieval
+- Sentence Transformers for embedding generation
+- Streamlit for the user interface
+
+Usage:
+    streamlit run HPV.py
+
+Requirements:
+    - GROQ API key (enter in the UI or set as environment variable)
+    - Student name for feedback reports
+    - Internet connection for LLM API calls
+"""
+
 import os
-import json
 import streamlit as st
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-from datetime import datetime
 from time_utils import get_formatted_utc_time
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-import io
 from pdf_utils import generate_pdf_report
 from feedback_template import FeedbackFormatter, FeedbackValidator
 from scoring_utils import validate_student_name

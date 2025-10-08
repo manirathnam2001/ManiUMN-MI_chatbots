@@ -1,6 +1,19 @@
 """
 Standardized scoring utilities for MI assessment feedback.
-Provides consistent scoring calculation and validation across HPV and OHI assessments.
+
+This module provides consistent scoring calculation and validation across HPV and OHI
+assessments using the standardized 30-point MI rubric system:
+
+- 4 MI Components: COLLABORATION, EVOCATION, ACCEPTANCE, COMPASSION (7.5 points each)
+- 3 Status Levels: Met (100%), Partially Met (50%), Not Met (0%)
+- Performance Levels: Excellent, Very Good, Good, Satisfactory, Needs Improvement
+
+Key classes:
+- MIComponentScore: Represents individual component scores
+- MIScorer: Handles score parsing, validation, and breakdown calculation
+
+The module also includes optional internal tracking features for lenient scoring
+adjustments based on student effort and engagement (disabled by default).
 """
 
 import re
