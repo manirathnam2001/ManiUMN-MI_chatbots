@@ -33,6 +33,43 @@ We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation
 
 ---
 
+## 📧 Box Email Backup Feature
+
+**NEW**: Automatic PDF backup to Box via email!
+
+Both OHI and HPV applications now automatically back up generated PDF feedback reports to Box email addresses. This feature provides:
+
+- **Automatic Backup**: PDFs are emailed to Box after generation
+- **Fail-Safe Design**: PDF download always works, even if email fails
+- **Retry Mechanism**: 3 automatic retry attempts with 5-second delays
+- **Comprehensive Logging**: Daily rotating logs in "SMTP logs" directory
+- **User Notifications**: Clear success/failure messages in the UI
+
+### Configuration
+
+The feature is configured in `config.json`:
+- **OHI Box Email**: OHI_dir.zcdwwmukjr9ab546@u.box.com
+- **HPV Box Email**: HPV_Dir.yqz3brxlhcurhp2l@u.box.com
+- **SMTP Server**: smtp.gmail.com:587 with SSL/TLS
+
+### Documentation
+
+See [BOX_EMAIL_BACKUP.md](BOX_EMAIL_BACKUP.md) for detailed documentation including:
+- Configuration options
+- Log format and examples
+- Error handling
+- Troubleshooting guide
+- Security considerations
+
+### Testing
+
+Run the test suite to verify the email backup system:
+```bash
+python3 test_box_email_backup.py
+```
+
+---
+
 ## 🧬 HPV MI Practice App
 
 This app simulates a realistic patient interaction to practice Motivational Interviewing (MI) skills for HPV vaccination discussions. Users can play the role of a patient or provider to engage in a conversation that focuses on exploring thoughts and feelings about the HPV vaccine.
