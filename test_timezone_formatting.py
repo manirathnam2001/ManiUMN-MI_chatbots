@@ -44,8 +44,9 @@ def test_minnesota_timezone():
     print(f"  MN time:  {mn_time}")
     
     # In January, Minnesota is CST (UTC-6)
-    # So 18:00 UTC should be 12:00 CST
-    assert mn_time == "2025-01-15 12:00:00", f"Expected 12:00:00, got {mn_time}"
+    # So 18:00 UTC should be 12:00 PM CST
+    # Updated to expect new format with AM/PM and timezone
+    assert mn_time == "2025-01-15 12:00:00 PM CST", f"Expected 12:00:00 PM CST, got {mn_time}"
     
     # Test with a summer time (CDT - UTC-5)
     utc_time_summer = "2025-07-15 18:00:00"  # 6 PM UTC in July (CDT)
@@ -54,15 +55,16 @@ def test_minnesota_timezone():
     print(f"  MN time (summer):  {mn_time_summer}")
     
     # In July, Minnesota is CDT (UTC-5)
-    # So 18:00 UTC should be 13:00 CDT
-    assert mn_time_summer == "2025-07-15 13:00:00", f"Expected 13:00:00, got {mn_time_summer}"
+    # So 18:00 UTC should be 01:00 PM CDT (13:00 in 12-hour format is 01:00 PM)
+    # Updated to expect new format with AM/PM and timezone
+    assert mn_time_summer == "2025-07-15 01:00:00 PM CDT", f"Expected 01:00:00 PM CDT, got {mn_time_summer}"
     
-    print("  ✅ Minnesota timezone conversion is correct (handles DST)")
+    print("  ✅ Minnesota timezone conversion is correct (handles DST and includes AM/PM + timezone)")
     return True
 
 
 def test_feedback_formatting_consistency():
-    """Test that display and PDF formatting are consistent."""
+    """Test that display and PDF formatting work correctly with their respective purposes."""
     print("\nTesting feedback formatting consistency...")
     
     from feedback_template import FeedbackFormatter
@@ -71,26 +73,33 @@ def test_feedback_formatting_consistency():
     timestamp = "2025-10-06 14:30:00"
     evaluator = "test_evaluator"
     
-    # Test display format
+    # Test display format (should strip headers)
     display_format = FeedbackFormatter.format_feedback_for_display(feedback, timestamp, evaluator)
     print("  Display format:")
     print("    " + display_format.replace("\n", "\n    "))
     
-    # Test PDF format
+    # Test PDF format (should include headers)
     pdf_format = FeedbackFormatter.format_feedback_for_pdf(feedback, timestamp, evaluator)
     print("\n  PDF format:")
     print("    " + pdf_format.replace("\n", "\n    "))
     
-    # Verify both formats are identical
-    assert display_format == pdf_format, "Display and PDF formats should be identical"
+    # Verify display format strips headers (shows only feedback content)
+    assert "MI Performance Report" not in display_format, "Display should not contain 'MI Performance Report' header"
+    assert feedback in display_format, "Display should contain feedback content"
     
-    # Verify format contains expected elements
-    assert "MI Performance Report" in display_format, "Missing 'MI Performance Report' header"
-    assert "Evaluation Timestamp (Minnesota):" in display_format, "Missing Minnesota timestamp label"
-    assert "(UTC)" not in display_format, "Should not contain '(UTC)' label"
-    assert evaluator in display_format, "Missing evaluator"
-    assert feedback in display_format, "Missing feedback content"
-    assert "---" in display_format, "Missing separator"
+    # Verify PDF format includes headers
+    assert "MI Performance Report" in pdf_format, "PDF should contain 'MI Performance Report' header"
+    assert "Evaluation Timestamp (Minnesota):" in pdf_format, "PDF should contain Minnesota timestamp label"
+    # Check that AM/PM and timezone are present in the PDF timestamp
+    assert ("AM" in pdf_format or "PM" in pdf_format), "PDF should contain AM/PM in timestamp"
+    assert ("CST" in pdf_format or "CDT" in pdf_format), "PDF should contain timezone (CST/CDT) in timestamp"
+    assert "(UTC)" not in pdf_format, "PDF should not contain '(UTC)' label"
+    assert evaluator in pdf_format, "PDF should contain evaluator"
+    assert feedback in pdf_format, "PDF should contain feedback content"
+    assert "---" in pdf_format, "PDF should contain separator"
+    
+    print("  ✅ Display and PDF formatting work correctly with their respective purposes")
+    return True
     
     print("\n  ✅ Feedback formatting is consistent between display and PDF")
     return True

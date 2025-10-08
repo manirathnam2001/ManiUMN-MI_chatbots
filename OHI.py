@@ -30,6 +30,7 @@ import os
 import streamlit as st
 from groq import Groq
 from sentence_transformers import SentenceTransformer
+import torch
 import faiss
 import numpy as np
 from time_utils import get_formatted_utc_time
@@ -269,7 +270,13 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+try:
+    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    embedding_model = embedding_model.to(device)
+except Exception as e:
+    st.error(f"Error loading embedding model: {e}")
+    embedding_model = None
 
 # Add after the student name input section:
 
@@ -319,10 +326,16 @@ def split_text(text, max_length=200):
 knowledge_chunks = split_text(knowledge_text)
 dimension = 384  # for all-MiniLM-L6-v2
 faiss_index = faiss.IndexFlatL2(dimension)
-embeddings = embedding_model.encode(knowledge_chunks)
-faiss_index.add(np.array(embeddings))
+if embedding_model is not None:
+    embeddings = embedding_model.encode(knowledge_chunks)
+    faiss_index.add(np.array(embeddings))
+else:
+    st.error("Cannot initialize RAG system: embedding model failed to load.")
+    st.stop()
 
 def retrieve_knowledge(query, top_k=2):
+    if embedding_model is None:
+        return []
     query_embedding = embedding_model.encode([query])
     distances, indices = faiss_index.search(np.array(query_embedding), top_k)
     return [knowledge_chunks[i] for i in indices[0]]

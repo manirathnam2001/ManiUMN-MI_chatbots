@@ -26,12 +26,21 @@ def convert_to_minnesota_time(utc_time_str):
     
     Args:
         utc_time_str: UTC time string in format 'YYYY-MM-DD HH:MM:SS'
+                      Can also handle strings with additional content after the timestamp
         
     Returns:
-        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS'
+        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TZ'
     """
-    minnesota_tz = pytz.timezone('America/Chicago')
-    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
-    utc_dt = pytz.utc.localize(utc_dt)
-    mn_time = utc_dt.astimezone(minnesota_tz)
-    return mn_time.strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        # Parse UTC time - handle case where there might be extra content after timestamp
+        utc_dt = datetime.strptime(utc_time_str.split()[0] + ' ' + utc_time_str.split()[1], '%Y-%m-%d %H:%M:%S')
+        utc_dt = pytz.utc.localize(utc_dt)
+        
+        # Convert to Minnesota time
+        mn_tz = pytz.timezone('America/Chicago')
+        mn_time = utc_dt.astimezone(mn_tz)
+        
+        # Format with AM/PM and timezone
+        return mn_time.strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    except Exception as e:
+        return f"{utc_time_str} (UTC)"
