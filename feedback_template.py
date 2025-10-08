@@ -15,6 +15,7 @@ while the FeedbackValidator class maintains data quality and completeness.
 
 from datetime import datetime
 from typing import Dict, List
+import re
 from scoring_utils import MIScorer
 from time_utils import convert_to_minnesota_time
 
@@ -140,16 +141,26 @@ class FeedbackFormatter:
             return []
 
     @staticmethod
-    def extract_suggestions_from_feedback(feedback: str) -> List[str]:
-        """Extract improvement suggestions from feedback text."""
+    def extract_suggestions_from_feedback(feedback: str) -> List[Dict[str, str]]:
+        """Extract improvement suggestions from feedback text with structure.
+        
+        Returns:
+            List of dictionaries with 'type', 'title', and 'content' keys
+        """
         suggestions = []
         lines = feedback.split('\n')
         in_suggestions = False
+        current_section = None
+        suggestion_counter = 0
         
         for line in lines:
-            line = line.strip()
-            if not line:
+            line_stripped = line.strip()
+            if not line_stripped:
                 continue
+            
+            # Remove markdown formatting (asterisks)
+            clean_line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line_stripped)
+            clean_line = clean_line.replace('*', '').strip()
                 
             # Look for suggestion indicators
             suggestion_indicators = [
@@ -159,25 +170,50 @@ class FeedbackFormatter:
                 'areas to focus',
                 'improvement suggestions',
                 'overall strengths',
-                'continued learning'
+                'continued learning',
+                'areas for growth'
             ]
             
-            if any(indicator in line.lower() for indicator in suggestion_indicators):
+            if any(indicator in clean_line.lower() for indicator in suggestion_indicators):
                 in_suggestions = True
-                suggestions.append(line)
+                suggestion_counter = 0
+                suggestions.append({
+                    'type': 'heading',
+                    'title': clean_line,
+                    'content': ''
+                })
                 continue
             
             if in_suggestions:
                 # Stop when we hit a new section or component
-                if line.startswith(('1.', '2.', '3.', '4.')) and any(comp in line.upper() for comp in MIScorer.COMPONENTS.keys()):
-                    in_suggestions = False
-                    continue
+                if clean_line.startswith(('1.', '2.', '3.', '4.')):
+                    # Check if this is a component section (contains component name)
+                    if any(comp in clean_line.upper() for comp in ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION']):
+                        in_suggestions = False
+                        continue
                 
-                # Add suggestion lines
-                if line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                    suggestions.append(line)
-                elif line and not line.isupper():  # Avoid section headers
-                    suggestions.append(line)
+                # Add suggestion items
+                if clean_line.startswith(('-', '•')):
+                    suggestion_counter += 1
+                    # Remove bullet point
+                    content = clean_line.lstrip('-•').strip()
+                    suggestions.append({
+                        'type': 'item',
+                        'title': f'{suggestion_counter}.',
+                        'content': content
+                    })
+                elif clean_line and not clean_line.isupper():  # Avoid section headers
+                    # Check if it's a continuation of previous item or a new paragraph
+                    if suggestions and suggestions[-1]['type'] == 'item':
+                        # Append to previous item
+                        suggestions[-1]['content'] += ' ' + clean_line
+                    else:
+                        # New paragraph
+                        suggestions.append({
+                            'type': 'paragraph',
+                            'title': '',
+                            'content': clean_line
+                        })
         
         return suggestions
 
