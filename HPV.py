@@ -397,6 +397,35 @@ if st.session_state.selected_persona is not None:
                 student_name, "HPV", st.session_state.selected_persona
             )
             
+            # Send email backup to Box (fail-safe - won't break if it fails)
+            if 'email_backup_sent' not in st.session_state:
+                st.session_state.email_backup_sent = False
+                
+            if not st.session_state.email_backup_sent:
+                try:
+                    from pdf_utils import send_pdf_to_box
+                    with st.spinner("Backing up report to Box..."):
+                        email_result = send_pdf_to_box(
+                            pdf_buffer=pdf_buffer,
+                            filename=download_filename,
+                            student_name=validated_name,
+                            session_type="HPV Vaccine"
+                        )
+                        
+                        if email_result['success']:
+                            st.success("✅ Report successfully backed up to Box!")
+                            st.session_state.email_backup_sent = True
+                        else:
+                            st.warning(f"⚠️ Box backup failed after {email_result['attempts']} attempts. "
+                                     "Your PDF is still available for download below.")
+                            if email_result.get('error'):
+                                st.info(f"Details: {email_result['error']}")
+                except Exception as e:
+                    st.warning(f"⚠️ Box backup unavailable. Your PDF is still available for download below.")
+                    # Don't show technical error to user, but log it
+                    import logging
+                    logging.error(f"Email backup error: {e}")
+            
             # Add download button with enhanced label
             st.download_button(
                 label="📥 Download HPV MI Performance Report (PDF)",

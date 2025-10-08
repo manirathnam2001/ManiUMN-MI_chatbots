@@ -21,6 +21,10 @@ coverage.xml
 *.tmp
 *.log
 
+# SMTP logs (keep directory, ignore log files)
+SMTP logs/*.log
+SMTP logs/*.log.*
+
 # Environment variables and secrets
 .env
 .env.local

@@ -6,6 +6,7 @@ This module handles the creation of professional PDF reports containing:
 - Detailed score breakdowns with performance levels
 - Conversation transcripts with proper formatting
 - Improvement suggestions and recommendations
+- Email backup to Box integration
 
 The PDF generator ensures consistent formatting across OHI and HPV assessments
 and handles special character sanitization for proper PDF rendering.
@@ -305,3 +306,56 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+def send_pdf_to_box(pdf_buffer: io.BytesIO, 
+                   filename: str,
+                   student_name: str,
+                   session_type: str) -> dict:
+    """
+    Send generated PDF to Box email for backup.
+    
+    This function attempts to email the PDF to the appropriate Box email address
+    with retry logic and comprehensive logging. It's designed to be fail-safe -
+    if the email fails, the user can still download the PDF.
+    
+    Args:
+        pdf_buffer: BytesIO buffer containing the PDF data
+        filename: Name of the PDF file
+        student_name: Name of the student
+        session_type: Type of session ('OHI' or 'HPV Vaccine')
+        
+    Returns:
+        Dictionary with:
+            - success: Boolean indicating if email was sent
+            - attempts: Number of attempts made
+            - error: Error message if failed (None if successful)
+    """
+    try:
+        from email_utils import send_box_backup_email
+        
+        # Create a copy of the buffer for email (to avoid affecting downloads)
+        email_buffer = io.BytesIO(pdf_buffer.getvalue())
+        
+        # Send email with retry
+        result = send_box_backup_email(
+            pdf_buffer=email_buffer,
+            filename=filename,
+            student_name=student_name,
+            session_type=session_type
+        )
+        
+        return result
+        
+    except ImportError as e:
+        return {
+            'success': False,
+            'error': f"Email utilities not available: {e}",
+            'attempts': 0
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Unexpected error during email backup: {e}",
+            'attempts': 0
+        }

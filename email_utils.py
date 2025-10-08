@@ -6,18 +6,22 @@ This module provides secure email sending functionality with:
 - SSL/TLS connection handling
 - Comprehensive error handling and logging
 - Support for PDF attachments
+- Daily rotating logs with retry tracking
 """
 
 import smtplib
 import ssl
 import os
 import logging
+from logging.handlers import TimedRotatingFileHandler
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from typing import Optional, Dict, Any, Union
 import io
+import time
+from datetime import datetime
 
 
 class EmailConfigError(Exception):
@@ -59,6 +63,55 @@ class SecureEmailSender:
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
         return logger
+    
+    def setup_smtp_logger(self, log_directory: str = "SMTP logs", 
+                          log_filename: str = "email_backup.log") -> logging.Logger:
+        """
+        Set up a rotating file logger for SMTP operations.
+        
+        Args:
+            log_directory: Directory to store log files
+            log_filename: Name of the log file
+            
+        Returns:
+            Configured logger instance
+        """
+        # Create log directory if it doesn't exist
+        os.makedirs(log_directory, exist_ok=True)
+        
+        # Create logger
+        smtp_logger = logging.getLogger('smtp_backup')
+        smtp_logger.setLevel(logging.INFO)
+        
+        # Remove existing handlers to avoid duplicates
+        smtp_logger.handlers = []
+        
+        # Create rotating file handler (rotates daily)
+        log_path = os.path.join(log_directory, log_filename)
+        file_handler = TimedRotatingFileHandler(
+            log_path,
+            when='midnight',
+            interval=1,
+            backupCount=30,  # Keep 30 days of logs
+            encoding='utf-8'
+        )
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        smtp_logger.addHandler(file_handler)
+        
+        # Also add console handler for immediate feedback
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        smtp_logger.addHandler(console_handler)
+        
+        return smtp_logger
     
     def get_smtp_credentials(self) -> Dict[str, str]:
         """
@@ -265,6 +318,97 @@ class SecureEmailSender:
             self.logger.error(f"Unexpected error sending email: {e}")
             raise EmailSendError(f"Unexpected error: {e}")
     
+    def send_email_with_retry(self,
+                             recipient: str,
+                             subject: str,
+                             body: str,
+                             attachment_buffer: io.BytesIO,
+                             attachment_filename: str,
+                             student_name: str = "Unknown",
+                             session_type: str = "Unknown",
+                             smtp_logger: Optional[logging.Logger] = None,
+                             max_retries: int = 3,
+                             retry_delay: int = 5) -> Dict[str, Any]:
+        """
+        Send email with retry mechanism and detailed logging.
+        
+        Args:
+            recipient: Email recipient address
+            subject: Email subject
+            body: Email body text
+            attachment_buffer: BytesIO buffer containing attachment data
+            attachment_filename: Filename for the attachment
+            student_name: Name of the student (for logging)
+            session_type: Type of session (for logging)
+            smtp_logger: Logger for SMTP operations (uses default if not provided)
+            max_retries: Maximum number of retry attempts (default: 3)
+            retry_delay: Delay between retries in seconds (default: 5)
+            
+        Returns:
+            Dictionary with results including success status, attempt count, and error details
+        """
+        # Use provided logger or default
+        logger = smtp_logger or self.logger
+        
+        result = {
+            'success': False,
+            'attempts': 0,
+            'error': None,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        for attempt in range(1, max_retries + 1):
+            result['attempts'] = attempt
+            
+            try:
+                logger.info(f"Student: {student_name} | Session: {session_type} | "
+                           f"Operation: Email Backup Attempt {attempt}/{max_retries} | "
+                           f"Recipient: {recipient} | File: {attachment_filename}")
+                
+                # Reset buffer position before each attempt
+                attachment_buffer.seek(0)
+                
+                # Attempt to send email
+                success = self.send_email_with_attachment(
+                    recipient=recipient,
+                    subject=subject,
+                    body=body,
+                    attachment_buffer=attachment_buffer,
+                    attachment_filename=attachment_filename
+                )
+                
+                if success:
+                    result['success'] = True
+                    logger.info(f"Student: {student_name} | Session: {session_type} | "
+                               f"Operation: SUCCESS | Details: Email backup completed successfully "
+                               f"on attempt {attempt}")
+                    return result
+                    
+            except EmailSendError as e:
+                result['error'] = str(e)
+                logger.warning(f"Student: {student_name} | Session: {session_type} | "
+                              f"Operation: WARNING | Details: Email send failed on attempt {attempt}/{max_retries} - {e}")
+                
+                # If not the last attempt, wait before retrying
+                if attempt < max_retries:
+                    logger.info(f"Student: {student_name} | Session: {session_type} | "
+                               f"Operation: RETRY | Details: Waiting {retry_delay} seconds before retry {attempt + 1}")
+                    time.sleep(retry_delay)
+                    
+            except Exception as e:
+                result['error'] = str(e)
+                logger.error(f"Student: {student_name} | Session: {session_type} | "
+                            f"Operation: ERROR | Details: Unexpected error on attempt {attempt}/{max_retries} - {e}")
+                
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+        
+        # All retries failed
+        logger.error(f"Student: {student_name} | Session: {session_type} | "
+                    f"Operation: FAILURE | Details: Email backup failed after {max_retries} attempts - {result['error']}")
+        
+        return result
+    
     def test_connection(self) -> Dict[str, Any]:
         """
         Test the SMTP connection without sending an email.
@@ -327,6 +471,93 @@ class SecureEmailSender:
             self.logger.error(f"Unexpected error: {e}")
         
         return result
+
+
+def send_box_backup_email(pdf_buffer: io.BytesIO,
+                         filename: str,
+                         student_name: str,
+                         session_type: str,
+                         config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Convenience function to send PDF backup to Box email.
+    
+    Args:
+        pdf_buffer: BytesIO buffer containing PDF data
+        filename: Name of the PDF file
+        student_name: Name of the student
+        session_type: Type of session ('OHI' or 'HPV Vaccine')
+        config: Configuration dictionary (loads from config.json if not provided)
+        
+    Returns:
+        Dictionary with results including success status and error details
+    """
+    # Load config if not provided
+    if config is None:
+        try:
+            import json
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Failed to load configuration: {e}",
+                'attempts': 0
+            }
+    
+    # Get Box email address based on session type
+    email_config = config.get('email_config', {})
+    if 'OHI' in session_type.upper():
+        recipient = email_config.get('ohi_box_email')
+    else:
+        recipient = email_config.get('hpv_box_email')
+    
+    if not recipient:
+        return {
+            'success': False,
+            'error': f"Box email not configured for {session_type}",
+            'attempts': 0
+        }
+    
+    # Set up SMTP logger
+    logging_config = config.get('logging', {})
+    log_dir = logging_config.get('smtp_log_directory', 'SMTP logs')
+    log_file = logging_config.get('smtp_log_file', 'email_backup.log')
+    
+    # Create sender instance
+    sender = SecureEmailSender(config)
+    smtp_logger = sender.setup_smtp_logger(log_dir, os.path.basename(log_file))
+    
+    # Prepare email content
+    subject = f"{session_type} MI Practice Report - {student_name}"
+    body = f"""MI Practice Report Backup
+
+Student: {student_name}
+Session Type: {session_type}
+Report File: {filename}
+Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+This is an automated backup of the MI practice feedback report.
+"""
+    
+    # Get retry settings
+    max_retries = email_config.get('retry_attempts', 3)
+    retry_delay = email_config.get('retry_delay', 5)
+    
+    # Send with retry
+    result = sender.send_email_with_retry(
+        recipient=recipient,
+        subject=subject,
+        body=body,
+        attachment_buffer=pdf_buffer,
+        attachment_filename=filename,
+        student_name=student_name,
+        session_type=session_type,
+        smtp_logger=smtp_logger,
+        max_retries=max_retries,
+        retry_delay=retry_delay
+    )
+    
+    return result
 
 
 # Example usage and testing
