@@ -29,6 +29,7 @@ Requirements:
 import os
 import streamlit as st
 from groq import Groq
+import torch
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
@@ -246,7 +247,10 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
+# Initialize with CPU if CUDA not available
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_model.to(device)
 
 # --- Initialize session state for persona selection ---
 if "selected_persona" not in st.session_state:
@@ -284,7 +288,10 @@ for filename in os.listdir(rubrics_dir):
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
+# Initialize with CPU if CUDA not available
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_model.to(device)
 
 if st.button("Start Conversation"):
     st.session_state.selected_persona = selected
