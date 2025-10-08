@@ -31,16 +31,20 @@ def get_current_utc_time():
     return utc_time.strftime("%Y-%m-%d %H:%M:%S")
 
 def convert_to_minnesota_time(utc_time_str):
-    """Convert UTC time string to Minnesota timezone.
+    """Convert UTC time string to Minnesota timezone with AM/PM and timezone abbreviation.
     
     Args:
         utc_time_str: UTC time string in format 'YYYY-MM-DD HH:MM:SS'
         
     Returns:
-        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS'
+        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TIMEZONE'
+        Example: '2025-10-07 10:50:21 PM CDT'
     """
     minnesota_tz = pytz.timezone('America/Chicago')
     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
     utc_dt = pytz.utc.localize(utc_dt)
     mn_time = utc_dt.astimezone(minnesota_tz)
-    return mn_time.strftime('%Y-%m-%d %H:%M:%S')
+    # Format with AM/PM and timezone abbreviation
+    formatted_time = mn_time.strftime('%Y-%m-%d %I:%M:%S %p')
+    tz_abbr = mn_time.strftime('%Z')
+    return f"{formatted_time} {tz_abbr}"

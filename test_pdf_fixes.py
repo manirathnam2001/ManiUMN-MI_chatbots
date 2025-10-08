@@ -29,10 +29,11 @@ def test_timezone_conversion():
     print(f"   Minnesota time: {mn_time}")
     
     # In October 2025, Minnesota is in CDT (UTC-5)
-    expected = "2025-10-07 22:24:18"
+    # Now expects format with AM/PM and timezone
+    expected = "2025-10-07 10:24:18 PM CDT"
     assert mn_time == expected, f"Expected {expected}, got {mn_time}"
     
-    print("   ✅ Timezone conversion correct (UTC -> Minnesota/CDT)")
+    print("   ✅ Timezone conversion correct (UTC -> Minnesota/CDT with AM/PM)")
     
     # Test that get_current_utc_time actually returns UTC
     utc_now = get_current_utc_time()
