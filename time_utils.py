@@ -39,12 +39,24 @@ def convert_to_minnesota_time(utc_time_str):
     Returns:
         Minnesota time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TIMEZONE'
         Example: '2025-10-07 10:50:21 PM CDT'
+        
+    Raises:
+        ValueError: If time string format is invalid
+        TypeError: If utc_time_str is not a string
     """
-    minnesota_tz = pytz.timezone('America/Chicago')
-    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
-    utc_dt = pytz.utc.localize(utc_dt)
-    mn_time = utc_dt.astimezone(minnesota_tz)
-    # Format with AM/PM and timezone abbreviation
-    formatted_time = mn_time.strftime('%Y-%m-%d %I:%M:%S %p')
-    tz_abbr = mn_time.strftime('%Z')
-    return f"{formatted_time} {tz_abbr}"
+    if not isinstance(utc_time_str, str):
+        raise TypeError(f"Expected string, got {type(utc_time_str).__name__}")
+    
+    try:
+        minnesota_tz = pytz.timezone('America/Chicago')
+        utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
+        utc_dt = pytz.utc.localize(utc_dt)
+        mn_time = utc_dt.astimezone(minnesota_tz)
+        # Format with AM/PM and timezone abbreviation
+        formatted_time = mn_time.strftime('%Y-%m-%d %I:%M:%S %p')
+        tz_abbr = mn_time.strftime('%Z')
+        return f"{formatted_time} {tz_abbr}"
+    except ValueError as e:
+        raise ValueError(f"Invalid time format. Expected 'YYYY-MM-DD HH:MM:SS', got '{utc_time_str}': {e}")
+    except Exception as e:
+        raise Exception(f"Error converting time '{utc_time_str}': {e}")
