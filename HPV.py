@@ -341,9 +341,9 @@ if st.session_state.selected_persona is not None:
             st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
         
     if st.button(feedback_button_label, disabled=not feedback_enabled):
-        # Get current UTC timestamp and user login
+        # Get current timestamp and bot name
         current_timestamp = get_formatted_utc_time()
-        user_login = "manirathnam2001"
+        evaluator = "HPV Assessment Bot"
         
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
 
@@ -369,7 +369,7 @@ if st.session_state.selected_persona is not None:
         st.session_state.feedback = {
             'content': feedback,
             'timestamp': current_timestamp,
-            'evaluator': user_login
+            'evaluator': evaluator
         }
 
     # PDF Generation section - only show PDF download

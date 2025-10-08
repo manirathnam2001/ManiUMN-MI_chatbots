@@ -44,8 +44,8 @@ def test_minnesota_timezone():
     print(f"  MN time:  {mn_time}")
     
     # In January, Minnesota is CST (UTC-6)
-    # So 18:00 UTC should be 12:00 CST
-    assert mn_time == "2025-01-15 12:00:00", f"Expected 12:00:00, got {mn_time}"
+    # So 18:00 UTC should be 12:00 PM CST
+    assert mn_time == "2025-01-15 12:00:00 PM CST", f"Expected '2025-01-15 12:00:00 PM CST', got '{mn_time}'"
     
     # Test with a summer time (CDT - UTC-5)
     utc_time_summer = "2025-07-15 18:00:00"  # 6 PM UTC in July (CDT)
@@ -54,8 +54,8 @@ def test_minnesota_timezone():
     print(f"  MN time (summer):  {mn_time_summer}")
     
     # In July, Minnesota is CDT (UTC-5)
-    # So 18:00 UTC should be 13:00 CDT
-    assert mn_time_summer == "2025-07-15 13:00:00", f"Expected 13:00:00, got {mn_time_summer}"
+    # So 18:00 UTC should be 01:00 PM CDT
+    assert mn_time_summer == "2025-07-15 01:00:00 PM CDT", f"Expected '2025-07-15 01:00:00 PM CDT', got '{mn_time_summer}'"
     
     print("  ✅ Minnesota timezone conversion is correct (handles DST)")
     return True

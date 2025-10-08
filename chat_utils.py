@@ -150,11 +150,20 @@ def display_chat_history():
                 st.markdown(message["content"])
 
 
-def generate_and_display_feedback(personas_dict, session_type, student_name, retrieve_knowledge_func, client):
-    """Generate and display feedback with PDF download capability."""
-    # Get current UTC timestamp and user login
+def generate_and_display_feedback(personas_dict, session_type, student_name, retrieve_knowledge_func, client, bot_name="MI Assessment System"):
+    """Generate and display feedback with PDF download capability.
+    
+    Args:
+        personas_dict: Dictionary of persona definitions
+        session_type: Type of session (e.g., "dental hygiene", "hpv")
+        student_name: Name of the student
+        retrieve_knowledge_func: Function to retrieve knowledge from RAG
+        client: Groq client for LLM calls
+        bot_name: Name of the bot/system for the evaluator field (default: "MI Assessment System")
+    """
+    # Get current UTC timestamp and use bot name as evaluator
     current_timestamp = get_formatted_utc_time()
-    user_login = "manirathnam2001"
+    evaluator = bot_name
     
     transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
 
@@ -180,12 +189,12 @@ def generate_and_display_feedback(personas_dict, session_type, student_name, ret
     st.session_state.feedback = {
         'content': feedback,
         'timestamp': current_timestamp,
-        'evaluator': user_login
+        'evaluator': evaluator
     }
     
     # Display feedback using standardized formatting
     display_format = FeedbackFormatter.format_feedback_for_display(
-        feedback, current_timestamp, user_login
+        feedback, current_timestamp, evaluator
     )
     
     st.markdown(display_format['header'])

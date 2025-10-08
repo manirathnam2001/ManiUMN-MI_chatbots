@@ -352,9 +352,9 @@ if not feedback_enabled:
         st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
 
 if st.button(feedback_button_label, disabled=not feedback_enabled):
-    # Define current_timestamp at the beginning of this block
+    # Define current_timestamp and bot name at the beginning of this block
     current_timestamp = get_formatted_utc_time()
-    user_login = "manirathnam2001"
+    evaluator = "OHI Assessment Bot"
     
     transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
     
@@ -379,7 +379,7 @@ if st.button(feedback_button_label, disabled=not feedback_enabled):
     st.session_state.feedback = {
         'content': feedback,
         'timestamp': current_timestamp,
-        'evaluator': user_login
+        'evaluator': evaluator
     }
 
 # Show only PDF download section if feedback exists
