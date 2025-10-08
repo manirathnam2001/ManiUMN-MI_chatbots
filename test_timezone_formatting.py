@@ -9,7 +9,7 @@ import pytz
 
 
 def test_timestamp_format():
-    """Test that timestamps are in YYYY-MM-DD HH:MM:SS AM/PM CST/CDT format."""
+    """Test that timestamps are in YYYY-MM-DD HH:MM:SS format."""
     print("Testing timestamp format...")
     
     from time_utils import get_formatted_utc_time
@@ -17,22 +17,22 @@ def test_timestamp_format():
     timestamp = get_formatted_utc_time()
     print(f"  Generated timestamp: {timestamp}")
     
-    # Verify format matches YYYY-MM-DD HH:MM:SS AM/PM CST/CDT
-    pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} (AM|PM) (CST|CDT)$'
+    # Verify format matches YYYY-MM-DD HH:MM:SS
+    pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
     assert re.match(pattern, timestamp), f"Timestamp format incorrect: {timestamp}"
     
-    # Verify it contains AM/PM
-    assert 'AM' in timestamp or 'PM' in timestamp, "Missing AM/PM indicator"
-    
-    # Verify it contains timezone
-    assert 'CST' in timestamp or 'CDT' in timestamp, "Missing timezone indicator"
-    
-    print(f"  ✅ Timestamp format is correct: {timestamp}")
-    return True
+    # Verify it's parseable as datetime
+    try:
+        dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+        print(f"  ✅ Timestamp format is correct: {timestamp}")
+        return True
+    except ValueError as e:
+        print(f"  ❌ Timestamp format error: {e}")
+        return False
 
 
 def test_minnesota_timezone():
-    """Test that timestamps are in Minnesota timezone (America/Chicago) with AM/PM and timezone."""
+    """Test that timestamps are in Minnesota timezone (America/Chicago)."""
     print("\nTesting Minnesota timezone conversion...")
     
     from time_utils import get_formatted_utc_time, convert_to_minnesota_time
@@ -44,9 +44,8 @@ def test_minnesota_timezone():
     print(f"  MN time:  {mn_time}")
     
     # In January, Minnesota is CST (UTC-6)
-    # So 18:00 UTC should be 12:00 PM CST
-    assert "12:00:00 PM CST" in mn_time, f"Expected 12:00:00 PM CST in result, got {mn_time}"
-    assert "2025-01-15" in mn_time, f"Expected date 2025-01-15 in result, got {mn_time}"
+    # So 18:00 UTC should be 12:00 CST
+    assert mn_time == "2025-01-15 12:00:00", f"Expected 12:00:00, got {mn_time}"
     
     # Test with a summer time (CDT - UTC-5)
     utc_time_summer = "2025-07-15 18:00:00"  # 6 PM UTC in July (CDT)
@@ -55,16 +54,15 @@ def test_minnesota_timezone():
     print(f"  MN time (summer):  {mn_time_summer}")
     
     # In July, Minnesota is CDT (UTC-5)
-    # So 18:00 UTC should be 01:00 PM CDT
-    assert "01:00:00 PM CDT" in mn_time_summer, f"Expected 01:00:00 PM CDT in result, got {mn_time_summer}"
-    assert "2025-07-15" in mn_time_summer, f"Expected date 2025-07-15 in result, got {mn_time_summer}"
+    # So 18:00 UTC should be 13:00 CDT
+    assert mn_time_summer == "2025-07-15 13:00:00", f"Expected 13:00:00, got {mn_time_summer}"
     
-    print("  ✅ Minnesota timezone conversion is correct (handles DST with AM/PM and timezone)")
+    print("  ✅ Minnesota timezone conversion is correct (handles DST)")
     return True
 
 
 def test_feedback_formatting_consistency():
-    """Test that display and PDF formatting use consistent timezone format."""
+    """Test that display and PDF formatting are consistent."""
     print("\nTesting feedback formatting consistency...")
     
     from feedback_template import FeedbackFormatter
@@ -83,24 +81,18 @@ def test_feedback_formatting_consistency():
     print("\n  PDF format:")
     print("    " + pdf_format.replace("\n", "\n    "))
     
-    # Note: display and PDF formats are intentionally different
-    # display_format shows only core feedback
-    # pdf_format shows complete report with headers
+    # Verify both formats are identical
+    assert display_format == pdf_format, "Display and PDF formats should be identical"
     
-    # Verify PDF format contains expected elements
-    assert "MI Performance Report" in pdf_format, "Missing 'MI Performance Report' header"
-    assert "Evaluation Timestamp (Minnesota):" in pdf_format, "Missing Minnesota timestamp label"
-    assert "(UTC)" not in pdf_format, "Should not contain '(UTC)' label"
+    # Verify format contains expected elements
+    assert "MI Performance Report" in display_format, "Missing 'MI Performance Report' header"
+    assert "Evaluation Timestamp (Minnesota):" in display_format, "Missing Minnesota timestamp label"
+    assert "(UTC)" not in display_format, "Should not contain '(UTC)' label"
+    assert evaluator in display_format, "Missing evaluator"
+    assert feedback in display_format, "Missing feedback content"
+    assert "---" in display_format, "Missing separator"
     
-    # Verify timestamp format includes AM/PM and timezone
-    assert ('AM' in pdf_format or 'PM' in pdf_format), "Missing AM/PM indicator in PDF format"
-    assert ('CST' in pdf_format or 'CDT' in pdf_format), "Missing timezone indicator in PDF format"
-    
-    assert evaluator in pdf_format, "Missing evaluator"
-    assert feedback in pdf_format, "Missing feedback content"
-    assert "---" in pdf_format, "Missing separator"
-    
-    print("\n  ✅ Feedback formatting includes proper timezone with AM/PM")
+    print("\n  ✅ Feedback formatting is consistent between display and PDF")
     return True
 
 

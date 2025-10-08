@@ -139,45 +139,25 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         try:
             score_breakdown = MIScorer.get_score_breakdown(clean_feedback)
 
-            # Create style for table cell text wrapping
-            cell_style = ParagraphStyle(
-                'TableCell',
-                parent=styles['Normal'],
-                fontSize=10,
-                leading=12,
-                wordWrap='CJK'
-            )
-            
-            # Table construction with improved wrapping
+            # Table construction (unchanged)
             headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
             data = [headers]
             for component, details in score_breakdown['components'].items():
-                # Wrap feedback text in Paragraph for proper word wrapping
-                feedback_text = details['feedback']
-                feedback_para = Paragraph(feedback_text, cell_style)
-                
                 data.append([
                     component.title(),
                     details['status'],
                     f"{details['score']:.1f}",
                     f"{details['max_score']:.1f}",
-                    feedback_para
+                    details['feedback'][:80] + "..." if len(details['feedback']) > 80 else details['feedback']
                 ])
-            
-            # Add total row with wrapped text
-            total_feedback = f"Overall Performance: {_get_performance_level(score_breakdown['percentage'])}"
-            total_feedback_para = Paragraph(total_feedback, cell_style)
-            
             data.append([
                 'TOTAL SCORE',
                 f"{score_breakdown['percentage']:.1f}%",
                 f"{score_breakdown['total_score']:.1f}",
                 f"{score_breakdown['total_possible']:.1f}",
-                total_feedback_para
+                f"Overall Performance: {_get_performance_level(score_breakdown['percentage'])}"
             ])
-            
-            # Adjusted column widths for better display
-            table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.8*inch, 3.3*inch])
+            table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -199,33 +179,22 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
-                ('PADDING', (0, 0), (-1, -1), 8),  # Increased padding
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('PADDING', (0, 0), (-1, -1), 6),
             ]))
             elements.append(table)
         except Exception as e:
             elements.append(Paragraph("Score parsing unavailable. Raw feedback:", styles['Normal']))
     else:
         # No user input: show zeros and a clear no-evaluation message
-        # Create style for table cell text wrapping
-        cell_style = ParagraphStyle(
-            'TableCell',
-            parent=styles['Normal'],
-            fontSize=10,
-            leading=12,
-            wordWrap='CJK'
-        )
-        
         zero_data = [
             ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback'],
-            ['Collaboration', 'Not Evaluated', '0.0', '7.5', Paragraph('No feedback, no user response', cell_style)],
-            ['Evocation', 'Not Evaluated', '0.0', '7.5', Paragraph('No feedback, no user response', cell_style)],
-            ['Acceptance', 'Not Evaluated', '0.0', '7.5', Paragraph('No feedback, no user response', cell_style)],
-            ['Compassion', 'Not Evaluated', '0.0', '7.5', Paragraph('No feedback, no user response', cell_style)],
-            ['TOTAL SCORE', '0.0%', '0.0', '30.0', Paragraph('No evaluation performed (no user responses)', cell_style)]
+            ['Collaboration', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+            ['Evocation', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+            ['Acceptance', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+            ['Compassion', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+            ['TOTAL SCORE', '0.0%', '0.0', '30.0', 'No evaluation performed (no user responses)']
         ]
-        table = Table(zero_data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.8*inch, 3.3*inch])
+        table = Table(zero_data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -247,9 +216,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
-            ('PADDING', (0, 0), (-1, -1), 8),  # Increased padding
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('PADDING', (0, 0), (-1, -1), 6),
         ]))
         elements.append(table)
 
@@ -259,68 +226,22 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     elements.append(Paragraph("Improvement Suggestions", section_style))
     if has_user_turns:
         suggestions = FeedbackFormatter.extract_suggestions_from_feedback(clean_feedback)
-        
-        # Define styles for different suggestion types
-        suggestion_heading_style = ParagraphStyle(
-            'SuggestionHeading', 
-            parent=styles['Heading3'],
-            fontSize=13, 
-            leading=16, 
-            spaceAfter=10,
-            spaceBefore=10,
-            textColor=colors.darkblue,
-            fontName='Helvetica-Bold'
+        suggestion_style = ParagraphStyle(
+            'Suggestion', parent=styles['Normal'],
+            fontSize=11, leading=14, spaceAfter=8, leftIndent=20, bulletIndent=10
         )
-        
-        suggestion_item_style = ParagraphStyle(
-            'SuggestionItem', 
-            parent=styles['Normal'],
-            fontSize=11, 
-            leading=14, 
-            spaceAfter=10, 
-            leftIndent=20,
-            bulletIndent=10,
-            fontName='Helvetica'
-        )
-        
-        suggestion_paragraph_style = ParagraphStyle(
-            'SuggestionParagraph', 
-            parent=styles['Normal'],
-            fontSize=11, 
-            leading=14, 
-            spaceAfter=8, 
-            leftIndent=20
-        )
-        
         if suggestions:
             for suggestion in suggestions:
-                clean_content = FeedbackValidator.sanitize_special_characters(suggestion['content'])
-                clean_title = FeedbackValidator.sanitize_special_characters(suggestion['title'])
-                
-                if suggestion['type'] == 'heading':
-                    elements.append(Paragraph(clean_title, suggestion_heading_style))
-                elif suggestion['type'] == 'item':
-                    # Format as numbered item with bold number
-                    item_text = f"<b>{clean_title}</b> {clean_content}"
-                    elements.append(Paragraph(item_text, suggestion_item_style))
-                elif suggestion['type'] == 'paragraph':
-                    elements.append(Paragraph(clean_content, suggestion_paragraph_style))
+                clean_suggestion = FeedbackValidator.sanitize_special_characters(suggestion)
+                elements.append(Paragraph(f"• {clean_suggestion}", suggestion_style))
         else:
             # Fallback: show raw feedback content after component analysis
             feedback_lines = clean_feedback.split('\n')
-            fallback_style = ParagraphStyle(
-                'Fallback', parent=styles['Normal'],
-                fontSize=11, leading=14, spaceAfter=8, leftIndent=20
-            )
             for line in feedback_lines:
                 line = line.strip()
                 if line and not any(comp in line.upper() for comp in MIScorer.COMPONENTS.keys()):
                     if not line.startswith('Session Feedback') and not line.startswith('Evaluation Timestamp'):
-                        # Remove asterisks from fallback content too
-                        clean_line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)
-                        clean_line = clean_line.replace('*', '').strip()
-                        clean_line = FeedbackValidator.sanitize_special_characters(clean_line)
-                        elements.append(Paragraph(clean_line, fallback_style))
+                        elements.append(Paragraph(line, suggestion_style))
     else:
         elements.append(Paragraph("No suggestions available (no user responses were given, so no evaluation was performed).", styles['Normal']))
 
