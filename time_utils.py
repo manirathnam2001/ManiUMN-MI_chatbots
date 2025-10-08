@@ -6,10 +6,14 @@ are displayed in the Minnesota timezone (America/Chicago) for consistency
 across the OHI and HPV assessment applications.
 
 Functions:
-- get_formatted_utc_time(): Returns current time in Minnesota timezone
-- convert_to_minnesota_time(): Converts UTC time strings to Minnesota timezone
+- get_formatted_utc_time(): Returns current time in Minnesota timezone (24-hour format)
+- get_current_utc_time(): Returns current time in UTC timezone
+- get_current_minnesota_time(): Returns current time in Minnesota timezone with AM/PM
+- convert_to_minnesota_time(): Converts UTC time strings to Minnesota timezone with AM/PM
 
-All timestamps in the application use the format: 'YYYY-MM-DD HH:MM:SS'
+Timestamp formats:
+- Internal format: 'YYYY-MM-DD HH:MM:SS' (24-hour)
+- Display format: 'YYYY-MM-DD HH:MM:SS AM/PM TIMEZONE' (12-hour with timezone)
 """
 
 from datetime import datetime
@@ -29,6 +33,20 @@ def get_current_utc_time():
     """Returns current time in UTC timezone in YYYY-MM-DD HH:MM:SS format"""
     utc_time = datetime.now(pytz.UTC)
     return utc_time.strftime("%Y-%m-%d %H:%M:%S")
+
+def get_current_minnesota_time():
+    """Returns current time in Minnesota timezone with AM/PM and timezone abbreviation.
+    
+    Returns:
+        Minnesota time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TIMEZONE'
+        Example: '2025-10-07 11:14:23 PM CDT'
+    """
+    minnesota_tz = pytz.timezone('America/Chicago')
+    mn_time = datetime.now(minnesota_tz)
+    # Format with AM/PM and timezone abbreviation
+    formatted_time = mn_time.strftime('%Y-%m-%d %I:%M:%S %p')
+    tz_abbr = mn_time.strftime('%Z')
+    return f"{formatted_time} {tz_abbr}"
 
 def convert_to_minnesota_time(utc_time_str):
     """Convert UTC time string to Minnesota timezone with AM/PM and timezone abbreviation.
