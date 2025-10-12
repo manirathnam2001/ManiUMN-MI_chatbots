@@ -16,5 +16,10 @@ reportlab
 pytz
 python-dotenv
 
+# Google Sheets integration (for secret code portal)
+gspread
+google-auth
+google-auth-oauthlib
+
 # Deep learning backend (required by sentence-transformers)
 torch>=2.5.1

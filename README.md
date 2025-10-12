@@ -1,9 +1,10 @@
 # MI Chatbots
 
-This repository contains two Motivational Interviewing (MI) chatbot applications built using Streamlit:
+This repository contains two Motivational Interviewing (MI) chatbot applications built using Streamlit, plus a secure access portal for student authentication:
 
 - `HPV.py`: Practice MI skills related to **HPV vaccine**  
 - `OHI.py`: Practice MI skills for **Oral Hygiene**
+- `secret_code_portal.py`: **Secret code access portal** for controlled student access
 
 These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on example transcripts stored in `*.txt` format.
 We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation (RAG)** to incorporate structured feedback from rubric documents.
@@ -17,6 +18,7 @@ We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation
     ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
     ├── HPV.py                 # Streamlit app for HPV vaccine MI chatbot
     ├── OHI.py                 # Streamlit app for Oral Health MI chatbot
+    ├── secret_code_portal.py  # Secret code access portal for student authentication
     ├── chat_utils.py          # Shared chat handling utilities
     ├── pdf_utils.py           # PDF report generation utilities
     ├── feedback_template.py   # Standardized feedback formatting
@@ -24,6 +26,7 @@ We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation
     ├── time_utils.py          # Timezone handling utilities
     ├── config_loader.py       # Configuration and environment variable management
     ├── email_utils.py         # Email sending utilities (optional Box integration)
+    ├── umnsod-mibot-ea3154b145f1.json  # Service account credentials for Google Sheets
     ├── README.md              # This file - setup and usage instructions
     ├── requirements.txt       # Python dependencies (optimized)
     ├── runtime.txt            # Python version for deployment environments
@@ -84,6 +87,109 @@ This app simulates a realistic dental hygiene patient interaction to help users�
 The patient (played by AI) begins with scenarios (e.g., "I’ve noticed these yellow spots...") and reacts naturally to the student’s MI techniques. At the end of the session, the system evaluates the student's performance using an MI rubric and provides detailed, constructive feedback.
 
 Checkout the app here : [![Open OHI MI Chatbot in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ohimiapp.streamlit.app/)
+
+
+## 🔐 Secret Code Portal
+
+The **Secret Code Portal** (`secret_code_portal.py`) provides a secure access gateway for students to access the MI chatbots using instructor-provided secret codes.
+
+### Features
+- **Code Validation**: Validates secret codes against a Google Sheet database
+- **Single-Use Codes**: Automatically marks codes as used to prevent sharing
+- **Smart Routing**: Redirects students to the correct chatbot (OHI or HPV) based on their assignment
+- **Real-Time Updates**: Refresh button to reload the latest data from Google Sheets
+- **Clear Feedback**: User-friendly error messages for invalid or already-used codes
+
+### Google Sheet Setup
+
+The portal integrates with a Google Sheet to manage student access codes. The sheet must have the following structure:
+
+**Sheet ID**: `1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY`  
+**Sheet Name**: `Sheet1`
+
+**Required Columns**:
+| Column | Description | Example |
+|--------|-------------|---------|
+| Table No | Student identifier or table number | 1, 2, 3... |
+| Name | Student's full name | John Doe |
+| Bot | Bot type assignment | OHI or HPV |
+| Secret | Unique secret code | abc123xyz |
+| Used | Whether code has been used | FALSE/TRUE |
+
+### Service Account Setup
+
+The portal uses a Google Cloud service account for authentication:
+
+1. **Service Account File**: `umnsod-mibot-ea3154b145f1.json` (already included in repository)
+2. **Required Permissions**: The service account email (`mibots@umnsod-mibot.iam.gserviceaccount.com`) must be granted **Editor** access to the Google Sheet
+3. **Grant Access**: Share the Google Sheet with the service account email address
+
+### Running the Portal
+
+```bash
+streamlit run secret_code_portal.py
+```
+
+The portal will:
+1. Load access codes from the Google Sheet on startup
+2. Allow students to enter their secret code
+3. Validate the code and check if it's unused
+4. Mark valid codes as used in the sheet
+5. Redirect students to their assigned chatbot
+
+### Deployment Instructions
+
+#### Local Testing
+1. Ensure `umnsod-mibot-ea3154b145f1.json` is in the project directory
+2. Verify the service account has access to the Google Sheet
+3. Install dependencies: `pip install -r requirements.txt`
+4. Run: `streamlit run secret_code_portal.py`
+
+#### Streamlit Cloud Deployment
+1. **Upload Service Account File**:
+   - Go to your Streamlit Cloud app settings
+   - Navigate to "Secrets" section
+   - Create a secret named `GOOGLE_SERVICE_ACCOUNT` with the full JSON content of `umnsod-mibot-ea3154b145f1.json`
+   
+2. **Update Code for Secrets** (if using Streamlit secrets):
+   ```python
+   # In secret_code_portal.py, replace the file loading with:
+   import json
+   creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+   creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+   ```
+
+3. **Configure Bot URLs**:
+   - Update the `BOT_URLS` dictionary in `secret_code_portal.py` with your deployed bot URLs
+   
+4. **Deploy**:
+   - Commit changes to GitHub
+   - Link repository to Streamlit Cloud
+   - Deploy with `secret_code_portal.py` as the main file
+
+#### Google Sheet Permissions
+- Share the Google Sheet with: `mibots@umnsod-mibot.iam.gserviceaccount.com`
+- Grant **Editor** permissions (required to mark codes as used)
+- Verify access by testing code validation
+
+### Managing Student Access
+
+**Adding New Students**:
+1. Open the Google Sheet
+2. Add a new row with: Table No, Name, Bot (OHI/HPV), Secret (unique code), Used (FALSE)
+3. Share the secret code with the student
+4. Student uses the portal to access their assigned chatbot
+
+**Resetting a Code**:
+1. Find the student's row in the Google Sheet
+2. Change the "Used" column from TRUE to FALSE
+3. The code can now be used again
+
+**Security Best Practices**:
+- Generate unique, random secret codes for each student
+- Use a password generator or random string generator
+- Don't reuse codes across semesters
+- Regularly audit the "Used" column to detect any issues
 
 
 ## Setup Instructions
