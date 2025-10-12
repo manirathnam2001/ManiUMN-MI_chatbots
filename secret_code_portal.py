@@ -19,13 +19,19 @@ Google Sheet Structure:
 Usage:
     streamlit run secret_code_portal.py
 
+Authentication:
+    Supports three methods (in priority order):
+    1. Streamlit secrets: st.secrets["GOOGLESA"] (for Streamlit Cloud)
+    2. Environment variable: GOOGLESA (for production deployments)
+    3. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
+
 Requirements:
-    - umnsod-mibot-ea3154b145f1.json service account file
     - Service account must have access to the Google Sheet
     - Internet connection for Google Sheets API calls
 """
 
 import os
+import json
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -53,26 +59,67 @@ def get_google_sheets_client():
     """
     Initialize and return Google Sheets client using service account credentials.
     
+    Supports three authentication methods (in priority order):
+    1. Streamlit secrets: st.secrets["GOOGLESA"] (for Streamlit Cloud)
+    2. Environment variable: GOOGLESA (for production deployments)
+    3. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
+    
     Returns:
         gspread.Client: Authorized Google Sheets client
         
     Raises:
-        Exception: If authentication fails or service account file is missing
+        Exception: If authentication fails or credentials are not available
     """
     try:
-        # Check if service account file exists
-        if not os.path.exists(SERVICE_ACCOUNT_FILE):
-            raise FileNotFoundError(
-                f"Service account file '{SERVICE_ACCOUNT_FILE}' not found. "
-                "Please ensure the file is in the same directory as this script."
-            )
-        
         # Setup credentials with required scopes
         scope = [
             'https://spreadsheets.google.com/feeds',
             'https://www.googleapis.com/auth/drive'
         ]
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=scope)
+        
+        creds = None
+        creds_source = None
+        
+        # Method 1: Try Streamlit secrets first (for Streamlit Cloud deployment)
+        try:
+            if "GOOGLESA" in st.secrets:
+                creds_dict = dict(st.secrets["GOOGLESA"])
+                creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+                creds_source = "Streamlit secrets"
+        except Exception:
+            # Streamlit secrets not available or failed
+            pass
+        
+        # Method 2: Try environment variable (for production deployment)
+        if creds is None:
+            googlesa_env = os.environ.get('GOOGLESA')
+            if googlesa_env:
+                try:
+                    creds_dict = json.loads(googlesa_env)
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+                    creds_source = "Environment variable (GOOGLESA)"
+                except json.JSONDecodeError as e:
+                    raise Exception(f"Failed to parse GOOGLESA environment variable as JSON: {str(e)}")
+        
+        # Method 3: Fallback to service account file (for local/dev)
+        if creds is None:
+            if os.path.exists(SERVICE_ACCOUNT_FILE):
+                creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=scope)
+                creds_source = f"Service account file ({SERVICE_ACCOUNT_FILE})"
+            else:
+                raise FileNotFoundError(
+                    f"No credentials found. Tried:\n"
+                    f"1. Streamlit secrets (st.secrets['GOOGLESA'])\n"
+                    f"2. Environment variable (GOOGLESA)\n"
+                    f"3. Service account file ('{SERVICE_ACCOUNT_FILE}')\n"
+                    f"Please configure at least one authentication method."
+                )
+        
+        # Log which credentials source was used (only in dev/debug)
+        if creds_source:
+            # Only show this in session state for debugging, don't print to avoid exposing in logs
+            if 'creds_source' not in st.session_state:
+                st.session_state.creds_source = creds_source
         
         # Authorize and return client
         client = gspread.authorize(creds)
