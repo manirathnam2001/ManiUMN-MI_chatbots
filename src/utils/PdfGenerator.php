@@ -120,8 +120,8 @@ class PdfGenerator
         $studentName = FeedbackUtils::validateStudentName($studentName);
         $rawFeedback = FeedbackUtils::sanitizeSpecialCharacters($rawFeedback);
         
-        // Parse feedback for structured data
-        $scoreBreakdown = FeedbackUtils::getScoreBreakdown($rawFeedback);
+        // Parse feedback for structured data - use new rubric with session type
+        $scoreBreakdown = FeedbackUtils::getScoreBreakdown($rawFeedback, $sessionType, true);
         
         // Generate HTML content
         $html = $this->generateHtmlContent($studentName, $rawFeedback, $scoreBreakdown, $chatHistory, $sessionType, $persona);
@@ -487,6 +487,10 @@ class PdfGenerator
     {
         $performanceClass = 'performance-' . strtolower(str_replace(' ', '-', $scoreBreakdown['performance_level']));
         
+        // Determine expected component count based on rubric version
+        $isNewRubric = isset($scoreBreakdown['rubric_version']) && $scoreBreakdown['rubric_version'] === '40-point';
+        $expectedComponents = $isNewRubric ? 6 : 4;
+        
         return '<div class="section">
             <h2>📊 Executive Summary</h2>
             <div class="executive-summary">
@@ -501,11 +505,11 @@ class PdfGenerator
                     </div>
                     <div class="score-item">
                         <div class="label">Percentage</div>
-                        <div class="value">' . $scoreBreakdown['percentage'] . '%</div>
+                        <div class="value">' . round($scoreBreakdown['percentage'], 1) . '%</div>
                     </div>
                     <div class="score-item">
-                        <div class="label">Components Found</div>
-                        <div class="value">' . $scoreBreakdown['component_count'] . '/4</div>
+                        <div class="label">Categories Found</div>
+                        <div class="value">' . $scoreBreakdown['component_count'] . '/' . $expectedComponents . '</div>
                     </div>
                 </div>
                 
@@ -524,48 +528,76 @@ class PdfGenerator
      */
     private function generateScoreBreakdownTable($scoreBreakdown)
     {
+        // Determine if using new or old rubric
+        $isNewRubric = isset($scoreBreakdown['rubric_version']) && $scoreBreakdown['rubric_version'] === '40-point';
+        
         $html = '<div class="section">
-            <h2>📋 MI Component Breakdown</h2>
+            <h2>📋 MI Category Breakdown</h2>
             <table class="component-table">
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Component</th>
-                        <th style="width: 15%;">Status</th>
+                        <th style="width: 20%;">Category</th>
+                        <th style="width: 15%;">Assessment</th>
                         <th style="width: 15%;">Score</th>
                         <th style="width: 10%;">Max</th>
-                        <th style="width: 40%;">Feedback</th>
+                        <th style="width: 40%;">Notes</th>
                     </tr>
                 </thead>
                 <tbody>';
         
-        $allComponents = ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION'];
+        if ($isNewRubric) {
+            // New 40-point rubric: 6 categories
+            $allCategories = ['COLLABORATION', 'ACCEPTANCE', 'COMPASSION', 'EVOCATION', 'SUMMARY', 'RESPONSE_FACTOR'];
+            $categoryDefaults = [
+                'COLLABORATION' => 9,
+                'ACCEPTANCE' => 6,
+                'COMPASSION' => 6,
+                'EVOCATION' => 6,
+                'SUMMARY' => 3,
+                'RESPONSE_FACTOR' => 10
+            ];
+        } else {
+            // Old 30-point rubric: 4 components
+            $allCategories = ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION'];
+            $categoryDefaults = [
+                'COLLABORATION' => 7.5,
+                'EVOCATION' => 7.5,
+                'ACCEPTANCE' => 7.5,
+                'COMPASSION' => 7.5
+            ];
+        }
+        
         $foundComponents = array_column($scoreBreakdown['components'], 'component');
         
-        foreach ($allComponents as $component) {
+        foreach ($allCategories as $category) {
             $componentData = null;
             foreach ($scoreBreakdown['components'] as $comp) {
-                if ($comp['component'] === $component) {
+                if ($comp['component'] === $category) {
                     $componentData = $comp;
                     break;
                 }
             }
             
+            // Format category name for display
+            $displayName = ucwords(strtolower(str_replace('_', ' ', $category)));
+            
             if ($componentData) {
                 $statusClass = $this->getStatusClass($componentData['status']);
                 $html .= '<tr>
-                    <td><strong>' . $component . '</strong></td>
+                    <td><strong>' . htmlspecialchars($displayName) . '</strong></td>
                     <td class="' . $statusClass . '">' . htmlspecialchars($componentData['status']) . '</td>
                     <td><strong>' . $componentData['score'] . '</strong></td>
                     <td>' . $componentData['max_score'] . '</td>
                     <td>' . htmlspecialchars($componentData['feedback']) . '</td>
                 </tr>';
             } else {
+                $defaultMax = isset($categoryDefaults[$category]) ? $categoryDefaults[$category] : 0;
                 $html .= '<tr>
-                    <td><strong>' . $component . '</strong></td>
+                    <td><strong>' . htmlspecialchars($displayName) . '</strong></td>
                     <td class="status-not-met">Not Assessed</td>
-                    <td><strong>0.0</strong></td>
-                    <td>7.5</td>
-                    <td><em>No assessment provided for this component</em></td>
+                    <td><strong>0</strong></td>
+                    <td>' . $defaultMax . '</td>
+                    <td><em>No assessment provided for this category</em></td>
                 </tr>';
             }
         }
