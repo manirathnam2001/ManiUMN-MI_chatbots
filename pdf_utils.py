@@ -20,22 +20,56 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 
-from scoring_utils import MIScorer, validate_student_name
+# Import new rubric system
+try:
+    from services.evaluation_service import EvaluationService
+    from rubric.mi_rubric import MIRubric
+    NEW_RUBRIC_AVAILABLE = True
+except ImportError:
+    NEW_RUBRIC_AVAILABLE = False
+
+# Keep old imports for backward compatibility
+try:
+    from scoring_utils import MIScorer, validate_student_name
+    OLD_SCORER_AVAILABLE = True
+except ImportError:
+    OLD_SCORER_AVAILABLE = False
+    # Provide fallback for validate_student_name
+    def validate_student_name(name: str) -> str:
+        """Fallback student name validation."""
+        if not name or not name.strip():
+            raise ValueError("Student name cannot be empty")
+        return name.strip()
+
 from feedback_template import FeedbackValidator, FeedbackFormatter
 
 
-def _get_performance_level(percentage: float) -> str:
-    """Get performance level description based on percentage score."""
-    if percentage >= 90:
-        return "Excellent"
-    elif percentage >= 80:
-        return "Very Good"
-    elif percentage >= 70:
-        return "Good"
-    elif percentage >= 60:
-        return "Satisfactory"
+def _get_performance_level(percentage: float, use_new_rubric: bool = False) -> str:
+    """Get performance level description based on percentage score and rubric version."""
+    if use_new_rubric:
+        # New 40-point rubric performance bands
+        if percentage >= 90:
+            return "Excellent MI skills demonstrated"
+        elif percentage >= 75:
+            return "Strong MI performance with minor areas for growth"
+        elif percentage >= 60:
+            return "Satisfactory MI foundation, continue practicing"
+        elif percentage >= 40:
+            return "Basic MI awareness, significant practice needed"
+        else:
+            return "Significant improvement needed in MI techniques"
     else:
-        return "Needs Improvement"
+        # Old 30-point rubric performance levels
+        if percentage >= 90:
+            return "Excellent"
+        elif percentage >= 80:
+            return "Very Good"
+        elif percentage >= 70:
+            return "Good"
+        elif percentage >= 60:
+            return "Satisfactory"
+        else:
+            return "Needs Improvement"
 
 
 def _format_markdown_to_html(text: str) -> str:
@@ -154,76 +188,155 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     # --- Only try to parse scores if there was a real user response ---
     if has_user_turns:
         try:
-            score_breakdown = MIScorer.get_score_breakdown(clean_feedback)
-
-            # Table construction with Paragraph wrapping for feedback column
-            headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
-            data = [headers]
-            
-            # Create style for table cell paragraphs with word wrapping
-            cell_style = ParagraphStyle(
-                'TableCell',
-                parent=styles['Normal'],
-                fontSize=9,
-                leading=11
-            )
-            
-            for component, details in score_breakdown['components'].items():
-                # Wrap feedback text in Paragraph for word wrapping
-                feedback_text = details['feedback']
-                feedback_para = Paragraph(feedback_text, cell_style)
+            # Try new rubric first
+            if NEW_RUBRIC_AVAILABLE:
+                evaluation_result = EvaluationService.evaluate_session(clean_feedback, session_type)
+                
+                # Table construction with new rubric data
+                headers = ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes']
+                data = [headers]
+                
+                # Create style for table cell paragraphs with word wrapping
+                cell_style = ParagraphStyle(
+                    'TableCell',
+                    parent=styles['Normal'],
+                    fontSize=9,
+                    leading=11
+                )
+                
+                for category_name, category_data in evaluation_result['categories'].items():
+                    # Wrap notes text in Paragraph for word wrapping
+                    notes_text = category_data.get('notes', '')
+                    notes_para = Paragraph(notes_text, cell_style)
+                    
+                    data.append([
+                        category_name,
+                        category_data['assessment'],
+                        f"{category_data['points']}",
+                        f"{category_data['max_points']}",
+                        notes_para
+                    ])
                 
                 data.append([
-                    component.title(),
-                    details['status'],
-                    f"{details['score']:.1f}",
-                    f"{details['max_score']:.1f}",
-                    feedback_para
+                    'TOTAL SCORE',
+                    f"{evaluation_result['percentage']:.1f}%",
+                    f"{evaluation_result['total_score']}",
+                    f"{evaluation_result['max_possible_score']}",
+                    f"Overall: {evaluation_result['performance_band']}"
                 ])
-            data.append([
-                'TOTAL SCORE',
-                f"{score_breakdown['percentage']:.1f}%",
-                f"{score_breakdown['total_score']:.1f}",
-                f"{score_breakdown['total_possible']:.1f}",
-                f"Overall Performance: {_get_performance_level(score_breakdown['percentage'])}"
-            ])
-            table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
-                ('BACKGROUND', (0, 1), (-1, -2), colors.white),
-                ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
-                ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -2), 10),
-                ('ALIGN', (0, 1), (2, -2), 'LEFT'),
-                ('ALIGN', (3, 1), (3, -2), 'CENTER'),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-                ('TEXTCOLOR', (0, -1), (-1, -1), colors.black),
-                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, -1), (-1, -1), 11),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
-                ('PADDING', (0, 0), (-1, -1), 6),
-            ]))
-            elements.append(table)
+                
+                table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 11),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BACKGROUND', (0, 1), (-1, -2), colors.white),
+                    ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -2), 10),
+                    ('ALIGN', (0, 1), (2, -2), 'LEFT'),
+                    ('ALIGN', (3, 1), (3, -2), 'CENTER'),
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+                    ('TEXTCOLOR', (0, -1), (-1, -1), colors.black),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, -1), (-1, -1), 11),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
+                    ('PADDING', (0, 0), (-1, -1), 6),
+                ]))
+                elements.append(table)
+            elif OLD_SCORER_AVAILABLE:
+                # Fallback to old rubric
+                score_breakdown = MIScorer.get_score_breakdown(clean_feedback)
+
+                # Table construction with Paragraph wrapping for feedback column
+                headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
+                data = [headers]
+                
+                # Create style for table cell paragraphs with word wrapping
+                cell_style = ParagraphStyle(
+                    'TableCell',
+                    parent=styles['Normal'],
+                    fontSize=9,
+                    leading=11
+                )
+                
+                for component, details in score_breakdown['components'].items():
+                    # Wrap feedback text in Paragraph for word wrapping
+                    feedback_text = details['feedback']
+                    feedback_para = Paragraph(feedback_text, cell_style)
+                    
+                    data.append([
+                        component.title(),
+                        details['status'],
+                        f"{details['score']:.1f}",
+                        f"{details['max_score']:.1f}",
+                        feedback_para
+                    ])
+                data.append([
+                    'TOTAL SCORE',
+                    f"{score_breakdown['percentage']:.1f}%",
+                    f"{score_breakdown['total_score']:.1f}",
+                    f"{score_breakdown['total_possible']:.1f}",
+                    f"Overall Performance: {_get_performance_level(score_breakdown['percentage'], use_new_rubric=False)}"
+                ])
+                table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 11),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BACKGROUND', (0, 1), (-1, -2), colors.white),
+                    ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -2), 10),
+                    ('ALIGN', (0, 1), (2, -2), 'LEFT'),
+                    ('ALIGN', (3, 1), (3, -2), 'CENTER'),
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+                    ('TEXTCOLOR', (0, -1), (-1, -1), colors.black),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, -1), (-1, -1), 11),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
+                    ('PADDING', (0, 0), (-1, -1), 6),
+                ]))
+                elements.append(table)
         except Exception as e:
-            elements.append(Paragraph("Score parsing unavailable. Raw feedback:", styles['Normal']))
+            elements.append(Paragraph(f"Score parsing unavailable: {e}. Raw feedback shown below.", styles['Normal']))
     else:
         # No user input: show zeros and a clear no-evaluation message
-        zero_data = [
-            ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback'],
-            ['Collaboration', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-            ['Evocation', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-            ['Acceptance', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-            ['Compassion', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-            ['TOTAL SCORE', '0.0%', '0.0', '30.0', 'No evaluation performed (no user responses)']
-        ]
+        if NEW_RUBRIC_AVAILABLE:
+            # New 40-point rubric categories
+            zero_data = [
+                ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes'],
+                ['Collaboration', 'Not Evaluated', '0', '9', 'No feedback, no user response'],
+                ['Acceptance', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
+                ['Compassion', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
+                ['Evocation', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
+                ['Summary', 'Not Evaluated', '0', '3', 'No feedback, no user response'],
+                ['Response Factor', 'Not Evaluated', '0', '10', 'No feedback, no user response'],
+                ['TOTAL SCORE', '0.0%', '0', '40', 'No evaluation performed (no user responses)']
+            ]
+        else:
+            # Old 30-point rubric components
+            zero_data = [
+                ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback'],
+                ['Collaboration', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+                ['Evocation', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+                ['Acceptance', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+                ['Compassion', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
+                ['TOTAL SCORE', '0.0%', '0.0', '30.0', 'No evaluation performed (no user responses)']
+            ]
+        
         table = Table(zero_data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
@@ -269,9 +382,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         else:
             # Fallback: show raw feedback content after component analysis
             feedback_lines = clean_feedback.split('\n')
+            category_keywords = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
+            component_keywords = ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION']
+            all_keywords = category_keywords + component_keywords
+            
             for line in feedback_lines:
                 line = line.strip()
-                if line and not any(comp in line.upper() for comp in MIScorer.COMPONENTS.keys()):
+                if line and not any(kw in line for kw in all_keywords):
                     if not line.startswith('Session Feedback') and not line.startswith('Evaluation Timestamp'):
                         formatted_line = _format_markdown_to_html(line)
                         elements.append(Paragraph(formatted_line, suggestion_style))
