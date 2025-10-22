@@ -40,3 +40,5 @@ SMTP logs/*.log.*
 .Trashes
 ehthumbs.db
 Thumbs.db
+# Sample PDFs for testing
+sample_*.pdf

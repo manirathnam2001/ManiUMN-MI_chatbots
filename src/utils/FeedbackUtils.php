@@ -189,10 +189,47 @@ class FeedbackUtils
      * Get complete score breakdown from feedback text
      * 
      * @param string $feedbackText Raw feedback text
+     * @param string $sessionType Session type for context determination (optional, for new rubric)
+     * @param bool $useNewRubric Whether to use new 40-point rubric (default true)
      * @return array Complete score analysis
      */
-    public static function getScoreBreakdown($feedbackText)
+    public static function getScoreBreakdown($feedbackText, $sessionType = 'HPV', $useNewRubric = true)
     {
+        // Try new rubric first if available and requested
+        if ($useNewRubric && class_exists('EvaluationService')) {
+            try {
+                require_once __DIR__ . '/../Service/EvaluationService.php';
+                $result = EvaluationService::evaluateSession($feedbackText, $sessionType);
+                
+                // Convert new rubric format to match expected output structure
+                $components = [];
+                foreach ($result['categories'] as $categoryName => $categoryData) {
+                    $components[] = [
+                        'component' => strtoupper(str_replace(' ', '_', $categoryName)),
+                        'status' => $categoryData['assessment'],
+                        'score' => $categoryData['points'],
+                        'max_score' => $categoryData['max_points'],
+                        'feedback' => $categoryData['notes']
+                    ];
+                }
+                
+                return [
+                    'components' => $components,
+                    'total_score' => $result['total_score'],
+                    'total_possible' => $result['max_possible_score'],
+                    'percentage' => $result['percentage'],
+                    'performance_level' => $result['performance_band'],
+                    'component_count' => count($components),
+                    'missing_components' => [],
+                    'rubric_version' => '40-point'
+                ];
+            } catch (Exception $e) {
+                // Fall back to old rubric if new one fails
+                error_log("New rubric failed, falling back to old: " . $e->getMessage());
+            }
+        }
+        
+        // Old rubric (30-point) fallback
         $components = self::parseComponentScores($feedbackText);
         $totalScore = self::calculateTotalScore($components);
         $percentage = self::calculatePercentage($totalScore);
@@ -205,7 +242,8 @@ class FeedbackUtils
             'percentage' => $percentage,
             'performance_level' => $performanceLevel,
             'component_count' => count($components),
-            'missing_components' => self::findMissingComponents($components)
+            'missing_components' => self::findMissingComponents($components),
+            'rubric_version' => '30-point'
         ];
     }
     
