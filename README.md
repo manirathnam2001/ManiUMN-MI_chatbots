@@ -6,8 +6,25 @@ This repository contains two Motivational Interviewing (MI) chatbot applications
 - `OHI.py`: Practice MI skills for **Oral Hygiene**
 - `secret_code_portal.py`: **Secret code access portal** for controlled student access
 
-These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on example transcripts stored in `*.txt` format.
+These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on a **40-point binary rubric system**.
 We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation (RAG)** to incorporate structured feedback from rubric documents.
+
+## 🎯 New MI Rubric (40 Points)
+
+The chatbots now use a comprehensive **40-point binary assessment rubric** with 6 categories:
+
+| Category | Points | Description |
+|----------|--------|-------------|
+| **Collaboration** | 9 | Partnership building and rapport |
+| **Acceptance** | 6 | Respect, autonomy, reflective listening |
+| **Compassion** | 6 | Non-judgmental, empathetic approach |
+| **Evocation** | 6 | Elicit self-efficacy and intrinsic motivation |
+| **Summary** | 3 | Reflective summarization |
+| **Response Factor** | 10 | Timeliness and intuitiveness |
+
+**Binary Scoring**: Each category is assessed as either "Meets Criteria" (full points) or "Needs Improvement" (0 points).
+
+📖 **See [docs/MI_Rubric.md](docs/MI_Rubric.md) for complete rubric documentation, criteria details, API usage, and example payloads.**
 
 ---
 ## 📁 Project Structure

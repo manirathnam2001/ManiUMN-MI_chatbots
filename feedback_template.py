@@ -15,8 +15,22 @@ while the FeedbackValidator class maintains data quality and completeness.
 
 from datetime import datetime
 from typing import Dict, List
-from scoring_utils import MIScorer
 from time_utils import convert_to_minnesota_time
+
+# Import new rubric system
+try:
+    from services.evaluation_service import EvaluationService
+    from rubric.mi_rubric import MIRubric, RubricContext
+    NEW_RUBRIC_AVAILABLE = True
+except ImportError:
+    NEW_RUBRIC_AVAILABLE = False
+
+# Keep old scorer for backward compatibility during transition
+try:
+    from scoring_utils import MIScorer
+    OLD_SCORER_AVAILABLE = True
+except ImportError:
+    OLD_SCORER_AVAILABLE = False
 
 
 class FeedbackFormatter:
@@ -24,7 +38,10 @@ class FeedbackFormatter:
     
     @staticmethod
     def format_evaluation_prompt(session_type: str, transcript: str, rag_context: str) -> str:
-        """Generate standardized evaluation prompt for both HPV and OHI assessments."""
+        """Generate standardized evaluation prompt for both HPV and OHI assessments using new 40-point rubric."""
+        # Determine context for criteria text
+        context_text = "HPV vaccination" if "HPV" in session_type.upper() else "oral health"
+        
         return f"""
         ## Motivational Interviewing Assessment - {session_type} Session
 
@@ -42,32 +59,53 @@ class FeedbackFormatter:
         {rag_context}
 
         ### Assessment Framework:
-        Evaluate the student's MI skills using the 30-point scoring system (7.5 points per component).
+        Evaluate the student's MI skills using the NEW 40-point binary scoring system (6 categories, total 40 points).
         
-        **Scoring Guidelines:**
-        - **Met** (7.5 pts): Student demonstrates proficient use of the MI component
-        - **Partially Met** (3.75 pts): Student shows some understanding but needs improvement
-        - **Not Met** (0 pts): Student does not demonstrate the component or uses techniques contrary to MI
+        **Binary Scoring Guidelines:**
+        - **Meets Criteria**: Student demonstrates the category competency = FULL category points
+        - **Needs Improvement**: Student does not adequately demonstrate the competency = 0 points
 
         ### Required Evaluation Format:
-        Please structure your feedback exactly as follows for each component:
+        Please structure your feedback exactly as follows for each category:
 
-        **1. COLLABORATION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about partnership building and rapport development]**
+        **Collaboration (9 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Introduces self, role, is engaging, welcoming
+        - Collaborated with the patient by eliciting their ideas for change in {context_text} or by providing support as a partnership
+        - Did not lecture; Did not try to "fix" the patient
         
-        **2. EVOCATION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about drawing out patient motivations and exploring their perspective]**
+        **Acceptance (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Asks permission before eliciting accurate information about the {context_text}
+        - Uses reflections to demonstrate listening
         
-        **3. ACCEPTANCE (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about respecting patient autonomy and using reflective listening]**
+        **Compassion (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Tries to understand the patient's perceptions and/or concerns with the {context_text}
+        - Does not judge, shame or belittle the patient
         
-        **4. COMPASSION (7.5 pts): [Met/Partially Met/Not Met] - [Specific feedback about demonstrating warmth and non-judgmental approach]**
+        **Evocation (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Uses open-ended questions for patient understanding OR stage of change OR eliciting change talk
+        - Supports self-efficacy; emphasizes patient autonomy regarding the {context_text} (rolls with resistance)
+        
+        **Summary (3 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Reflects big picture; checks accuracy of information and/or next steps
+        
+        **Response Factor (10 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
+        - Fast and intuitive responses to questions probed; acceptable average time throughout conversation
 
         ### Additional Requirements:
-        - For each component, provide specific examples from the conversation
+        - For each category, provide specific examples from the conversation
         - Highlight what the student did well (strengths)
         - Offer concrete suggestions for improvement with specific MI techniques
         - Include overall recommendations for continued learning and skill development
         - Maintain a supportive and educational tone throughout your feedback
+        - Use ONLY "Meets Criteria" or "Needs Improvement" for each category (no partial credit)
 
-        Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations.
+        Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations. Total possible score is 40 points.
         """
 
     @staticmethod
@@ -90,12 +128,18 @@ class FeedbackFormatter:
         feedback_lines = feedback.split('\n')
         
         # Find where the actual feedback content starts
+        # Look for category names (new rubric) or numbered components (old rubric)
         start_idx = 0
+        category_names = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
+        
         for idx, line in enumerate(feedback_lines):
-            # Look for lines that start with "1. ", "2. ", "3. ", or "4. " (component numbers)
-            # or lines that start with "**1.", "**2.", etc. (bold markdown)
             stripped = line.strip()
-            if any(stripped.startswith(f"{i}. ") or stripped.startswith(f"**{i}.") for i in range(1, 5)):
+            # Check for new rubric categories
+            if any(cat in stripped for cat in category_names):
+                start_idx = idx
+                break
+            # Check for old rubric numbered components (1-4)
+            if any(stripped.startswith(f"{i}. ") or stripped.startswith(f"**{i}.") for i in range(1, 7)):
                 start_idx = idx
                 break
         
@@ -116,25 +160,47 @@ class FeedbackFormatter:
         return '\n'.join(filter(None, parts))
 
     @staticmethod
-    def generate_component_breakdown_table(feedback: str) -> List[Dict[str, str]]:
-        """Generate table data for component breakdown in PDF."""
+    def generate_component_breakdown_table(feedback: str, session_type: str = "HPV") -> List[Dict[str, str]]:
+        """Generate table data for component breakdown in PDF using new 40-point rubric."""
         try:
-            component_scores = MIScorer.parse_feedback_scores(feedback)
-            table_data = []
-            
-            for score in component_scores:
-                # Format score with proper parentheses and max score context
-                max_score = MIScorer.COMPONENTS[score.component]
-                score_display = f"{score.score:.1f} pts ({score.score/max_score*100:.0f}%)"
+            if NEW_RUBRIC_AVAILABLE:
+                # Use new evaluation service
+                result = EvaluationService.evaluate_session(feedback, session_type)
+                table_data = []
                 
-                table_data.append({
-                    'component': score.component,
-                    'status': score.status,
-                    'score': score_display,
-                    'feedback': score.feedback
-                })
-            
-            return table_data
+                for category_name, category_data in result['categories'].items():
+                    points = category_data['points']
+                    max_points = category_data['max_points']
+                    score_display = f"{points} pts ({points/max_points*100:.0f}%)"
+                    
+                    table_data.append({
+                        'component': category_name,
+                        'status': category_data['assessment'],
+                        'score': score_display,
+                        'feedback': category_data['notes']
+                    })
+                
+                return table_data
+            elif OLD_SCORER_AVAILABLE:
+                # Fallback to old scorer
+                component_scores = MIScorer.parse_feedback_scores(feedback)
+                table_data = []
+                
+                for score in component_scores:
+                    # Format score with proper parentheses and max score context
+                    max_score = MIScorer.COMPONENTS[score.component]
+                    score_display = f"{score.score:.1f} pts ({score.score/max_score*100:.0f}%)"
+                    
+                    table_data.append({
+                        'component': score.component,
+                        'status': score.status,
+                        'score': score_display,
+                        'feedback': score.feedback
+                    })
+                
+                return table_data
+            else:
+                return []
         except Exception:
             # Fallback to empty table if parsing fails
             return []
@@ -145,6 +211,11 @@ class FeedbackFormatter:
         suggestions = []
         lines = feedback.split('\n')
         in_suggestions = False
+        
+        # Define category keywords for both old and new rubrics
+        old_components = ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION']
+        new_categories = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
+        all_categories = old_components + new_categories
         
         for line in lines:
             line = line.strip()
@@ -168,8 +239,8 @@ class FeedbackFormatter:
                 continue
             
             if in_suggestions:
-                # Stop when we hit a new section or component
-                if line.startswith(('1.', '2.', '3.', '4.')) and any(comp in line.upper() for comp in MIScorer.COMPONENTS.keys()):
+                # Stop when we hit a new section or component/category
+                if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.')) and any(cat in line for cat in all_categories):
                     in_suggestions = False
                     continue
                 
@@ -211,38 +282,59 @@ class FeedbackValidator:
     
     @staticmethod
     def validate_feedback_completeness(feedback: str) -> Dict[str, any]:
-        """Validate that feedback contains all required components."""
-        from scoring_utils import validate_feedback_format
-        
+        """Validate that feedback contains all required components/categories."""
         validation_result = {
             'is_valid': True,
             'missing_components': [],
             'warnings': []
         }
         
-        # Check for required components
-        if not validate_feedback_format(feedback):
-            validation_result['is_valid'] = False
-            
-            # Find which components are missing
-            required_components = set(MIScorer.COMPONENTS.keys())
-            found_components = set()
+        # Check for new rubric categories first
+        if NEW_RUBRIC_AVAILABLE:
+            new_categories = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
+            found_categories = set()
             
             lines = feedback.split('\n')
             for line in lines:
-                for component in required_components:
-                    if component in line.upper():
-                        found_components.add(component)
+                for category in new_categories:
+                    if category in line:
+                        found_categories.add(category)
             
-            validation_result['missing_components'] = list(required_components - found_components)
+            missing = set(new_categories) - found_categories
+            if missing:
+                validation_result['is_valid'] = False
+                validation_result['missing_components'] = list(missing)
+        elif OLD_SCORER_AVAILABLE:
+            # Fallback to old rubric validation
+            from scoring_utils import validate_feedback_format
+            
+            if not validate_feedback_format(feedback):
+                validation_result['is_valid'] = False
+                
+                # Find which components are missing
+                required_components = set(MIScorer.COMPONENTS.keys())
+                found_components = set()
+                
+                lines = feedback.split('\n')
+                for line in lines:
+                    for component in required_components:
+                        if component in line.upper():
+                            found_components.add(component)
+                
+                validation_result['missing_components'] = list(required_components - found_components)
         
         # Check for score parsing issues
         try:
-            component_scores = MIScorer.parse_feedback_scores(feedback)
-            if len(component_scores) < len(MIScorer.COMPONENTS):
-                validation_result['warnings'].append("Some components may not have parseable scores")
+            if NEW_RUBRIC_AVAILABLE:
+                result = EvaluationService.parse_llm_feedback(feedback)
+                if len(result) < 6:
+                    validation_result['warnings'].append("Some categories may not have parseable assessments")
+            elif OLD_SCORER_AVAILABLE:
+                component_scores = MIScorer.parse_feedback_scores(feedback)
+                if len(component_scores) < len(MIScorer.COMPONENTS):
+                    validation_result['warnings'].append("Some components may not have parseable scores")
         except Exception as e:
-            validation_result['warnings'].append(f"Score parsing issue: {str(e)}")
+            validation_result['warnings'].append(f"Assessment parsing issue: {str(e)}")
         
         return validation_result
 
