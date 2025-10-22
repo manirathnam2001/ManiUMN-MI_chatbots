@@ -205,28 +205,38 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 )
                 
                 for category_name, category_data in evaluation_result['categories'].items():
-                    # Wrap notes text in Paragraph for word wrapping
+                    # Wrap all text fields in Paragraph for word wrapping
                     notes_text = category_data.get('notes', '')
                     notes_para = Paragraph(notes_text, cell_style)
                     
+                    # Wrap category name and assessment in Paragraph as well for consistency
+                    category_para = Paragraph(category_name, cell_style)
+                    assessment_para = Paragraph(category_data['assessment'], cell_style)
+                    
                     data.append([
-                        category_name,
-                        category_data['assessment'],
+                        category_para,
+                        assessment_para,
                         f"{category_data['points']}",
                         f"{category_data['max_points']}",
                         notes_para
                     ])
                 
+                # Wrap total row text in Paragraphs for consistency
+                total_label_para = Paragraph('TOTAL SCORE', cell_style)
+                total_perf_para = Paragraph(f"Overall: {evaluation_result['performance_band']}", cell_style)
+                
                 data.append([
-                    'TOTAL SCORE',
+                    total_label_para,
                     f"{evaluation_result['percentage']:.1f}%",
                     f"{evaluation_result['total_score']}",
                     f"{evaluation_result['max_possible_score']}",
-                    f"Overall: {evaluation_result['performance_band']}"
+                    total_perf_para
                 ])
                 
                 table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
-                table.setStyle(TableStyle([
+                
+                # Base table style
+                table_style = TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -248,7 +258,24 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
                     ('PADDING', (0, 0), (-1, -1), 6),
-                ]))
+                ])
+                
+                # Add conditional formatting for scores (row 1 to -2, column 2 is the Score column)
+                for row_idx, (category_name, category_data) in enumerate(evaluation_result['categories'].items(), start=1):
+                    points = category_data['points']
+                    max_points = category_data['max_points']
+                    
+                    # Apply color based on score: green for full score, red for zero score
+                    if points == max_points:
+                        # Full score - green text
+                        table_style.add('TEXTCOLOR', (2, row_idx), (2, row_idx), colors.green)
+                        table_style.add('FONTNAME', (2, row_idx), (2, row_idx), 'Helvetica-Bold')
+                    elif points == 0:
+                        # Zero score - red text
+                        table_style.add('TEXTCOLOR', (2, row_idx), (2, row_idx), colors.red)
+                        table_style.add('FONTNAME', (2, row_idx), (2, row_idx), 'Helvetica-Bold')
+                
+                table.setStyle(table_style)
                 elements.append(table)
             elif OLD_SCORER_AVAILABLE:
                 # Fallback to old rubric
@@ -371,14 +398,18 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         suggestions = FeedbackFormatter.extract_suggestions_from_feedback(clean_feedback)
         suggestion_style = ParagraphStyle(
             'Suggestion', parent=styles['Normal'],
-            fontSize=11, leading=14, spaceAfter=8, leftIndent=20, bulletIndent=10
+            fontSize=11, leading=14, spaceAfter=8
         )
         if suggestions:
             for suggestion in suggestions:
                 clean_suggestion = FeedbackValidator.sanitize_special_characters(suggestion)
                 # Convert markdown bold to HTML bold for proper PDF rendering
                 formatted_suggestion = _format_markdown_to_html(clean_suggestion)
-                elements.append(Paragraph(f"• {formatted_suggestion}", suggestion_style))
+                # Remove bullet characters (•, -, *) from the start but keep the content
+                formatted_suggestion = formatted_suggestion.lstrip('•-* \t')
+                # Only add paragraph if there's actual content after removing bullets
+                if formatted_suggestion:
+                    elements.append(Paragraph(formatted_suggestion, suggestion_style))
         else:
             # Fallback: show raw feedback content after component analysis
             feedback_lines = clean_feedback.split('\n')

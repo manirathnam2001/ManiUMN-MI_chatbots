@@ -43,6 +43,7 @@ class EvaluationService:
         - "Collaboration (9 pts): Meets Criteria - ..."
         - "1. Collaboration: Meets Criteria - ..."
         - "**Collaboration**: Meets Criteria - ..."
+        - "Collaboration: Meets Criteria" (without dash)
         
         Args:
             feedback_text: Raw feedback text from LLM
@@ -53,12 +54,14 @@ class EvaluationService:
         assessments = {}
         lines = feedback_text.split('\n')
         
-        # Regex patterns to match category lines
+        # Regex patterns to match category lines (with or without dash/details after assessment)
         patterns = [
-            # Pattern: "Collaboration: Meets Criteria - ..." or with bold markdown
+            # Pattern with dash: "Collaboration: Meets Criteria - ..." or with bold markdown
             r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Meets Criteria|Needs Improvement)(?:\*{0,2})?\s*[-–—]',
+            # Pattern without dash: "Collaboration: Meets Criteria" or with bold markdown
+            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Meets Criteria|Needs Improvement)(?:\*{0,2})?\s*$',
             # Pattern with brackets: "Collaboration: [Meets Criteria] - ..."
-            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*\[\s*(Meets Criteria|Needs Improvement)\s*\]\s*[-–—]',
+            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*\[\s*(Meets Criteria|Needs Improvement)\s*\]',
         ]
         
         for line in lines:
@@ -137,6 +140,44 @@ class EvaluationService:
         
         return notes
     
+    @staticmethod
+    def generate_default_notes(category: str, assessment: CategoryAssessment, context: RubricContext) -> str:
+        """
+        Generate constructive default notes when LLM feedback lacks specific details.
+        
+        Args:
+            category: Category name
+            assessment: CategoryAssessment (MEETS_CRITERIA or NEEDS_IMPROVEMENT)
+            context: RubricContext (HPV or OHI)
+            
+        Returns:
+            Constructive feedback note
+        """
+        context_text = "HPV vaccination" if context == RubricContext.HPV else "oral health"
+        
+        if assessment == CategoryAssessment.MEETS_CRITERIA:
+            # Positive constructive feedback for meeting criteria
+            positive_notes = {
+                'Collaboration': f'Demonstrated effective partnership and collaboration skills in discussing {context_text}.',
+                'Acceptance': f'Showed respect for patient autonomy and used reflective listening when discussing {context_text}.',
+                'Compassion': f'Displayed empathy and understanding of patient concerns regarding {context_text}.',
+                'Evocation': f'Successfully used open-ended questions and supported patient self-efficacy regarding {context_text}.',
+                'Summary': 'Provided appropriate summarization of key discussion points.',
+                'Response Factor': 'Maintained timely and intuitive responses throughout the conversation.'
+            }
+            return positive_notes.get(category, 'Criteria met for this category.')
+        else:
+            # Constructive improvement suggestions for needs improvement
+            improvement_notes = {
+                'Collaboration': f'Consider introducing yourself more clearly and building stronger partnership around {context_text} discussions.',
+                'Acceptance': f'Focus on asking permission before sharing information and using more reflective listening about {context_text}.',
+                'Compassion': f'Work on understanding patient perceptions and avoiding judgmental language when discussing {context_text}.',
+                'Evocation': f'Practice using more open-ended questions and supporting patient autonomy regarding {context_text}.',
+                'Summary': 'Try to provide a clear summary reflecting the key points and potential next steps.',
+                'Response Factor': 'Work on providing more timely and intuitive responses during the conversation.'
+            }
+            return improvement_notes.get(category, 'This area needs further development.')
+    
     @classmethod
     def evaluate_session(
         cls,
@@ -165,6 +206,12 @@ class EvaluationService:
         
         # Extract notes
         notes = cls.extract_evaluator_notes(feedback_text)
+        
+        # Generate default notes for categories with empty notes
+        for category_name in ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']:
+            if category_name in assessments and (category_name not in notes or not notes[category_name]):
+                assessment = assessments[category_name]
+                notes[category_name] = cls.generate_default_notes(category_name, assessment, context)
         
         # Get threshold
         threshold = response_threshold or cls.get_response_factor_threshold()
