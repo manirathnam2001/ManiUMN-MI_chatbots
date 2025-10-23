@@ -20,10 +20,11 @@ Usage:
     streamlit run secret_code_portal.py
 
 Authentication:
-    Supports three methods (in priority order):
-    1. Streamlit secrets: st.secrets["GOOGLESA"] (for Streamlit Cloud)
-    2. Environment variable: GOOGLESA (for production deployments)
-    3. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
+    Supports four methods (in priority order):
+    1. Streamlit secrets: st.secrets["GOOGLESA"] (TOML table or JSON string)
+    2. Environment variable: GOOGLESA_B64 (base64-encoded JSON, recommended)
+    3. Environment variable: GOOGLESA (single-line JSON with escaped newlines)
+    4. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
 
 Requirements:
     - Service account must have access to the Google Sheet
@@ -32,6 +33,7 @@ Requirements:
 
 import os
 import json
+import base64
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -59,10 +61,11 @@ def get_google_sheets_client():
     """
     Initialize and return Google Sheets client using service account credentials.
     
-    Supports three authentication methods (in priority order):
-    1. Streamlit secrets: st.secrets["GOOGLESA"] (for Streamlit Cloud)
-    2. Environment variable: GOOGLESA (for production deployments)
-    3. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
+    Supports four authentication methods (in priority order):
+    1. Streamlit secrets: st.secrets["GOOGLESA"] (TOML table or JSON string)
+    2. Environment variable: GOOGLESA_B64 (base64-encoded JSON)
+    3. Environment variable: GOOGLESA (JSON string)
+    4. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
     
     Returns:
         gspread.Client: Authorized Google Sheets client
@@ -81,16 +84,58 @@ def get_google_sheets_client():
         creds_source = None
         
         # Method 1: Try Streamlit secrets first (for Streamlit Cloud deployment)
+        # Supports both TOML table (mapping) and JSON string formats
         try:
             if "GOOGLESA" in st.secrets:
-                creds_dict = dict(st.secrets["GOOGLESA"])
-                creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                creds_source = "Streamlit secrets"
-        except Exception:
-            # Streamlit secrets not available or failed
+                googlesa_secret = st.secrets["GOOGLESA"]
+                
+                # Check if it's a string (JSON format) or a mapping (TOML table)
+                if isinstance(googlesa_secret, str):
+                    # It's a JSON string, parse it
+                    try:
+                        creds_dict = json.loads(googlesa_secret)
+                        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+                        creds_source = "Streamlit secrets (JSON string)"
+                    except json.JSONDecodeError as e:
+                        raise Exception(
+                            f"Failed to parse st.secrets['GOOGLESA'] as JSON: {str(e)}. "
+                            f"If using JSON format, ensure it's valid JSON. "
+                            f"Alternatively, use TOML table format in Streamlit secrets."
+                        )
+                else:
+                    # It's a mapping (TOML table), convert to dict
+                    creds_dict = dict(googlesa_secret)
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+                    creds_source = "Streamlit secrets (TOML table)"
+        except Exception as e:
+            # Only re-raise if it's a parsing error we explicitly raised
+            if "Failed to parse st.secrets['GOOGLESA']" in str(e):
+                raise
+            # Otherwise, Streamlit secrets not available or failed for other reasons
             pass
         
-        # Method 2: Try environment variable (for production deployment)
+        # Method 2: Try GOOGLESA_B64 environment variable (base64-encoded JSON)
+        if creds is None:
+            googlesa_b64 = os.environ.get('GOOGLESA_B64')
+            if googlesa_b64:
+                try:
+                    # Decode base64
+                    googlesa_json = base64.b64decode(googlesa_b64).decode('utf-8')
+                    creds_dict = json.loads(googlesa_json)
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+                    creds_source = "Environment variable (GOOGLESA_B64)"
+                except (base64.binascii.Error, UnicodeDecodeError) as e:
+                    raise Exception(
+                        f"Failed to decode GOOGLESA_B64 environment variable: {str(e)}. "
+                        f"Ensure it contains valid base64-encoded JSON."
+                    )
+                except json.JSONDecodeError as e:
+                    raise Exception(
+                        f"Failed to parse decoded GOOGLESA_B64 as JSON: {str(e)}. "
+                        f"Ensure the base64 content decodes to valid JSON."
+                    )
+        
+        # Method 3: Try GOOGLESA environment variable (JSON string)
         if creds is None:
             googlesa_env = os.environ.get('GOOGLESA')
             if googlesa_env:
@@ -99,9 +144,16 @@ def get_google_sheets_client():
                     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
                     creds_source = "Environment variable (GOOGLESA)"
                 except json.JSONDecodeError as e:
-                    raise Exception(f"Failed to parse GOOGLESA environment variable as JSON: {str(e)}")
+                    raise Exception(
+                        f"Failed to parse GOOGLESA environment variable as JSON: {str(e)}. "
+                        f"Common issue: unescaped newlines in private_key field. "
+                        f"Solutions:\n"
+                        f"  1. Use Streamlit secrets (recommended for Streamlit Cloud)\n"
+                        f"  2. Use GOOGLESA_B64 with base64-encoded JSON (avoids shell escaping issues)\n"
+                        f"  3. Ensure GOOGLESA contains single-line JSON with \\n escapes in private_key"
+                    )
         
-        # Method 3: Fallback to service account file (for local/dev)
+        # Method 4: Fallback to service account file (for local/dev)
         if creds is None:
             if os.path.exists(SERVICE_ACCOUNT_FILE):
                 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=scope)
@@ -110,16 +162,15 @@ def get_google_sheets_client():
                 raise FileNotFoundError(
                     f"No credentials found. Tried:\n"
                     f"1. Streamlit secrets (st.secrets['GOOGLESA'])\n"
-                    f"2. Environment variable (GOOGLESA)\n"
-                    f"3. Service account file ('{SERVICE_ACCOUNT_FILE}')\n"
+                    f"2. Environment variable (GOOGLESA_B64)\n"
+                    f"3. Environment variable (GOOGLESA)\n"
+                    f"4. Service account file ('{SERVICE_ACCOUNT_FILE}')\n"
                     f"Please configure at least one authentication method."
                 )
         
-        # Log which credentials source was used (only in dev/debug)
+        # Store which credentials source was used for debugging (non-secret indicator)
         if creds_source:
-            # Only show this in session state for debugging, don't print to avoid exposing in logs
-            if 'creds_source' not in st.session_state:
-                st.session_state.creds_source = creds_source
+            st.session_state["googlesa_source"] = creds_source
         
         # Authorize and return client
         client = gspread.authorize(creds)
