@@ -44,6 +44,101 @@ except ImportError:
 from feedback_template import FeedbackValidator, FeedbackFormatter
 
 
+def _soft_wrap_long_tokens(text: str, max_len: int = 30) -> str:
+    """
+    Insert zero-width spaces into very long tokens to enable wrapping.
+    
+    This helps prevent long unbreakable strings (like URLs or concatenated words)
+    from overflowing table cells by inserting Unicode zero-width spaces that
+    allow line breaks without changing the visual appearance.
+    
+    Args:
+        text: Text that may contain long tokens
+        max_len: Maximum token length before inserting break opportunities
+        
+    Returns:
+        Text with zero-width spaces inserted for better wrapping
+    """
+    if not text:
+        return text
+    
+    words = text.split()
+    result = []
+    
+    for word in words:
+        if len(word) > max_len:
+            # Insert zero-width space every max_len characters
+            broken = ''
+            for i, char in enumerate(word):
+                broken += char
+                if (i + 1) % max_len == 0 and i < len(word) - 1:
+                    broken += '\u200b'  # Zero-width space
+            result.append(broken)
+        else:
+            result.append(word)
+    
+    return ' '.join(result)
+
+
+def _make_para(text: str, style: ParagraphStyle) -> Paragraph:
+    """
+    Create a Paragraph with proper text sanitization and formatting.
+    
+    This helper ensures consistent handling of:
+    - Special character sanitization
+    - Markdown bold to HTML bold conversion
+    - Soft-wrapping of long tokens
+    - Paragraph creation with the specified style
+    
+    Args:
+        text: Raw text that may contain markdown, special chars, or long tokens
+        style: ParagraphStyle to apply
+        
+    Returns:
+        Paragraph object ready for use in tables or document flow
+    """
+    if not text:
+        text = ''
+    
+    # Sanitize special characters
+    clean_text = FeedbackValidator.sanitize_special_characters(str(text))
+    
+    # Convert markdown bold to HTML bold
+    html_text = _format_markdown_to_html(clean_text)
+    
+    # Apply soft-wrapping for very long tokens
+    wrapped_text = _soft_wrap_long_tokens(html_text, max_len=30)
+    
+    return Paragraph(wrapped_text, style)
+
+
+def _build_wrapped_table(data: list, content_width: float = 6.5 * inch) -> Table:
+    """
+    Build a table with proper text wrapping for all cells.
+    
+    This helper creates a table where:
+    - All cells (including headers) use Paragraph objects for wrapping
+    - Column widths sum to the specified content width
+    - Default proportions: [1.1in, 1.5in, 0.6in, 0.6in, 2.7in] = 6.5in
+    
+    Args:
+        data: List of lists containing table data (already converted to Paragraphs)
+        content_width: Total width available for the table (default: 6.5 inches)
+        
+    Returns:
+        Table object with configured column widths
+    """
+    # Column width proportions that sum to content_width
+    # Category/Component: 1.1", Assessment/Status: 1.5", Score: 0.6", Max: 0.6", Notes/Feedback: 2.7"
+    col_proportions = [1.1, 1.5, 0.6, 0.6, 2.7]
+    total_proportion = sum(col_proportions)
+    
+    # Scale proportions to match content_width
+    colWidths = [(p / total_proportion) * content_width for p in col_proportions]
+    
+    return Table(data, colWidths=colWidths)
+
+
 def _get_performance_level(percentage: float, use_new_rubric: bool = False) -> str:
     """Get performance level description based on percentage score and rubric version."""
     if use_new_rubric:
@@ -194,24 +289,35 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 
                 # Table construction with new rubric data
                 headers = ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes']
-                data = [headers]
+                data = []
                 
                 # Create style for table cell paragraphs with word wrapping
                 cell_style = ParagraphStyle(
                     'TableCell',
                     parent=styles['Normal'],
                     fontSize=9,
-                    leading=11
+                    leading=11,
+                    wordWrap='LTR'
                 )
+                
+                # Convert headers to Paragraphs for consistent wrapping
+                header_style = ParagraphStyle(
+                    'TableHeader',
+                    parent=styles['Normal'],
+                    fontSize=11,
+                    leading=13,
+                    fontName='Helvetica-Bold',
+                    textColor=colors.whitesmoke,
+                    wordWrap='LTR'
+                )
+                header_row = [_make_para(h, header_style) for h in headers]
+                data.append(header_row)
                 
                 for category_name, category_data in evaluation_result['categories'].items():
                     # Wrap all text fields in Paragraph for word wrapping
-                    notes_text = category_data.get('notes', '')
-                    notes_para = Paragraph(notes_text, cell_style)
-                    
-                    # Wrap category name and assessment in Paragraph as well for consistency
-                    category_para = Paragraph(category_name, cell_style)
-                    assessment_para = Paragraph(category_data['assessment'], cell_style)
+                    category_para = _make_para(category_name, cell_style)
+                    assessment_para = _make_para(category_data['assessment'], cell_style)
+                    notes_para = _make_para(category_data.get('notes', ''), cell_style)
                     
                     data.append([
                         category_para,
@@ -222,8 +328,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     ])
                 
                 # Wrap total row text in Paragraphs for consistency
-                total_label_para = Paragraph('TOTAL SCORE', cell_style)
-                total_perf_para = Paragraph(f"Overall: {evaluation_result['performance_band']}", cell_style)
+                total_label_para = _make_para('TOTAL SCORE', cell_style)
+                total_perf_para = _make_para(f"Overall: {evaluation_result['performance_band']}", cell_style)
                 
                 data.append([
                     total_label_para,
@@ -233,7 +339,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     total_perf_para
                 ])
                 
-                table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
+                # Build table with proper column widths
+                table = _build_wrapped_table(data)
                 
                 # Base table style
                 table_style = TableStyle([
@@ -258,6 +365,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
                     ('PADDING', (0, 0), (-1, -1), 6),
+                    ('WORDWRAP', (0, 0), (-1, -1), 'LTR'),
                 ])
                 
                 # Add conditional formatting for scores (row 1 to -2, column 2 is the Score column)
@@ -281,38 +389,61 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 # Fallback to old rubric
                 score_breakdown = MIScorer.get_score_breakdown(clean_feedback)
 
-                # Table construction with Paragraph wrapping for feedback column
+                # Table construction with Paragraph wrapping for all cells
                 headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
-                data = [headers]
+                data = []
                 
                 # Create style for table cell paragraphs with word wrapping
                 cell_style = ParagraphStyle(
                     'TableCell',
                     parent=styles['Normal'],
                     fontSize=9,
-                    leading=11
+                    leading=11,
+                    wordWrap='LTR'
                 )
                 
+                # Convert headers to Paragraphs for consistent wrapping
+                header_style = ParagraphStyle(
+                    'TableHeader',
+                    parent=styles['Normal'],
+                    fontSize=11,
+                    leading=13,
+                    fontName='Helvetica-Bold',
+                    textColor=colors.whitesmoke,
+                    wordWrap='LTR'
+                )
+                header_row = [_make_para(h, header_style) for h in headers]
+                data.append(header_row)
+                
                 for component, details in score_breakdown['components'].items():
-                    # Wrap feedback text in Paragraph for word wrapping
-                    feedback_text = details['feedback']
-                    feedback_para = Paragraph(feedback_text, cell_style)
+                    # Wrap all text fields in Paragraph for word wrapping
+                    component_para = _make_para(component.title(), cell_style)
+                    status_para = _make_para(details['status'], cell_style)
+                    feedback_para = _make_para(details['feedback'], cell_style)
                     
                     data.append([
-                        component.title(),
-                        details['status'],
+                        component_para,
+                        status_para,
                         f"{details['score']:.1f}",
                         f"{details['max_score']:.1f}",
                         feedback_para
                     ])
+                
+                # Total row with Paragraphs
+                total_label_para = _make_para('TOTAL SCORE', cell_style)
+                total_perf_text = f"Overall Performance: {_get_performance_level(score_breakdown['percentage'], use_new_rubric=False)}"
+                total_perf_para = _make_para(total_perf_text, cell_style)
+                
                 data.append([
-                    'TOTAL SCORE',
+                    total_label_para,
                     f"{score_breakdown['percentage']:.1f}%",
                     f"{score_breakdown['total_score']:.1f}",
                     f"{score_breakdown['total_possible']:.1f}",
-                    f"Overall Performance: {_get_performance_level(score_breakdown['percentage'], use_new_rubric=False)}"
+                    total_perf_para
                 ])
-                table = Table(data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
+                
+                # Build table with proper column widths
+                table = _build_wrapped_table(data)
                 table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -335,36 +466,64 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
                     ('PADDING', (0, 0), (-1, -1), 6),
+                    ('WORDWRAP', (0, 0), (-1, -1), 'LTR'),
                 ]))
                 elements.append(table)
         except Exception as e:
             elements.append(Paragraph(f"Score parsing unavailable: {e}. Raw feedback shown below.", styles['Normal']))
     else:
         # No user input: show zeros and a clear no-evaluation message
+        # Create style for table cell paragraphs with word wrapping
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=styles['Normal'],
+            fontSize=9,
+            leading=11,
+            wordWrap='LTR'
+        )
+        
+        # Header style
+        header_style = ParagraphStyle(
+            'TableHeader',
+            parent=styles['Normal'],
+            fontSize=11,
+            leading=13,
+            fontName='Helvetica-Bold',
+            textColor=colors.whitesmoke,
+            wordWrap='LTR'
+        )
+        
         if NEW_RUBRIC_AVAILABLE:
             # New 40-point rubric categories
+            headers = ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes']
+            header_row = [_make_para(h, header_style) for h in headers]
+            
             zero_data = [
-                ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes'],
-                ['Collaboration', 'Not Evaluated', '0', '9', 'No feedback, no user response'],
-                ['Acceptance', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
-                ['Compassion', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
-                ['Evocation', 'Not Evaluated', '0', '6', 'No feedback, no user response'],
-                ['Summary', 'Not Evaluated', '0', '3', 'No feedback, no user response'],
-                ['Response Factor', 'Not Evaluated', '0', '10', 'No feedback, no user response'],
-                ['TOTAL SCORE', '0.0%', '0', '40', 'No evaluation performed (no user responses)']
+                header_row,
+                [_make_para('Collaboration', cell_style), _make_para('Not Evaluated', cell_style), '0', '9', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Acceptance', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Compassion', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Evocation', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Summary', cell_style), _make_para('Not Evaluated', cell_style), '0', '3', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Response Factor', cell_style), _make_para('Not Evaluated', cell_style), '0', '10', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('TOTAL SCORE', cell_style), '0.0%', '0', '40', _make_para('No evaluation performed (no user responses)', cell_style)]
             ]
         else:
             # Old 30-point rubric components
+            headers = ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback']
+            header_row = [_make_para(h, header_style) for h in headers]
+            
             zero_data = [
-                ['MI Component', 'Status', 'Score', 'Max Score', 'Feedback'],
-                ['Collaboration', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-                ['Evocation', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-                ['Acceptance', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-                ['Compassion', 'Not Evaluated', '0.0', '7.5', 'No feedback, no user response'],
-                ['TOTAL SCORE', '0.0%', '0.0', '30.0', 'No evaluation performed (no user responses)']
+                header_row,
+                [_make_para('Collaboration', cell_style), _make_para('Not Evaluated', cell_style), '0.0', '7.5', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Evocation', cell_style), _make_para('Not Evaluated', cell_style), '0.0', '7.5', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Acceptance', cell_style), _make_para('Not Evaluated', cell_style), '0.0', '7.5', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('Compassion', cell_style), _make_para('Not Evaluated', cell_style), '0.0', '7.5', _make_para('No feedback, no user response', cell_style)],
+                [_make_para('TOTAL SCORE', cell_style), '0.0%', '0.0', '30.0', _make_para('No evaluation performed (no user responses)', cell_style)]
             ]
         
-        table = Table(zero_data, colWidths=[1.2*inch, 1*inch, 0.7*inch, 0.7*inch, 3.4*inch])
+        # Build table with proper column widths
+        table = _build_wrapped_table(zero_data)
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -387,6 +546,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.lightgrey]),
             ('PADDING', (0, 0), (-1, -1), 6),
+            ('WORDWRAP', (0, 0), (-1, -1), 'LTR'),
         ]))
         elements.append(table)
 
