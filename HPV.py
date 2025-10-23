@@ -62,6 +62,11 @@ Your task:
 - **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
 - **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
+**Natural Conversation Ending:**
+- When the conversation has naturally reached a good stopping point (typically after 10-15 exchanges where the provider has used open-ended questions, reflections, autonomy support, and summary), you may signal readiness to end by including: <<END>>
+- Example: "Thank you for taking the time to explain this. I feel more informed now. <<END>>"
+- Only use <<END>> when the conversation feels complete and all MI components have been demonstrated
+
 **Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
@@ -97,6 +102,11 @@ Your task:
 - Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
 - **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
 - **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
+
+**Natural Conversation Ending:**
+- When the conversation has naturally reached a good stopping point (typically after 10-15 exchanges where the provider has used open-ended questions, reflections, autonomy support, and summary), you may signal readiness to end by including: <<END>>
+- Example: "Thank you for taking the time to explain this. I feel more informed now. <<END>>"
+- Only use <<END>> when the conversation feels complete and all MI components have been demonstrated
 
 **Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
@@ -134,6 +144,11 @@ Your task:
 - **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
 - **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
 
+**Natural Conversation Ending:**
+- When the conversation has naturally reached a good stopping point (typically after 10-15 exchanges where the provider has used open-ended questions, reflections, autonomy support, and summary), you may signal readiness to end by including: <<END>>
+- Example: "Thank you for taking the time to explain this. I feel more informed now. <<END>>"
+- Only use <<END>> when the conversation feels complete and all MI components have been demonstrated
+
 **Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
 - **Evocation:** Did they explore your motivations, concerns, and knowledge rather than lecturing?
@@ -169,6 +184,11 @@ Your task:
 - Offer varying responses (curiosity, doubts, or agreement) depending on the provider's input
 - **DO NOT provide any hints, feedback, scores, or evaluation during the conversation**
 - **DO NOT switch to evaluator role until explicitly asked after the conversation ends**
+
+**Natural Conversation Ending:**
+- When the conversation has naturally reached a good stopping point (typically after 10-15 exchanges where the provider has used open-ended questions, reflections, autonomy support, and summary), you may signal readiness to end by including: <<END>>
+- Example: "Thank you for taking the time to explain this. I feel more informed now. <<END>>"
+- Only use <<END>> when the conversation feels complete and all MI components have been demonstrated
 
 **Evaluation Focus (ONLY after conversation ends):**
 - **Collaboration:** Did the provider build rapport and encourage partnership?
