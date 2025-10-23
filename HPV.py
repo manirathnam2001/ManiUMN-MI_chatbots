@@ -332,13 +332,14 @@ if st.session_state.selected_persona is not None:
     # --- Finish Session Button (Feedback with RAG) ---
     # Only enable feedback button based on conversation state
     from chat_utils import should_enable_feedback_button
+    from end_control_middleware import MIN_TURN_THRESHOLD
     
     feedback_enabled = should_enable_feedback_button()
     feedback_button_label = "Finish Session & Get Feedback"
     
     if not feedback_enabled:
-        if st.session_state.turn_count < 8:
-            st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
+        if st.session_state.turn_count < MIN_TURN_THRESHOLD:
+            st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/{MIN_TURN_THRESHOLD} minimum). The feedback button will be enabled after sufficient interaction.")
         
     if st.button(feedback_button_label, disabled=not feedback_enabled):
         # Get current timestamp and bot name
