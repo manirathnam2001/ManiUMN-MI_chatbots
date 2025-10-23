@@ -283,8 +283,15 @@ def handle_pdf_generation(student_name, session_type, app_name):
             st.info("There was an issue generating the PDF. Please try again.")
 
 
-def handle_chat_input(personas_dict, client):
-    """Handle user chat input and AI response."""
+def handle_chat_input(personas_dict, client, domain_name=None, domain_keywords=None):
+    """Handle user chat input and AI response with persona guard integration.
+    
+    Args:
+        personas_dict: Dictionary of persona definitions
+        client: Groq API client
+        domain_name: Name of the domain (e.g., "HPV vaccination", "oral hygiene")
+        domain_keywords: List of domain-relevant keywords for off-topic detection
+    """
     if st.session_state.selected_persona is not None:
         # Check conversation state
         if st.session_state.conversation_state == "ended":
@@ -307,6 +314,17 @@ def handle_chat_input(personas_dict, client):
             if any(phrase in user_prompt.lower() for phrase in feedback_request_phrases):
                 st.warning("⏸️ Feedback will be provided after the conversation ends. Please continue the conversation naturally.")
                 return
+            
+            # Apply persona guardrails if domain metadata is provided
+            guard_message = None
+            if domain_name and domain_keywords:
+                from persona_guard import apply_guardrails
+                needs_intervention, guard_message = apply_guardrails(
+                    user_prompt, domain_name, domain_keywords
+                )
+                
+                if needs_intervention:
+                    logger.warning(f"Guardrail intervention triggered for user message: '{user_prompt[:50]}'")
             
             # Prevent premature ending from ambiguous phrases
             if prevent_ambiguous_ending(user_prompt):
@@ -332,11 +350,18 @@ CRITICAL INSTRUCTIONS:
 - When you are ready to naturally end the conversation after a full MI session, include the end token: {END_TOKEN}
 - Only use the end token when the conversation has covered all MI components and feels complete"""
             }
+            
+            # Build messages array with guard message if intervention needed
             messages = [
                 {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
                 turn_instruction,
-                *st.session_state.chat_history
             ]
+            
+            # Add guard message before chat history if intervention needed
+            if guard_message:
+                messages.append(guard_message)
+            
+            messages.extend(st.session_state.chat_history)
             
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
@@ -346,7 +371,31 @@ CRITICAL INSTRUCTIONS:
             )
             assistant_response = response.choices[0].message.content
             
-            # Validate role consistency
+            # Check response guardrails if domain metadata is provided
+            if domain_name:
+                from persona_guard import check_response_guardrails
+                needs_correction, correction_message = check_response_guardrails(
+                    assistant_response, domain_name
+                )
+                
+                if needs_correction:
+                    logger.warning(f"Response guardrail triggered, re-generating response")
+                    # Re-generate response with correction message
+                    correction_messages = messages + [
+                        {"role": "assistant", "content": assistant_response},
+                        correction_message
+                    ]
+                    
+                    correction_response = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=correction_messages,
+                        max_tokens=150,
+                        temperature=0.7
+                    )
+                    assistant_response = correction_response.choices[0].message.content
+                    logger.info(f"Corrected response generated")
+            
+            # Validate role consistency (legacy check, now supplemented by persona_guard)
             is_valid_role, cleaned_response = validate_response_role(assistant_response)
             
             if not is_valid_role:
