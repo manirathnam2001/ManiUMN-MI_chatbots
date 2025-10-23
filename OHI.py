@@ -27,6 +27,7 @@ Requirements:
 """
 
 import os
+import logging
 import streamlit as st
 from groq import Groq
 from sentence_transformers import SentenceTransformer
@@ -42,6 +43,9 @@ from persona_texts import (
     OHI_DOMAIN_NAME,
     OHI_DOMAIN_KEYWORDS
 )
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Convert structured personas to simple dict for backward compatibility
 PERSONAS = {name: persona['system_prompt'] for name, persona in OHI_PERSONAS.items()}
@@ -138,15 +142,21 @@ if st.session_state.selected_persona is None:
         list(PERSONAS.keys()),
         key="persona_selector"
     )
-
-if st.button("Start Conversation"):
-    st.session_state.selected_persona = selected
-    st.session_state.chat_history = []
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": f"Hello! I'm {selected}, nice to meet you today."
-    })
-    st.rerun()
+    
+    # Move "Start Conversation" button inside persona selection block
+    if st.button("Start Conversation"):
+        st.session_state.selected_persona = selected
+        st.session_state.chat_history = []
+        st.session_state.conversation_state = "active"
+        st.session_state.turn_count = 0
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": f"Hello! I'm {selected}, nice to meet you today."
+        })
+        st.rerun()
+    
+    # Stop here if persona not selected yet
+    st.stop()
       
 def split_text(text, max_length=200):
     words = text.split()
@@ -208,14 +218,25 @@ if st.button(feedback_button_label, disabled=not feedback_enabled):
         "dental hygiene", transcript, rag_context
     )
 
-    feedback_response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
-            {"role": "user", "content": review_prompt}
-        ]
-    )
-    feedback = feedback_response.choices[0].message.content
+    try:
+        feedback_response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
+                {"role": "user", "content": review_prompt}
+            ]
+        )
+        feedback = feedback_response.choices[0].message.content
+    except Exception as e:
+        # Handle authentication errors gracefully
+        error_msg = str(e).lower()
+        if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+            st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+            st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and restart the conversation.")
+            st.stop()
+        else:
+            # Re-raise other unexpected errors
+            raise
     
     # Store feedback in session state to prevent disappearing
     st.session_state.feedback = {
@@ -300,9 +321,20 @@ if st.session_state.feedback is not None:
 
 # --- Handle chat input (Using improved chat_utils with persona guards) ---
 from chat_utils import handle_chat_input
-handle_chat_input(PERSONAS, client,
-                 domain_name=OHI_DOMAIN_NAME,
-                 domain_keywords=OHI_DOMAIN_KEYWORDS)
+
+# Try to call with domain parameters for backward compatibility
+try:
+    handle_chat_input(PERSONAS, client,
+                     domain_name=OHI_DOMAIN_NAME,
+                     domain_keywords=OHI_DOMAIN_KEYWORDS)
+except TypeError as e:
+    # Fall back to older signature without domain parameters
+    if "domain_name" in str(e) or "domain_keywords" in str(e):
+        logger.warning("Using older chat_utils signature without domain parameters")
+        handle_chat_input(PERSONAS, client)
+    else:
+        # Re-raise if it's a different TypeError
+        raise
 
 # Add a button to start a new conversation with a different persona
 from chat_utils import handle_new_conversation_button

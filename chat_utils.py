@@ -186,14 +186,25 @@ def generate_and_display_feedback(personas_dict, session_type, student_name, ret
         session_type.lower(), transcript, rag_context
     )
 
-    feedback_response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
-            {"role": "user", "content": review_prompt}
-        ]
-    )
-    feedback = feedback_response.choices[0].message.content
+    try:
+        feedback_response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
+                {"role": "user", "content": review_prompt}
+            ]
+        )
+        feedback = feedback_response.choices[0].message.content
+    except Exception as e:
+        # Handle authentication errors gracefully
+        error_msg = str(e).lower()
+        if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+            st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+            st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
+            return
+        else:
+            # Re-raise other unexpected errors
+            raise
     
     # Store feedback in session state to prevent disappearing
     st.session_state.feedback = {
@@ -363,13 +374,24 @@ CRITICAL INSTRUCTIONS:
             
             messages.extend(st.session_state.chat_history)
             
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=messages,
-                max_tokens=150,  # Limit response length to enforce conciseness
-                temperature=0.7
-            )
-            assistant_response = response.choices[0].message.content
+            try:
+                response = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=messages,
+                    max_tokens=150,  # Limit response length to enforce conciseness
+                    temperature=0.7
+                )
+                assistant_response = response.choices[0].message.content
+            except Exception as e:
+                # Handle authentication errors gracefully
+                error_msg = str(e).lower()
+                if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+                    st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+                    st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
+                    return
+                else:
+                    # Re-raise other unexpected errors
+                    raise
             
             # Check response guardrails if domain metadata is provided
             if domain_name:
@@ -386,14 +408,25 @@ CRITICAL INSTRUCTIONS:
                         correction_message
                     ]
                     
-                    correction_response = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=correction_messages,
-                        max_tokens=150,
-                        temperature=0.7
-                    )
-                    assistant_response = correction_response.choices[0].message.content
-                    logger.info(f"Corrected response generated")
+                    try:
+                        correction_response = client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=correction_messages,
+                            max_tokens=150,
+                            temperature=0.7
+                        )
+                        assistant_response = correction_response.choices[0].message.content
+                        logger.info(f"Corrected response generated")
+                    except Exception as e:
+                        # Handle authentication errors gracefully
+                        error_msg = str(e).lower()
+                        if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+                            st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+                            st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
+                            return
+                        else:
+                            # Re-raise other unexpected errors
+                            raise
             
             # Validate role consistency (legacy check, now supplemented by persona_guard)
             is_valid_role, cleaned_response = validate_response_role(assistant_response)
