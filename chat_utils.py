@@ -13,11 +13,21 @@ All functions maintain consistent behavior across both OHI and HPV assessment bo
 """
 
 import streamlit as st
+import logging
 from groq import Groq
 from time_utils import get_formatted_utc_time
 from feedback_template import FeedbackFormatter
 from scoring_utils import validate_student_name
 from pdf_utils import generate_pdf_report
+from end_control_middleware import (
+    should_continue,
+    prevent_ambiguous_ending,
+    log_conversation_trace,
+    END_TOKEN,
+)
+
+# Configure logging for chat utilities
+logger = logging.getLogger(__name__)
 
 
 def detect_conversation_ending(chat_history, turn_count):
@@ -298,16 +308,20 @@ def handle_chat_input(personas_dict, client):
                 st.warning("⏸️ Feedback will be provided after the conversation ends. Please continue the conversation naturally.")
                 return
             
+            # Prevent premature ending from ambiguous phrases
+            if prevent_ambiguous_ending(user_prompt):
+                logger.info(f"Ambiguous phrase detected from user: '{user_prompt}' - continuing conversation")
+            
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             st.chat_message("user").markdown(user_prompt)
             
             # Increment turn count
             st.session_state.turn_count += 1
 
-            # Enhanced turn instruction with conciseness and role consistency
+            # Enhanced turn instruction with conciseness, role consistency, and end token
             turn_instruction = {
                 "role": "system",
-                "content": """Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
+                "content": f"""Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
 
 CRITICAL INSTRUCTIONS:
 - Keep your responses CONCISE (2-3 sentences maximum)
@@ -315,7 +329,8 @@ CRITICAL INSTRUCTIONS:
 - DO NOT provide feedback, evaluation, or scores during the conversation
 - DO NOT switch to evaluator role until explicitly asked at the end
 - Respond naturally as the patient would, showing emotions and reactions
-- Wait for the conversation to naturally conclude before any evaluation"""
+- When you are ready to naturally end the conversation after a full MI session, include the end token: {END_TOKEN}
+- Only use the end token when the conversation has covered all MI components and feels complete"""
             }
             messages = [
                 {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
@@ -337,16 +352,41 @@ CRITICAL INSTRUCTIONS:
             if not is_valid_role:
                 # If bot breaks role, provide a generic patient response instead
                 assistant_response = "I appreciate you taking the time to talk with me. Is there anything else you'd like to discuss?"
-                st.session_state.conversation_state = "ended"
+                logger.warning("Bot broke role - forcing generic response")
             
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
             
-            # Check if conversation should end
-            if detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
+            # Use end-control middleware to determine if conversation should end
+            conversation_state = {
+                'chat_history': st.session_state.chat_history,
+                'turn_count': st.session_state.turn_count
+            }
+            
+            decision = should_continue(
+                conversation_state,
+                assistant_response,
+                user_prompt
+            )
+            
+            # Log the decision for diagnostics
+            log_conversation_trace(conversation_state, decision, {
+                'last_user_message': user_prompt,
+                'last_assistant_message': assistant_response,
+            })
+            
+            # Only end if all policy conditions are met
+            if not decision['continue']:
                 st.session_state.conversation_state = "ended"
-                st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                st.info("💬 The conversation has concluded with all MI requirements met. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                logger.info(f"Conversation ended: {decision['reason']}")
+            elif detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
+                # Legacy ending detection as fallback, but still check minimum requirements
+                if st.session_state.turn_count >= 8:  # Reduced from 12 for legacy compatibility
+                    st.session_state.conversation_state = "ended"
+                    st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                    logger.info("Conversation ended via legacy detection")
 
 
 def handle_new_conversation_button():
@@ -367,15 +407,25 @@ def should_enable_feedback_button():
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
+    from end_control_middleware import MIN_TURN_THRESHOLD
+    
     # Only enable feedback if:
     # 1. A persona is selected
     # 2. There's a conversation history with at least a few exchanges
-    # 3. The conversation has ended OR we have enough turns
+    # 3. The conversation has ended OR we have enough turns (for backward compatibility)
     if st.session_state.selected_persona is None:
         return False
     
     if len(st.session_state.chat_history) < 4:  # At least 2 exchanges
         return False
     
-    # Enable if conversation ended or if sufficient turns have occurred
-    return st.session_state.conversation_state == "ended" or st.session_state.turn_count >= 8
+    # Enable if conversation ended (via end-control middleware)
+    if st.session_state.conversation_state == "ended":
+        return True
+    
+    # For backward compatibility, also enable after minimum turns
+    # This allows manual ending if the conversation is long enough
+    if st.session_state.turn_count >= MIN_TURN_THRESHOLD:
+        return True
+    
+    return False

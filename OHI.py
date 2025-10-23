@@ -145,6 +145,22 @@ For each reply:
 
 ---
 
+## Natural Conversation Ending:
+
+When you feel the conversation has naturally reached a good stopping point (typically after 10-15 exchanges that include the student using open-ended questions, reflections, autonomy support, and a summary), you may signal readiness to end by including the special end token: <<END>>
+
+Example final messages:
+- "Thanks for taking the time to talk with me today. I feel like I have a better understanding now. <<END>>"
+- "I appreciate your patience and advice. This has been really helpful. <<END>>"
+
+DO NOT use the end token until:
+- The student has asked open-ended questions
+- The student has reflected your concerns back to you
+- The student has respected your autonomy
+- The conversation feels naturally complete with at least 10 exchanges
+
+---
+
 ## After the Conversation – Switch Roles and Give Supportive Feedback:
 
 When the student finishes the session, step out of your patient role and switch to MI evaluator.
@@ -343,13 +359,14 @@ if "feedback" not in st.session_state:
 # --- Finish Session Button (Feedback with RAG) ---
 # Only enable feedback button based on conversation state
 from chat_utils import should_enable_feedback_button
+from end_control_middleware import MIN_TURN_THRESHOLD
 
 feedback_enabled = should_enable_feedback_button()
 feedback_button_label = "Finish Session & Get Feedback"
 
 if not feedback_enabled:
-    if st.session_state.turn_count < 8:
-        st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/8 minimum). The feedback button will be enabled after sufficient interaction.")
+    if st.session_state.turn_count < MIN_TURN_THRESHOLD:
+        st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/{MIN_TURN_THRESHOLD} minimum). The feedback button will be enabled after sufficient interaction.")
 
 if st.button(feedback_button_label, disabled=not feedback_enabled):
     # Define current_timestamp and bot name at the beginning of this block
