@@ -3,6 +3,7 @@ Test suite for Google Sheets authentication in secret_code_portal.py
 
 Tests the enhanced credential loading with support for:
 - st.secrets as TOML table or JSON string
+- st.secrets["GOOGLESA_B64"] (base64-encoded JSON)
 - GOOGLESA_B64 environment variable (base64-encoded JSON)
 - GOOGLESA environment variable (JSON string)
 - Service account file fallback
@@ -210,6 +211,72 @@ class TestGoogleSheetsAuthentication(unittest.TestCase):
             self.assertEqual(client, mock_client)
             self.assertEqual(mock_st.session_state["googlesa_source"], "Streamlit secrets (TOML table)")
     
+    def test_streamlit_secrets_b64_valid(self):
+        """Test st.secrets with GOOGLESA_B64 (base64-encoded JSON)."""
+        # Encode the test credentials as base64
+        json_str = json.dumps(self.test_creds)
+        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+        
+        with patch('secret_code_portal.st') as mock_st, \
+             patch('secret_code_portal.gspread') as mock_gspread, \
+             patch('secret_code_portal.Credentials') as mock_creds:
+            
+            # Mock st.secrets with GOOGLESA_B64
+            mock_st.secrets = {"GOOGLESA_B64": b64_str}
+            mock_st.session_state = {}
+            
+            mock_creds_instance = MagicMock()
+            mock_creds.from_service_account_info.return_value = mock_creds_instance
+            mock_client = MagicMock()
+            mock_gspread.authorize.return_value = mock_client
+            
+            from secret_code_portal import get_google_sheets_client
+            
+            client = get_google_sheets_client()
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(mock_st.session_state["googlesa_source"], "Streamlit secrets (GOOGLESA_B64)")
+    
+    def test_streamlit_secrets_b64_invalid_base64(self):
+        """Test st.secrets with GOOGLESA_B64 containing invalid base64."""
+        with patch('secret_code_portal.st') as mock_st, \
+             patch('secret_code_portal.gspread') as mock_gspread:
+            
+            # Mock st.secrets with invalid base64
+            mock_st.secrets = {"GOOGLESA_B64": "not-valid-base64!!!"}
+            mock_st.session_state = {}
+            
+            from secret_code_portal import get_google_sheets_client
+            
+            # Should raise an exception about invalid base64
+            with self.assertRaises(Exception) as context:
+                get_google_sheets_client()
+            
+            error_msg = str(context.exception)
+            self.assertIn("Failed to decode st.secrets['GOOGLESA_B64']", error_msg)
+            self.assertIn("base64", error_msg.lower())
+    
+    def test_streamlit_secrets_b64_invalid_json(self):
+        """Test st.secrets with GOOGLESA_B64 containing valid base64 but invalid JSON."""
+        # Encode invalid JSON as base64
+        invalid_json = "not valid json"
+        b64_str = base64.b64encode(invalid_json.encode('utf-8')).decode('utf-8')
+        
+        with patch('secret_code_portal.st') as mock_st, \
+             patch('secret_code_portal.gspread') as mock_gspread:
+            
+            mock_st.secrets = {"GOOGLESA_B64": b64_str}
+            mock_st.session_state = {}
+            
+            from secret_code_portal import get_google_sheets_client
+            
+            # Should raise an exception about invalid JSON
+            with self.assertRaises(Exception) as context:
+                get_google_sheets_client()
+            
+            error_msg = str(context.exception)
+            self.assertIn("Failed to parse decoded st.secrets['GOOGLESA_B64']", error_msg)
+    
     def test_streamlit_secrets_json_string(self):
         """Test st.secrets with JSON string format."""
         json_str = json.dumps(self.test_creds)
@@ -256,7 +323,7 @@ class TestGoogleSheetsAuthentication(unittest.TestCase):
     
     def test_priority_order(self):
         """Test that credential sources are tried in correct priority order."""
-        # Set both GOOGLESA and GOOGLESA_B64
+        # Set both GOOGLESA and GOOGLESA_B64 env vars
         json_str = json.dumps(self.test_creds)
         b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
         
@@ -267,8 +334,8 @@ class TestGoogleSheetsAuthentication(unittest.TestCase):
              patch('secret_code_portal.gspread') as mock_gspread, \
              patch('secret_code_portal.Credentials') as mock_creds:
             
-            # Set st.secrets (highest priority)
-            mock_st.secrets = {"GOOGLESA": self.test_creds}
+            # Set st.secrets with both GOOGLESA and GOOGLESA_B64 (GOOGLESA has highest priority)
+            mock_st.secrets = {"GOOGLESA": self.test_creds, "GOOGLESA_B64": b64_str}
             mock_st.session_state = {}
             
             mock_creds_instance = MagicMock()
@@ -280,8 +347,37 @@ class TestGoogleSheetsAuthentication(unittest.TestCase):
             
             client = get_google_sheets_client()
             
-            # Should use st.secrets (highest priority)
+            # Should use st.secrets GOOGLESA (highest priority)
             self.assertEqual(mock_st.session_state["googlesa_source"], "Streamlit secrets (TOML table)")
+    
+    def test_priority_order_secrets_b64(self):
+        """Test that st.secrets GOOGLESA_B64 takes priority over env vars."""
+        # Set both GOOGLESA and GOOGLESA_B64 env vars
+        json_str = json.dumps(self.test_creds)
+        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+        
+        os.environ['GOOGLESA'] = json_str
+        os.environ['GOOGLESA_B64'] = b64_str
+        
+        with patch('secret_code_portal.st') as mock_st, \
+             patch('secret_code_portal.gspread') as mock_gspread, \
+             patch('secret_code_portal.Credentials') as mock_creds:
+            
+            # Set only st.secrets GOOGLESA_B64 (should take priority over env vars)
+            mock_st.secrets = {"GOOGLESA_B64": b64_str}
+            mock_st.session_state = {}
+            
+            mock_creds_instance = MagicMock()
+            mock_creds.from_service_account_info.return_value = mock_creds_instance
+            mock_client = MagicMock()
+            mock_gspread.authorize.return_value = mock_client
+            
+            from secret_code_portal import get_google_sheets_client
+            
+            client = get_google_sheets_client()
+            
+            # Should use st.secrets GOOGLESA_B64 (second highest priority)
+            self.assertEqual(mock_st.session_state["googlesa_source"], "Streamlit secrets (GOOGLESA_B64)")
     
     def test_no_credentials_error(self):
         """Test error message when no credentials are available."""
@@ -302,6 +398,7 @@ class TestGoogleSheetsAuthentication(unittest.TestCase):
             error_msg = str(context.exception)
             self.assertIn("No credentials found", error_msg)
             self.assertIn("st.secrets['GOOGLESA']", error_msg)
+            self.assertIn("st.secrets['GOOGLESA_B64']", error_msg)
             self.assertIn("GOOGLESA_B64", error_msg)
             self.assertIn("GOOGLESA", error_msg)
 

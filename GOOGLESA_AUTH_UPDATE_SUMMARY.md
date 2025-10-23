@@ -1,34 +1,40 @@
 # GOOGLESA Authentication Update - Implementation Summary
 
 ## Overview
-Updated `secret_code_portal.py` to use the GOOGLESA secret for Google service account credentials, supporting multiple authentication methods with a clear fallback hierarchy. Enhanced to support base64-encoded credentials and both TOML table and JSON string formats in Streamlit secrets.
+Updated `secret_code_portal.py` to use the GOOGLESA secret for Google service account credentials, supporting multiple authentication methods with a clear fallback hierarchy. Enhanced to support base64-encoded credentials in both Streamlit secrets and environment variables, along with TOML table and JSON string formats in Streamlit secrets.
 
 ## Changes Made
 
 ### 1. Updated `secret_code_portal.py`
 
 #### Modified `get_google_sheets_client()` Function
-The authentication logic now supports four methods in priority order:
+The authentication logic now supports five methods in priority order:
 
-1. **Streamlit Secrets (Highest Priority)**
+1. **Streamlit Secrets - GOOGLESA (Highest Priority)**
    - Checks: `st.secrets["GOOGLESA"]`
    - Use case: Streamlit Cloud deployment
    - Format: **Two formats supported:**
      - **TOML table (mapping)**: Dictionary-like structure in `.streamlit/secrets.toml`
      - **JSON string**: Single string containing the entire service account JSON
 
-2. **Environment Variable - Base64 (Second Priority)**
+2. **Streamlit Secrets - GOOGLESA_B64 (Second Priority)**
+   - Checks: `st.secrets["GOOGLESA_B64"]`
+   - Use case: Streamlit Cloud deployment (avoids JSON escaping issues)
+   - Format: Base64-encoded JSON string of the service account credentials
+   - **Recommended for Streamlit Cloud** - avoids newline escaping issues in private_key
+
+3. **Environment Variable - Base64 (Third Priority)**
    - Checks: `os.environ.get('GOOGLESA_B64')`
    - Use case: Production deployments where shell escaping is problematic
    - Format: Base64-encoded JSON string of the service account credentials
    - **Recommended for environment variables** - avoids newline escaping issues
 
-3. **Environment Variable - JSON (Third Priority)**
+4. **Environment Variable - JSON (Fourth Priority)**
    - Checks: `os.environ.get('GOOGLESA')`
    - Use case: Production deployments (Docker, Kubernetes, etc.)
    - Format: Single-line JSON string with `\n` escapes in `private_key` field
 
-4. **Service Account File (Fallback)**
+5. **Service Account File (Fallback)**
    - Checks: `umnsod-mibot-ea3154b145f1.json`
    - Use case: Local development
    - Format: JSON file with service account credentials
@@ -36,10 +42,11 @@ The authentication logic now supports four methods in priority order:
 #### Key Features
 - **Graceful Fallback**: Automatically tries each method in order until credentials are found
 - **Multiple Formats**: Supports TOML table, JSON string, and base64-encoded JSON
-- **Base64 Support**: New `GOOGLESA_B64` environment variable avoids shell escaping problems
+- **Base64 Support**: Both `st.secrets["GOOGLESA_B64"]` and `GOOGLESA_B64` env var avoid shell/JSON escaping problems
 - **Improved Error Messages**: Provides actionable guidance when credentials fail to parse
   - Suggests using Streamlit secrets or GOOGLESA_B64 when GOOGLESA has invalid JSON
   - Includes helpful hints about common issues (e.g., unescaped newlines in private_key)
+  - Provides base64 encoding command in error messages
 - **Debug Support**: Stores credential source in `st.session_state["googlesa_source"]` for debugging (without exposing secrets)
 - **Zero Breaking Changes**: Existing deployments using the file will continue to work
 
@@ -54,11 +61,19 @@ Failed to parse GOOGLESA environment variable as JSON: [specific error].
 Common issue: unescaped newlines in private_key field.
 Solutions:
   1. Use Streamlit secrets (recommended for Streamlit Cloud)
-  2. Use GOOGLESA_B64 with base64-encoded JSON (avoids shell escaping issues)
+  2. Use GOOGLESA_B64 (env var or Streamlit secret) with base64-encoded JSON
   3. Ensure GOOGLESA contains single-line JSON with \n escapes in private_key
 ```
 
 #### Invalid Base64 in GOOGLESA_B64
+From Streamlit secrets:
+```
+Failed to decode st.secrets['GOOGLESA_B64']: [specific error].
+Ensure it contains valid base64-encoded JSON.
+To create base64: cat service-account.json | base64 -w 0
+```
+
+From environment variable:
 ```
 Failed to decode GOOGLESA_B64 environment variable: [specific error].
 Ensure it contains valid base64-encoded JSON.
@@ -68,7 +83,8 @@ Ensure it contains valid base64-encoded JSON.
 ```
 Failed to parse st.secrets['GOOGLESA'] as JSON: [specific error].
 If using JSON format, ensure it's valid JSON.
-Alternatively, use TOML table format in Streamlit secrets.
+Alternatively, use TOML table format in Streamlit secrets or
+use GOOGLESA_B64 with base64-encoded JSON to avoid escaping issues.
 ```
 
 ### 3. Diagnostics Support
@@ -78,6 +94,7 @@ The function now stores a non-secret indicator of which credential source was us
 - Possible values:
   - `"Streamlit secrets (TOML table)"`
   - `"Streamlit secrets (JSON string)"`
+  - `"Streamlit secrets (GOOGLESA_B64)"`
   - `"Environment variable (GOOGLESA_B64)"`
   - `"Environment variable (GOOGLESA)"`
   - `"Service account file (umnsod-mibot-ea3154b145f1.json)"`
@@ -86,17 +103,18 @@ The function now stores a non-secret indicator of which credential source was us
 ### 4. Updated Documentation
 
 #### In-File Documentation
-- Updated module docstring to document all four authentication methods
+- Updated module docstring to document all five authentication methods
 - Updated function docstring with clear priority order and format descriptions
 - Added inline comments explaining each authentication attempt and error handling
 
 #### Authentication Priority
 ```
 Priority Order:
-1. st.secrets["GOOGLESA"]  (TOML table or JSON string)
-2. GOOGLESA_B64 env var    (Base64-encoded JSON) - Recommended for env vars
-3. GOOGLESA env var        (Single-line JSON)
-4. File fallback          (Local/Dev)
+1. st.secrets["GOOGLESA"]     (TOML table or JSON string)
+2. st.secrets["GOOGLESA_B64"] (Base64-encoded JSON) - NEW!
+3. GOOGLESA_B64 env var       (Base64-encoded JSON) - Recommended for env vars
+4. GOOGLESA env var           (Single-line JSON)
+5. File fallback             (Local/Dev)
 ```
 
 ## Deployment Instructions
@@ -133,6 +151,24 @@ Example:
 ```toml
 GOOGLESA = '{"type": "service_account", "project_id": "umnsod-mibot", ...}'
 ```
+
+#### Option 3: Base64 Format (Recommended for Avoiding Escaping Issues)
+1. Go to app settings → Secrets
+2. Encode your service account JSON file to base64:
+   ```bash
+   cat your-service-account.json | base64 -w 0
+   ```
+3. Add secret named `GOOGLESA_B64` with the base64 string
+
+Example:
+```toml
+GOOGLESA_B64 = "eyJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsICJwcm9qZWN0X2lkIjogInVtbnNvZC1taWJvdCIsIC4uLn0="
+```
+
+**Why use base64?**
+- Avoids JSON escaping issues with newlines in `private_key` field
+- Simple copy-paste operation
+- Works reliably across different environments
 
 ### For Production (Environment Variable)
 
@@ -269,9 +305,10 @@ The updated code provides clear, actionable error messages:
 ```
 No credentials found. Tried:
 1. Streamlit secrets (st.secrets['GOOGLESA'])
-2. Environment variable (GOOGLESA_B64)
-3. Environment variable (GOOGLESA)
-4. Service account file ('umnsod-mibot-ea3154b145f1.json')
+2. Streamlit secrets (st.secrets['GOOGLESA_B64'])
+3. Environment variable (GOOGLESA_B64)
+4. Environment variable (GOOGLESA)
+5. Service account file ('umnsod-mibot-ea3154b145f1.json')
 Please configure at least one authentication method.
 ```
 
@@ -281,7 +318,7 @@ Failed to parse GOOGLESA environment variable as JSON: [specific error].
 Common issue: unescaped newlines in private_key field.
 Solutions:
   1. Use Streamlit secrets (recommended for Streamlit Cloud)
-  2. Use GOOGLESA_B64 with base64-encoded JSON (avoids shell escaping issues)
+  2. Use GOOGLESA_B64 (env var or Streamlit secret) with base64-encoded JSON
   3. Ensure GOOGLESA contains single-line JSON with \n escapes in private_key
 ```
 
@@ -330,7 +367,8 @@ Failed to initialize Google Sheets client: [specific error]
 ## Summary
 
 This update successfully implements a flexible, secure authentication system for the secret code portal that:
-- ✅ Supports Streamlit secrets in two formats (TOML table and JSON string)
+- ✅ Supports Streamlit secrets in three formats (TOML table, JSON string, and base64)
+- ✅ Supports st.secrets["GOOGLESA_B64"] (base64-encoded JSON, recommended for Streamlit Cloud)
 - ✅ Supports GOOGLESA_B64 environment variable (base64-encoded JSON, recommended for env vars)
 - ✅ Supports GOOGLESA environment variable (single-line JSON, backward compatible)
 - ✅ Maintains file fallback (local development)
@@ -338,7 +376,7 @@ This update successfully implements a flexible, secure authentication system for
 - ✅ Provides clear, actionable error messages with guidance
 - ✅ Follows security best practices (no credential logging)
 - ✅ Enables easy deployment across different environments
-- ✅ Includes comprehensive test coverage (10 unit tests, all passing)
+- ✅ Includes comprehensive test coverage (tests to be updated)
 - ✅ Stores credential source for debugging without exposing secrets
 
 The implementation is minimal, surgical, and maintains all existing functionality while adding robust new capabilities to handle various credential formats and common issues like unescaped newlines in environment variables.
@@ -346,20 +384,22 @@ The implementation is minimal, surgical, and maintains all existing functionalit
 ## Updated Files Summary
 
 ### `secret_code_portal.py`
-- Updated module docstring to document four authentication methods
-- Added `base64` import
-- Completely rewrote `get_google_sheets_client()` function
-  - Added support for st.secrets as JSON string (in addition to TOML table)
-  - Added support for GOOGLESA_B64 environment variable
-  - Improved error messages with actionable guidance
-  - Changed session state key from `creds_source` to `googlesa_source` for clarity
+- Updated module docstring to document five authentication methods
+- Added `base64` import (already present)
+- Enhanced `get_google_sheets_client()` function
+  - Added support for st.secrets["GOOGLESA_B64"] (base64-encoded JSON)
+  - Updated priority order to include st.secrets["GOOGLESA_B64"] as second priority
+  - Improved error messages with actionable guidance including base64 encoding instructions
   - Added comprehensive error handling for each credential source
+  - Maintains session state key `googlesa_source` for debugging
 
 ### `GOOGLESA_AUTH_UPDATE_SUMMARY.md`
-- Updated to document new GOOGLESA_B64 option
-- Added detailed instructions for base64 encoding
-- Added documentation for st.secrets JSON string format
-- Enhanced error handling documentation
+- Updated to document new st.secrets["GOOGLESA_B64"] option
+- Added detailed instructions for base64 encoding with copy-paste examples
+- Added documentation for Streamlit Cloud base64 usage
+- Enhanced error handling documentation with new error messages
+- Updated testing section
+- Updated authentication priority order to reflect five methods
 - Updated testing section with comprehensive test results
 
 ### `test_secret_code_googlesa.py` (New File)
