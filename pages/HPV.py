@@ -28,6 +28,7 @@ Requirements:
 
 import os
 import logging
+from pathlib import Path
 import streamlit as st
 from groq import Groq
 from sentence_transformers import SentenceTransformer
@@ -95,7 +96,39 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-working_dir = os.path.dirname(os.path.abspath(__file__))
+# --- Robust Path Resolution for Rubrics ---
+# Compute both script directory and repository root
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent
+
+# Search for rubrics directory in priority order
+rubrics_dir = None
+search_locations = [
+    repo_root / "hpv_rubrics",  # Primary: repo root (matches independent layout)
+    script_dir / "hpv_rubrics"  # Fallback: pages subdirectory
+]
+
+for location in search_locations:
+    if location.exists() and location.is_dir():
+        rubrics_dir = location
+        break
+
+# Show clear error if rubrics directory not found
+if rubrics_dir is None:
+    st.error("⚠️ **Missing hpv_rubrics directory**")
+    st.markdown("""
+    The HPV rubric files could not be found. Please ensure:
+    - The `hpv_rubrics` directory exists at the repository root
+    - It contains the required `.txt` rubric files
+    - The directory has proper read permissions
+    
+    Expected locations searched:
+    - `{repo_root}/hpv_rubrics`
+    - `{pages}/hpv_rubrics`
+    """)
+    if st.button("← Return to Portal"):
+        st.switch_page("secret_code_portal.py")
+    st.stop()
 
 # --- Get credentials from session state ---
 api_key = st.session_state.groq_api_key
@@ -110,13 +143,12 @@ from chat_utils import initialize_session_state
 initialize_session_state()
 
 # --- Step 1: Load Knowledge Document (MI Rubric) for RAG feedback ---
-# for multiple example rubrics inside the ohi_rubrics folder
-rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
+# Load multiple example rubrics from the hpv_rubrics folder
 knowledge_texts = []
 
 for filename in os.listdir(rubrics_dir):
     if filename.endswith(".txt"):
-        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
+        with open(rubrics_dir / filename, "r", encoding="utf-8", errors="ignore") as f:
             knowledge_texts.append(f.read())
 
 # Combine all documents into a single knowledge base
