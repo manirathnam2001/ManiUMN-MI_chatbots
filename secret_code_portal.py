@@ -36,6 +36,7 @@ import os
 import json
 import base64
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -485,10 +486,20 @@ def main():
                             
                             # Navigate internally to the appropriate bot page
                             bot_type = result['bot']
-                            if bot_type == "OHI":
-                                st.switch_page("pages/OHI.py")
-                            elif bot_type == "HPV":
-                                st.switch_page("pages/HPV.py")
+                            try:
+                                if bot_type == "OHI":
+                                    st.switch_page("pages/OHI.py")
+                                elif bot_type == "HPV":
+                                    st.switch_page("pages/HPV.py")
+                            except StreamlitAPIException as e:
+                                st.error(
+                                    f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
+                                    f"This may indicate a deployment issue. Please contact support."
+                                )
+                                st.info(
+                                    "**Technical Details**: The page file `pages/{bot_type}.py` is missing or misconfigured. "
+                                    "This should be resolved by the system administrator."
+                                )
                         else:
                             st.error(result['message'])
     
@@ -502,10 +513,20 @@ def main():
         st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
         
         # Navigate internally to the appropriate bot page
-        if bot_type == "OHI":
-            st.switch_page("pages/OHI.py")
-        elif bot_type == "HPV":
-            st.switch_page("pages/HPV.py")
+        try:
+            if bot_type == "OHI":
+                st.switch_page("pages/OHI.py")
+            elif bot_type == "HPV":
+                st.switch_page("pages/HPV.py")
+        except StreamlitAPIException as e:
+            st.error(
+                f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
+                f"This may indicate a deployment issue. Please contact support."
+            )
+            st.info(
+                "**Technical Details**: The page file `pages/{bot_type}.py` is missing or misconfigured. "
+                "This should be resolved by the system administrator."
+            )
     
     # Footer
     st.markdown("---")
