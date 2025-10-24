@@ -44,12 +44,6 @@ SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
 SHEET_NAME = "Sheet1"
 SERVICE_ACCOUNT_FILE = "umnsod-mibot-ea3154b145f1.json"
 
-# Bot URLs (update these with actual deployment URLs)
-BOT_URLS = {
-    "OHI": "https://ohimiapp.streamlit.app/",
-    "HPV": "https://hpvmiapp.streamlit.app/"
-}
-
 # --- Streamlit page configuration ---
 st.set_page_config(
     page_title="MI Chatbot Access Portal",
@@ -58,9 +52,11 @@ st.set_page_config(
 )
 
 
+@st.cache_resource
 def get_google_sheets_client():
     """
     Initialize and return Google Sheets client using service account credentials.
+    Cached to avoid repeated authentication.
     
     Supports five authentication methods (in priority order):
     1. Streamlit secrets: st.secrets["GOOGLESA"] (TOML table or JSON string)
@@ -213,20 +209,14 @@ def get_google_sheets_client():
         raise Exception(f"Failed to initialize Google Sheets client: {str(e)}")
 
 
-def load_codes_from_sheet(force_refresh=False):
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_codes_from_sheet_cached():
     """
-    Load secret codes from Google Sheet into session state.
+    Load secret codes from Google Sheet. Cached to reduce API calls.
     
-    Args:
-        force_refresh (bool): If True, force reload from Google Sheets even if data exists
-        
     Returns:
-        bool: True if successful, False otherwise
+        dict: Dictionary with 'worksheet', 'headers', 'rows' keys, or None if failed
     """
-    # Use cached data if available and not forcing refresh
-    if not force_refresh and 'codes_data' in st.session_state:
-        return True
-    
     try:
         # Get Google Sheets client
         client = get_google_sheets_client()
@@ -239,8 +229,7 @@ def load_codes_from_sheet(force_refresh=False):
         all_values = worksheet.get_all_values()
         
         if len(all_values) < 2:
-            st.error("The Google Sheet appears to be empty or has no data rows.")
-            return False
+            return None
         
         # Parse the data (first row is headers)
         headers = all_values[0]
@@ -249,25 +238,50 @@ def load_codes_from_sheet(force_refresh=False):
         # Validate headers
         expected_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
         if headers != expected_headers:
-            st.error(
-                f"Invalid sheet format. Expected headers: {expected_headers}, "
-                f"but found: {headers}"
-            )
-            return False
+            return None
         
-        # Store data in session state
-        st.session_state.codes_data = {
+        # Return data structure
+        return {
             'worksheet': worksheet,
             'headers': headers,
             'rows': data
         }
-        st.session_state.last_refresh = None
-        
-        return True
         
     except Exception as e:
         st.error(f"Error loading data from Google Sheets: {str(e)}")
+        return None
+
+
+def load_codes_from_sheet(force_refresh=False):
+    """
+    Load secret codes from Google Sheet into session state.
+    
+    Args:
+        force_refresh (bool): If True, force reload from Google Sheets even if data exists
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    # Clear cache if forcing refresh
+    if force_refresh:
+        load_codes_from_sheet_cached.clear()
+    
+    # Use cached data if available and not forcing refresh
+    if not force_refresh and 'codes_data' in st.session_state:
+        return True
+    
+    # Load from cached function
+    data = load_codes_from_sheet_cached()
+    
+    if data is None:
+        st.error("Failed to load code database. Please refresh the page or contact support.")
         return False
+    
+    # Store data in session state
+    st.session_state.codes_data = data
+    st.session_state.last_refresh = None
+    
+    return True
 
 
 def validate_and_mark_code(secret_code):
@@ -366,9 +380,10 @@ def main():
         Enter the secret code provided by your instructor to access your assigned chatbot practice session.
         
         **Instructions:**
-        1. Enter your secret code in the box below
-        2. Click "Submit Code" to verify your access
-        3. You will be redirected to your assigned chatbot (OHI or HPV)
+        1. Enter your name and Groq API key
+        2. Enter your secret code
+        3. Click "Submit Code" to verify your access
+        4. You will be redirected to your assigned chatbot (OHI or HPV)
         
         **Note:** Each code can only be used once. If you encounter any issues, please contact your instructor.
         """
@@ -387,11 +402,21 @@ def main():
                 st.error("Failed to load code database. Please refresh the page or contact support.")
                 st.stop()
     
+    # Compact refresh button with custom CSS
+    st.markdown("""
+        <style>
+        div.stButton > button[kind="secondary"] {
+            padding: 0.25rem 0.75rem;
+            font-size: 0.875rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Refresh button
     st.markdown("---")
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
-        if st.button("🔄 Refresh Data", help="Reload codes from Google Sheets"):
+        if st.button("🔄 Refresh Data", type="secondary", help="Reload codes from Google Sheets"):
             with st.spinner("Refreshing data..."):
                 if load_codes_from_sheet(force_refresh=True):
                     st.success("Data refreshed successfully!")
@@ -404,10 +429,26 @@ def main():
     # Code entry form
     if not st.session_state.authenticated:
         with st.form("code_entry_form"):
-            st.subheader("Enter Your Secret Code")
+            st.subheader("Enter Your Information")
             
+            # Student name input
+            student_name = st.text_input(
+                "👤 Student Name",
+                placeholder="Enter your full name",
+                help="Your name for the feedback report"
+            )
+            
+            # Groq API key input
+            groq_api_key = st.text_input(
+                "🔑 Groq API Key",
+                type="password",
+                placeholder="Enter your Groq API key",
+                help="Your Groq API key for accessing the chatbot. Get one at https://console.groq.com/"
+            )
+            
+            # Secret code input
             secret_code = st.text_input(
-                "Secret Code",
+                "🎫 Secret Code",
                 type="password",
                 placeholder="Enter your secret code here",
                 help="The secret code provided by your instructor"
@@ -416,59 +457,55 @@ def main():
             submit_button = st.form_submit_button("Submit Code", type="primary")
             
             if submit_button:
-                if not secret_code:
+                # Validate all inputs
+                if not student_name:
+                    st.error("Please enter your name.")
+                elif not groq_api_key:
+                    st.error("Please enter your Groq API key.")
+                elif not secret_code:
                     st.error("Please enter a secret code.")
                 else:
                     with st.spinner("Verifying your code..."):
                         result = validate_and_mark_code(secret_code)
                         
                         if result['success']:
+                            # Set session state for authentication and credentials
                             st.session_state.authenticated = True
                             st.session_state.redirect_info = {
                                 'bot': result['bot'],
                                 'name': result['name']
                             }
+                            st.session_state.student_name = student_name
+                            st.session_state.groq_api_key = groq_api_key
+                            
+                            # Set environment variable for libraries that need it
+                            os.environ["GROQ_API_KEY"] = groq_api_key
+                            
                             st.success(result['message'])
-                            st.rerun()
+                            
+                            # Navigate internally to the appropriate bot page
+                            bot_type = result['bot']
+                            if bot_type == "OHI":
+                                st.switch_page("pages/OHI.py")
+                            elif bot_type == "HPV":
+                                st.switch_page("pages/HPV.py")
                         else:
                             st.error(result['message'])
     
-    # Show redirect information and button
+    # Show success message if already authenticated (shouldn't normally be seen due to switch_page)
     if st.session_state.authenticated and st.session_state.redirect_info:
         redirect_info = st.session_state.redirect_info
         bot_type = redirect_info['bot']
-        student_name = redirect_info['name']
-        bot_url = BOT_URLS.get(bot_type)
+        student_name = redirect_info.get('name', 'Student')
         
         st.success(f"✅ Access granted for {student_name}!")
+        st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
         
-        st.markdown(f"### You have been assigned to the **{bot_type}** chatbot")
-        
-        st.info(
-            f"""
-            **Ready to start your practice session?**
-            
-            Click the button below to access the {bot_type} Motivational Interviewing practice chatbot.
-            """
-        )
-        
-        # Redirect button
-        if bot_url:
-            st.markdown(
-                f'<a href="{bot_url}" target="_self"><button style="'
-                f'background-color: #FF4B4B; color: white; padding: 12px 24px; '
-                f'border: none; border-radius: 4px; font-size: 16px; cursor: pointer; '
-                f'font-weight: bold;">Go to {bot_type} Chatbot →</button></a>',
-                unsafe_allow_html=True
-            )
-            
-            st.markdown("---")
-            st.markdown(
-                f"**Alternative:** If the button doesn't work, copy and paste this URL into your browser:\n\n"
-                f"`{bot_url}`"
-            )
-        else:
-            st.error(f"Bot URL not configured for {bot_type}. Please contact support.")
+        # Navigate internally to the appropriate bot page
+        if bot_type == "OHI":
+            st.switch_page("pages/OHI.py")
+        elif bot_type == "HPV":
+            st.switch_page("pages/HPV.py")
     
     # Footer
     st.markdown("---")
