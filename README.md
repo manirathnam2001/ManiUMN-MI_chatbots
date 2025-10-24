@@ -1,10 +1,12 @@
 # MI Chatbots
 
-This repository contains two Motivational Interviewing (MI) chatbot applications built using Streamlit, plus a secure access portal for student authentication:
+This repository contains a **production-ready multipage Streamlit application** for Motivational Interviewing (MI) practice with secure student access:
 
-- `HPV.py`: Practice MI skills related to **HPV vaccine**  
-- `OHI.py`: Practice MI skills for **Oral Hygiene**
-- `secret_code_portal.py`: **Secret code access portal** for controlled student access
+- `secret_code_portal.py`: **Main entry point** - Secure access portal for student authentication
+- `pages/OHI.py`: Practice MI skills for **Oral Hygiene** (internal page)
+- `pages/HPV.py`: Practice MI skills related to **HPV vaccine** (internal page)
+
+**Architecture**: The app uses Streamlit's multipage structure with internal navigation (`st.switch_page`) to eliminate redirect loops and improve security. Students enter their credentials once at the portal and are seamlessly navigated to their assigned chatbot.
 
 These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on a **40-point binary rubric system**.
 We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation (RAG)** to incorporate structured feedback from rubric documents.
@@ -33,9 +35,12 @@ The chatbots now use a comprehensive **40-point binary assessment rubric** with 
     ├── .devcontainer/         # Dev Container setup (for VS Code Remote/Containers)
     ├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format)
     ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
-    ├── HPV.py                 # Streamlit app for HPV vaccine MI chatbot
-    ├── OHI.py                 # Streamlit app for Oral Health MI chatbot
-    ├── secret_code_portal.py  # Secret code access portal for student authentication
+    ├── pages/                 # Streamlit multipage app pages (internal navigation)
+    │   ├── OHI.py             # Oral Health MI chatbot (access via portal)
+    │   └── HPV.py             # HPV vaccine MI chatbot (access via portal)
+    ├── secret_code_portal.py  # Main entry point - Secret code access portal
+    ├── HPV.py                 # Legacy standalone HPV app (deprecated)
+    ├── OHI.py                 # Legacy standalone OHI app (deprecated)
     ├── chat_utils.py          # Shared chat handling utilities
     ├── pdf_utils.py           # PDF report generation utilities
     ├── feedback_template.py   # Standardized feedback formatting
@@ -106,16 +111,26 @@ The patient (played by AI) begins with scenarios (e.g., "I’ve noticed these ye
 Checkout the app here : [![Open OHI MI Chatbot in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ohimiapp.streamlit.app/)
 
 
-## 🔐 Secret Code Portal
+## 🔐 Secret Code Portal (Multipage App Entry)
 
-The **Secret Code Portal** (`secret_code_portal.py`) provides a secure access gateway for students to access the MI chatbots using instructor-provided secret codes.
+The **Secret Code Portal** (`secret_code_portal.py`) is the **main entry point** for the production-ready multipage Streamlit application. It provides a secure access gateway where students authenticate once and are seamlessly navigated to their assigned chatbot.
 
-### Features
+### Key Features
+- **Centralized Authentication**: Students enter credentials (name, API key, secret code) once at the portal
 - **Code Validation**: Validates secret codes against a Google Sheet database
 - **Single-Use Codes**: Automatically marks codes as used to prevent sharing
-- **Smart Routing**: Redirects students to the correct chatbot (OHI or HPV) based on their assignment
+- **Smart Internal Routing**: Uses `st.switch_page()` to navigate to OHI or HPV pages without external URLs
+- **Session-Based Security**: Maintains authentication state across pages
 - **Real-Time Updates**: Refresh button to reload the latest data from Google Sheets
+- **Cached Access**: Google Sheets client and data are cached to reduce API calls
 - **Clear Feedback**: User-friendly error messages for invalid or already-used codes
+
+### Architecture & Navigation
+- **Portal Flow**: Student enters all credentials at `secret_code_portal.py`
+- **Internal Navigation**: Uses Streamlit's `st.switch_page("pages/OHI.py")` for seamless transitions
+- **No External URLs**: Bot URLs are never exposed to students
+- **Session State**: Credentials stored in `st.session_state` and passed to bot pages
+- **Authentication Guards**: Bot pages validate session state and redirect unauthorized access back to portal
 
 ### Google Sheet Setup
 
@@ -143,16 +158,20 @@ The portal uses a Google Cloud service account for authentication:
 
 ### Running the Portal
 
+**Production (Multipage App):**
 ```bash
 streamlit run secret_code_portal.py
 ```
 
 The portal will:
-1. Load access codes from the Google Sheet on startup
-2. Allow students to enter their secret code
+1. Load access codes from the Google Sheet on startup (cached)
+2. Prompt students for their name, Groq API key, and secret code
 3. Validate the code and check if it's unused
-4. Mark valid codes as used in the sheet
-5. Redirect students to their assigned chatbot
+4. Mark valid codes as used in the sheet (single-cell update for efficiency)
+5. Store credentials in session state
+6. Navigate internally to the assigned chatbot page (OHI or HPV)
+
+**Note**: The bot pages (`pages/OHI.py` and `pages/HPV.py`) cannot be accessed directly. They check for valid session state and redirect unauthorized access back to the portal.
 
 ### Deployment Instructions
 
@@ -161,28 +180,38 @@ The portal will:
 2. Verify the service account has access to the Google Sheet
 3. Install dependencies: `pip install -r requirements.txt`
 4. Run: `streamlit run secret_code_portal.py`
+5. Portal will start and bot pages will be accessible via internal navigation
 
-#### Streamlit Cloud Deployment
-1. **Upload Service Account File**:
-   - Go to your Streamlit Cloud app settings
-   - Navigate to "Secrets" section
-   - Create a secret named `GOOGLE_SERVICE_ACCOUNT` with the full JSON content of `umnsod-mibot-ea3154b145f1.json`
+#### Streamlit Cloud Deployment (Multipage App)
+1. **Set Main File**: In Streamlit Cloud settings, set `secret_code_portal.py` as the main file
    
-2. **Update Code for Secrets** (if using Streamlit secrets):
-   ```python
-   # In secret_code_portal.py, replace the file loading with:
-   import json
-   creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
-   creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+2. **Upload Service Account Credentials**:
+   - Go to your Streamlit Cloud app settings → "Secrets" section
+   - Add secret `GOOGLESA_B64` with base64-encoded service account JSON:
+   ```bash
+   # On your local machine, generate base64:
+   cat umnsod-mibot-ea3154b145f1.json | base64 -w 0
    ```
+   - Paste the output as the value for `GOOGLESA_B64` secret
+   
+   **Alternative**: Add as `GOOGLESA` (TOML table format) - see [GOOGLESA_QUICK_REFERENCE.md](GOOGLESA_QUICK_REFERENCE.md)
 
-3. **Configure Bot URLs**:
-   - Update the `BOT_URLS` dictionary in `secret_code_portal.py` with your deployed bot URLs
+3. **Verify Multipage Structure**:
+   - Ensure `pages/` directory with `OHI.py` and `HPV.py` is in your repository
+   - Streamlit automatically recognizes these as app pages
    
 4. **Deploy**:
-   - Commit changes to GitHub
+   - Commit all changes to GitHub
    - Link repository to Streamlit Cloud
-   - Deploy with `secret_code_portal.py` as the main file
+   - Deploy with `secret_code_portal.py` as the entrypoint
+   - The app will support internal navigation between portal and bot pages
+
+#### Important Notes for Production
+- **Entry Point**: Always use `secret_code_portal.py` as the main entry
+- **No Direct Bot Access**: Bot pages are protected by authentication guards
+- **Session State**: Credentials are maintained across page navigation
+- **Caching**: Google Sheets client and data are cached to reduce API calls
+- **No External URLs**: Bot URLs are never exposed to students
 
 #### Google Sheet Permissions
 - Share the Google Sheet with: `mibots@umnsod-mibot.iam.gserviceaccount.com`
@@ -307,14 +336,27 @@ This will show which environment variables are configured and which are missing.
 
 ### How to run it on your own machine
 
-3. Run the app on local machine:
+3. Run the multipage app:
    ```bash
-   # For HPV chatbot
+   # Main entry point (recommended)
+   streamlit run secret_code_portal.py
+   ```
+   
+   This starts the complete multipage application with:
+   - Portal at the main page
+   - OHI and HPV bots accessible via internal navigation
+   - Centralized authentication and credentials
+
+   **Legacy standalone apps** (deprecated, for testing only):
+   ```bash
+   # For HPV chatbot standalone (bypasses portal)
    streamlit run HPV.py
    
-   # For OHI chatbot
+   # For OHI chatbot standalone (bypasses portal)
    streamlit run OHI.py
    ```
+   
+   Note: Standalone apps require manual entry of API key and student name on each page.
 
 ### Security Notes
 
