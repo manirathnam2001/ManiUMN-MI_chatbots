@@ -29,6 +29,7 @@ Requirements:
 import os
 import logging
 import streamlit as st
+from pathlib import Path
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import faiss
@@ -96,14 +97,58 @@ from chat_utils import initialize_session_state
 initialize_session_state()
 
 # --- Step 1: Load Knowledge Document (MI Rubric) for RAG feedback ---
-# for multiple example rubrics inside the ohi_rubrics folder
-rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
-knowledge_texts = []
+# Robust path resolution for rubrics directory
+# Works whether this file is at repo root or under pages/
+current_file = Path(__file__).resolve()
+repo_root = current_file.parent.parent if current_file.parent.name == "pages" else current_file.parent
 
-for filename in os.listdir(rubrics_dir):
-    if filename.endswith(".txt"):
-        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
-            knowledge_texts.append(f.read())
+# Try to find hpv_rubrics directory
+rubrics_dir = None
+possible_paths = [
+    repo_root / "hpv_rubrics",  # Standard location at repo root
+    current_file.parent / "hpv_rubrics",  # Fallback: same directory as script
+]
+
+for path in possible_paths:
+    if path.exists() and path.is_dir():
+        rubrics_dir = path
+        break
+
+if rubrics_dir is None:
+    st.error("⚠️ Configuration Error: Rubric files not found.")
+    st.info("The HPV rubric files are missing from the expected locations. Please contact your administrator.")
+    logger.error(f"Failed to find hpv_rubrics directory. Tried: {[str(p) for p in possible_paths]}")
+    st.stop()
+
+# Load rubric files
+knowledge_texts = []
+try:
+    rubric_files = list(rubrics_dir.glob("*.txt"))
+    if not rubric_files:
+        st.error("⚠️ Configuration Error: No rubric files found.")
+        st.info("The HPV rubric directory exists but contains no rubric files. Please contact your administrator.")
+        logger.error(f"No .txt files found in {rubrics_dir}")
+        st.stop()
+    
+    for rubric_file in rubric_files:
+        try:
+            with open(rubric_file, "r", encoding="utf-8", errors="ignore") as f:
+                knowledge_texts.append(f.read())
+        except Exception as e:
+            logger.warning(f"Failed to read rubric file {rubric_file}: {e}")
+            continue
+    
+    if not knowledge_texts:
+        st.error("⚠️ Configuration Error: Could not load rubric content.")
+        st.info("Failed to read rubric files. Please contact your administrator.")
+        logger.error(f"Failed to load any rubric content from {rubrics_dir}")
+        st.stop()
+        
+except Exception as e:
+    st.error("⚠️ Configuration Error: Unable to access rubric files.")
+    st.info(f"An error occurred while loading rubrics. Please contact your administrator.")
+    logger.error(f"Error accessing rubrics directory {rubrics_dir}: {e}")
+    st.stop()
 
 # Combine all documents into a single knowledge base
 knowledge_text = "\n\n".join(knowledge_texts)
