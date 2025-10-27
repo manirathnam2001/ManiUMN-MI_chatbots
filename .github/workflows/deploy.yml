@@ -1,2 +1,16 @@
-env:
-  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SMTP_APP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run chatbot
+        run: python3 your_chatbot_script.py
