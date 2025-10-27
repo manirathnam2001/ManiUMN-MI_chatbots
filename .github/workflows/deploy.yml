@@ -20,11 +20,11 @@ jobs:
           if [ -z "$SMTP_USERNAME" ]; then echo "ERROR: SMTP_USERNAME is not set!"; exit 1; fi
           if [ -z "$SMTP_APP_PASSWORD" ]; then echo "ERROR: SMTP_APP_PASSWORD is not set!"; exit 1; fi
       - name: Run chatbot
-        run: python3 hpvsa.py
-      - name: Run chatbot
-        run: python3 ohisa.py
-      - name: Run chatbot
         run: python3 config_loader.py
       - name: Run chatbot
         run: python3 secret_code_portal.py
-        
+      - name: Run chatbot
+        run: python3 HPVSA.py
+      - name: Run chatbot
+        run: python3 OHISA.py
+    
