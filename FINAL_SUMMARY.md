@@ -14,7 +14,7 @@ Successfully implemented secure email configuration with comprehensive SMTP hand
     "smtp_port": 587,
     "smtp_use_ssl": true,
     "smtp_username": "mogan014@umn.edu",
-    "smtp_app_password": "ynpx zorq rmof wssy",
+    "smtp_app_password": "",
     "ohi_box_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
     "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com"
   },
