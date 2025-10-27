@@ -14,9 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-      run: |
-      python3 -m pip install --upgrade pip
-      pip install -r requirements.txt
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
       - name: Debug SMTP environment variables
         run: |
           echo "SMTP_USERNAME=$SMTP_USERNAME"
