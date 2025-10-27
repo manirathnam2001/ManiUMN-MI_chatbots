@@ -13,6 +13,12 @@ jobs:
       SMTP_APP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - name: Debug SMTP environment variables
+        run: |
+          echo "SMTP_USERNAME=$SMTP_USERNAME"
+          echo "SMTP_APP_PASSWORD=${SMTP_APP_PASSWORD:+SET}"
+          if [ -z "$SMTP_USERNAME" ]; then echo "ERROR: SMTP_USERNAME is not set!"; exit 1; fi
+          if [ -z "$SMTP_APP_PASSWORD" ]; then echo "ERROR: SMTP_APP_PASSWORD is not set!"; exit 1; fi
       - name: Run chatbot
         run: python3 hpvsa.py
       - name: Run chatbot
