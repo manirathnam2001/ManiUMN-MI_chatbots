@@ -17,6 +17,8 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Run email_utils.py
+        run: python3 email_utils.py
       - name: Debug SMTP environment variables
         run: |
           echo "SMTP_USERNAME=$SMTP_USERNAME"
