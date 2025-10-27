@@ -23,12 +23,12 @@ jobs:
           echo "SMTP_APP_PASSWORD=${SMTP_APP_PASSWORD:+SET}"
           if [ -z "$SMTP_USERNAME" ]; then echo "ERROR: SMTP_USERNAME is not set!"; exit 1; fi
           if [ -z "$SMTP_APP_PASSWORD" ]; then echo "ERROR: SMTP_APP_PASSWORD is not set!"; exit 1; fi
-      - name: Run chatbot
+      - name: Run config_loader.py
         run: python3 config_loader.py
-      - name: Run chatbot
+      - name: Run secret_code_portal.py
         run: python3 secret_code_portal.py
-      - name: Run chatbot
+      - name: Run HPVSA.py
         run: python3 HPVSA.py
-      - name: Run chatbot
+      - name: Run OHISA.py
         run: python3 OHISA.py
     
