@@ -38,7 +38,7 @@ This document describes the Box email backup feature implemented for the OHI and
     "smtp_port": 587,
     "smtp_use_ssl": true,
     "smtp_username": "mogan014@umn.edu",
-    "smtp_app_password": "ynpx zorq rmof wssy",
+    "smtp_app_password": "",
     "connection_timeout": 30,
     "retry_attempts": 3,
     "retry_delay": 5,
