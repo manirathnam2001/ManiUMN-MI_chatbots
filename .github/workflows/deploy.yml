@@ -1,0 +1,2 @@
+Env:
+  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
