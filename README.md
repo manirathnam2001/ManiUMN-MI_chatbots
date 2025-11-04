@@ -5,15 +5,17 @@ This repository contains a **production-ready multipage Streamlit application** 
 - `secret_code_portal.py`: **Main entry point** - Secure access portal for student authentication
 - `pages/OHI.py`: Practice MI skills for **Oral Hygiene** (internal page)
 - `pages/HPV.py`: Practice MI skills related to **HPV vaccine** (internal page)
+- `pages/Tobacco.py`: Practice MI skills for **Tobacco Cessation** (internal page) ✨ **NEW**
+- `pages/Perio.py`: Practice MI skills for **Periodontitis** (internal page) ✨ **NEW**
 
 **Architecture**: The app uses Streamlit's multipage structure with internal navigation (`st.switch_page`) to eliminate redirect loops and improve security. Students enter their credentials once at the portal and are seamlessly navigated to their assigned chatbot.
 
-These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on a **40-point binary rubric system**.
+These chatbots simulate realistic patient interactions and provide **automated MI feedback** based on an **updated 40-point rubric system with granular scoring**.
 We use **Groq LLMs** for real-time dialogue and **retrieval-augmented generation (RAG)** to incorporate structured feedback from rubric documents.
 
-## 🎯 New MI Rubric (40 Points)
+## 🎯 Updated MI Rubric (40 Points with Granular Scoring)
 
-The chatbots now use a comprehensive **40-point binary assessment rubric** with 6 categories:
+The chatbots now use a comprehensive **40-point rubric with granular assessment** across 6 categories:
 
 | Category | Points | Description |
 |----------|--------|-------------|
@@ -24,7 +26,13 @@ The chatbots now use a comprehensive **40-point binary assessment rubric** with 
 | **Summary** | 3 | Reflective summarization |
 | **Response Factor** | 10 | Timeliness and intuitiveness |
 
-**Binary Scoring**: Each category is assessed as either "Meets Criteria" (full points) or "Needs Improvement" (0 points).
+**Granular Scoring**: Each category now supports four assessment levels:
+- **Fully Met (3/3)**: 100% of category points - Excellent competency demonstrated
+- **Partially Met (2/3)**: 67% of category points - Good competency with room for improvement
+- **Minimally Met (1/3)**: 33% of category points - Basic competency, significant improvement needed
+- **Not Met (0/3)**: 0% of category points - Competency not adequately demonstrated
+
+**Enhanced Feedback**: Evaluations now include **specific conversation quotes** from student responses to justify each score, providing clear, evidence-based feedback.
 
 📖 **See [docs/MI_Rubric.md](docs/MI_Rubric.md) for complete rubric documentation, criteria details, API usage, and example payloads.**
 
@@ -35,26 +43,34 @@ The chatbots now use a comprehensive **40-point binary assessment rubric** with 
     ├── .devcontainer/         # Dev Container setup (for VS Code Remote/Containers)
     ├── hpv_rubrics/           # HPV MI example transcripts + rubric feedback (.txt format)
     ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
+    ├── tobacco_rubrics/       # Tobacco Cessation MI transcripts + rubric feedback (.txt format) ✨ NEW
+    ├── perio_rubrics/         # Periodontitis MI transcripts + rubric feedback (.txt format) ✨ NEW
     ├── pages/                 # Streamlit multipage app pages (internal navigation)
     │   ├── OHI.py             # Oral Health MI chatbot (access via portal)
-    │   └── HPV.py             # HPV vaccine MI chatbot (access via portal)
+    │   ├── HPV.py             # HPV vaccine MI chatbot (access via portal)
+    │   ├── Tobacco.py         # Tobacco Cessation MI chatbot (access via portal) ✨ NEW
+    │   └── Perio.py           # Periodontitis MI chatbot (access via portal) ✨ NEW
+    ├── rubric/                # MI rubric system with granular scoring
+    │   └── mi_rubric.py       # Updated 40-point rubric with 4-level assessment
+    ├── services/              # Service layer for evaluation
+    │   └── evaluation_service.py  # Updated to support granular scoring and all bot contexts
     ├── secret_code_portal.py  # Main entry point - Secret code access portal
-    ├── HPV.py                 # Legacy standalone HPV app (deprecated)
-    ├── OHI.py                 # Legacy standalone OHI app (deprecated)
     ├── chat_utils.py          # Shared chat handling utilities
-    ├── pdf_utils.py           # PDF report generation utilities
-    ├── feedback_template.py   # Standardized feedback formatting
+    ├── pdf_utils.py           # PDF report generation utilities (with conversation quotes)
+    ├── feedback_template.py   # Standardized feedback formatting (updated for granular scoring)
     ├── scoring_utils.py       # MI component scoring and validation
+    ├── persona_texts.py       # All persona definitions (HPV, OHI, Tobacco, Perio)
     ├── time_utils.py          # Timezone handling utilities
     ├── config_loader.py       # Configuration and environment variable management
-    ├── email_utils.py         # Email sending utilities (optional Box integration)
+    ├── config.json            # Configuration for email/Box integration (updated for all bots)
+    ├── email_utils.py         # Email sending utilities (Box integration for all bots)
     ├── umnsod-mibot-ea3154b145f1.json  # Service account credentials for Google Sheets
     ├── README.md              # This file - setup and usage instructions
     ├── requirements.txt       # Python dependencies (optimized)
     ├── runtime.txt            # Python version for deployment environments
     └── .env.example           # Example environment variables file
 
-> You can add more `.txt` transcripts with MI feedback in the `hpv_rubrics/` or `ohi_rubrics/` folders to improve the RAG-based evaluation.
+> You can add more `.txt` transcripts with MI feedback in the `hpv_rubrics/`, `ohi_rubrics/`, `tobacco_rubrics/`, or `perio_rubrics/` folders to improve the RAG-based evaluation.
 
 ---
 
@@ -111,6 +127,32 @@ The patient (played by AI) begins with scenarios (e.g., "I’ve noticed these ye
 Checkout the app here : [![Open OHI MI Chatbot in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ohimiapp.streamlit.app/)
 
 
+## 🚭 Tobacco Cessation MI Practice App ✨ **NEW**
+
+This app provides realistic patient simulations for practicing Motivational Interviewing skills in **tobacco cessation counseling**. Students can interact with four distinct personas representing different stages of readiness to quit smoking or vaping:
+
+**Patient Personas:**
+- **Marcus** (50-year-old smoker): Long-term smoker with recent health scare, interested in quitting but worried about withdrawal
+- **Emma** (24-year-old vaper): Resistant young adult who sees vaping as safe, defensive about her habit
+- **Jordan** (32-year-old social smoker): Ambivalent social smoker questioning if occasional use is problematic
+- **Patricia** (45-year-old former smoker): Successfully quit 2 years ago, concerned about relapse due to life stress
+
+Each persona provides unique challenges and opportunities for practicing MI skills in the context of addiction, behavior change, and relapse prevention.
+
+
+## 🦷 Periodontitis MI Practice App ✨ **NEW**
+
+This app offers an evidence-based simulation based on the **"Ava Johnson" case study**, showing the progression of periodontal disease through four stages. Students practice MI skills addressing different levels of disease severity and patient readiness:
+
+**Ava Johnson's Journey (4 Stages):**
+- **Stage 1 - Early Gingivitis**: 28-year-old with occasional bleeding gums, unaware of progression risk
+- **Stage 2 - Early Periodontitis**: Diagnosed with periodontitis, anxious about deep cleaning and costs
+- **Stage 3 - Disease Management**: Managing moderate disease but struggling with consistency during life changes
+- **Stage 4 - Advanced Disease**: Facing significant bone loss and possible tooth extractions, dealing with emotional impact
+
+This progressive case study allows students to practice MI techniques across the spectrum of periodontal care, from prevention to complex treatment decisions.
+
+
 ## 🔐 Secret Code Portal (Multipage App Entry)
 
 The **Secret Code Portal** (`secret_code_portal.py`) is the **main entry point** for the production-ready multipage Streamlit application. It provides a secure access gateway where students authenticate once and are seamlessly navigated to their assigned chatbot.
@@ -119,7 +161,7 @@ The **Secret Code Portal** (`secret_code_portal.py`) is the **main entry point**
 - **Centralized Authentication**: Students enter credentials (name, API key, secret code) once at the portal
 - **Code Validation**: Validates secret codes against a Google Sheet database
 - **Single-Use Codes**: Automatically marks codes as used to prevent sharing
-- **Smart Internal Routing**: Uses `st.switch_page()` to navigate to OHI or HPV pages without external URLs
+- **Smart Internal Routing**: Uses `st.switch_page()` to navigate to OHI, HPV, Tobacco, or Perio pages without external URLs
 - **Session-Based Security**: Maintains authentication state across pages
 - **Real-Time Updates**: Refresh button to reload the latest data from Google Sheets
 - **Cached Access**: Google Sheets client and data are cached to reduce API calls
@@ -127,7 +169,7 @@ The **Secret Code Portal** (`secret_code_portal.py`) is the **main entry point**
 
 ### Architecture & Navigation
 - **Portal Flow**: Student enters all credentials at `secret_code_portal.py`
-- **Internal Navigation**: Uses Streamlit's `st.switch_page("pages/OHI.py")` for seamless transitions
+- **Internal Navigation**: Uses Streamlit's `st.switch_page()` for seamless transitions to assigned bot
 - **No External URLs**: Bot URLs are never exposed to students
 - **Session State**: Credentials stored in `st.session_state` and passed to bot pages
 - **Authentication Guards**: Bot pages validate session state and redirect unauthorized access back to portal
@@ -144,7 +186,7 @@ The portal integrates with a Google Sheet to manage student access codes. The sh
 |--------|-------------|---------|
 | Table No | Student identifier or table number | 1, 2, 3... |
 | Name | Student's full name | John Doe |
-| Bot | Bot type assignment | OHI or HPV |
+| Bot | Bot type assignment | OHI, HPV, Tobacco, or Perio |
 | Secret | Unique secret code | abc123xyz |
 | Used | Whether code has been used | FALSE/TRUE |
 

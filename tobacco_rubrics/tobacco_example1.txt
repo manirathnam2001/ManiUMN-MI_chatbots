@@ -1,0 +1,94 @@
+Provider: Hi Marcus, I'm glad you came in today. How are you doing?
+
+Patient: Hi. I'm alright, I guess. My doctor suggested I come talk to someone about quitting smoking.
+
+Provider: That sounds like an important step. Can you tell me a bit more about what led to your doctor's suggestion?
+
+Patient: Well, I've been smoking for about 30 years now—pack a day. Last week at work, I had this shortness of breath that really scared me. I couldn't catch my breath climbing stairs on the job site.
+
+Provider: That must have been frightening. What was that experience like for you?
+
+Patient: Yeah, it was. I mean, I've always known smoking is bad, but that really hit home. I'm 50 years old and I don't want to end up like my dad—he died of lung cancer when he was 55.
+
+Provider: It sounds like that health scare and thinking about your father made you start considering quitting. What are your thoughts about stopping smoking?
+
+Patient: Honestly, I want to quit. I know it's the right thing. But I've tried twice before and it didn't work out. The withdrawal was brutal, and I use cigarettes to deal with stress from work.
+
+Provider: You've tried before, which shows real determination. What do you think was challenging about those previous attempts?
+
+Patient: The first few days were hell—I was irritable, couldn't focus. And at work, when things got stressful, I didn't know what else to do. Smoking is my go-to stress reliever.
+
+Provider: So stress management is a key concern for you. What other ways have you tried to handle stress besides smoking?
+
+Patient: Not much, really. I guess I watch TV at night, have a beer. But nothing really works like a cigarette when I'm in the moment and stressed out.
+
+Provider: If you were to quit smoking, what would help you manage those stressful moments at work?
+
+Patient: I don't know. Maybe I need to find something else—like taking a walk or something? But on a construction site, you can't always just walk away.
+
+Provider: You're thinking about alternatives, which is great. What feels realistic for you given your work environment?
+
+Patient: Maybe I could use nicotine gum or those patches? I've heard they help with cravings. And maybe I could talk to my foreman about taking short breaks when I'm stressed.
+
+Provider: Those sound like practical ideas. On a scale of 1 to 10, with 10 being completely ready to quit today, where would you say you are?
+
+Patient: I'd say about a 7. I want to do it, but I'm nervous about failing again.
+
+Provider: A 7 is pretty high—that's encouraging. What makes it a 7 and not a 5?
+
+Patient: The health scare, mainly. And thinking about my kids. I want to be around for them, you know? I don't want them to go through what I went through losing my dad.
+
+Provider: Your family is clearly important to you. It sounds like you have strong reasons to quit. What would be your first step if you decided to move forward?
+
+Patient: I think I'd start with talking to my doctor about those nicotine replacement options. And maybe set a quit date—like in two weeks?
+
+Provider: That sounds like a solid plan. How confident are you that you can follow through with talking to your doctor?
+
+Patient: Pretty confident. I'm seeing him next week anyway for a follow-up about the breathing thing.
+
+Provider: Excellent. So to summarize what we talked about today: you've been smoking for 30 years, you had a health scare that really got your attention, you've tried quitting before but found stress management challenging, and now you're thinking about using nicotine replacement therapy and talking to your doctor. You're at a 7 out of 10 in terms of readiness. Does that sound accurate?
+
+Patient: Yeah, that's exactly it. I feel more hopeful now that I have a plan.
+
+Provider: I'm glad to hear that. It takes courage to try again, especially after previous attempts didn't work out. You have good reasons for wanting to quit and you're thinking practically about solutions. Is there anything else you'd like to discuss about quitting?
+
+Patient: No, I think this helps. Thanks for listening and not making me feel bad about my past failures.
+
+Provider: Thank you for being so open with me today. I wish you the best with your conversation with your doctor.
+
+Summary of Rubric Criteria Met/Not Met
+
+Collaboration (9 points):
+● Rubric criteria met: Introduces self, role, is engaging, welcoming
+● Rubric criteria met: Collaborated with the patient by eliciting their ideas for change in tobacco cessation by providing support as a partnership
+○ FEEDBACK: Provider consistently asked about patient's ideas and supported his thinking (asking about stress management alternatives, realistic options for his work environment).
+● Rubric criteria met: Did not lecture; did not try to "fix" the patient
+○ Provider avoided giving unsolicited advice and let Marcus come to his own conclusions.
+
+Acceptance (6 points):
+● Rubric criteria met: Asks permission before eliciting accurate information about tobacco cessation
+○ Provider naturally explored the topic without being directive, respecting Marcus's autonomy throughout.
+● Rubric criteria met: Uses reflections to demonstrate listening
+○ Strong reflections include: "That must have been frightening," "It sounds like that health scare and thinking about your father made you start considering quitting."
+
+Compassion (6 points):
+● Rubric criteria met: Tries to understand the patient's perceptions and/or concerns with tobacco cessation
+○ Provider asked about previous quit attempts, what was challenging, and stress management concerns.
+● Rubric criteria met: Does not judge, shame or belittle the patient
+○ Provider was affirming and non-judgmental, especially when Marcus mentioned past failures. The closing statement acknowledged Marcus's courage.
+
+Evocation (6 points):
+● Rubric criteria met: Uses open-ended questions for patient understanding OR stage of change OR eliciting change talk
+○ Excellent open-ended questions: "What are your thoughts about stopping smoking?" "What would help you manage those stressful moments?" "What would be your first step?"
+● Rubric criteria met: Supports self-efficacy; emphasizes patient autonomy regarding tobacco cessation (rolls with resistance)
+○ Provider used readiness ruler (1-10 scale) and followed up effectively. The patient showed ambivalence but provider supported his autonomy and didn't push.
+
+Summary (3 points):
+● Rubric criteria met: Reflects big picture; checks accuracy of information and/or next steps
+○ Provider gave an excellent summary at the end, covering key points from the conversation and checking for accuracy: "Does that sound accurate?"
+
+Response Factor (10 points):
+● Rubric criteria met: Fast and intuitive responses to questions probed; acceptable average time throughout conversation
+○ The conversation flowed naturally with appropriate pacing and responsive engagement.
+
+OVERALL ASSESSMENT: This was an excellent MI conversation. The provider demonstrated strong skills across all categories, with particularly effective use of open-ended questions, reflections, and summary. The provider created a safe, non-judgmental space that allowed Marcus to explore his own motivations for quitting and develop his own action plan.

@@ -38,12 +38,13 @@ class EvaluationService:
         """
         Parse LLM-generated feedback to extract category assessments.
         
-        Expected format patterns:
-        - "Collaboration: Meets Criteria - ..."
-        - "Collaboration (9 pts): Meets Criteria - ..."
-        - "1. Collaboration: Meets Criteria - ..."
-        - "**Collaboration**: Meets Criteria - ..."
-        - "Collaboration: Meets Criteria" (without dash)
+        Expected format patterns (supports both binary and granular scoring):
+        - "Collaboration: Fully Met - ..."
+        - "Collaboration: Partially Met (2/3) - ..."
+        - "Collaboration (9 pts): Not Met - ..."
+        - "1. Collaboration: Minimally Met - ..."
+        - "**Collaboration**: Fully Met - ..."
+        - Legacy: "Collaboration: Meets Criteria - ..."
         
         Args:
             feedback_text: Raw feedback text from LLM
@@ -54,14 +55,14 @@ class EvaluationService:
         assessments = {}
         lines = feedback_text.split('\n')
         
-        # Regex patterns to match category lines (with or without dash/details after assessment)
+        # Regex patterns to match category lines
         patterns = [
-            # Pattern with dash: "Collaboration: Meets Criteria - ..." or with bold markdown
-            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Meets Criteria|Needs Improvement)(?:\*{0,2})?\s*[-–—]',
-            # Pattern without dash: "Collaboration: Meets Criteria" or with bold markdown
-            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Meets Criteria|Needs Improvement)(?:\*{0,2})?\s*$',
-            # Pattern with brackets: "Collaboration: [Meets Criteria] - ..."
-            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*\[\s*(Meets Criteria|Needs Improvement)\s*\]',
+            # Pattern with dash: "Collaboration: Fully Met - ..." or with bold markdown
+            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*\([\d/]+\))?(?:\*{0,2})?\s*[-–—]',
+            # Pattern without dash: "Collaboration: Fully Met" or with bold markdown
+            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*\([\d/]+\))?(?:\*{0,2})?\s*$',
+            # Pattern with brackets: "Collaboration: [Fully Met] - ..."
+            r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*\[\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*[\d/]+)?\s*\]',
         ]
         
         for line in lines:
@@ -78,11 +79,19 @@ class EvaluationService:
                     # Normalize category name (handle variations)
                     category_normalized = category.title()
                     
-                    # Map to CategoryAssessment enum
-                    if 'meets' in assessment_text.lower() and 'needs' not in assessment_text.lower():
-                        assessment = CategoryAssessment.MEETS_CRITERIA
+                    # Map to CategoryAssessment enum (case-insensitive)
+                    assessment_lower = assessment_text.lower()
+                    if 'fully met' in assessment_lower or ('meets' in assessment_lower and 'needs' not in assessment_lower):
+                        assessment = CategoryAssessment.FULLY_MET
+                    elif 'partially met' in assessment_lower:
+                        assessment = CategoryAssessment.PARTIALLY_MET
+                    elif 'minimally met' in assessment_lower:
+                        assessment = CategoryAssessment.MINIMALLY_MET
+                    elif 'not met' in assessment_lower or 'needs improvement' in assessment_lower:
+                        assessment = CategoryAssessment.NOT_MET
                     else:
-                        assessment = CategoryAssessment.NEEDS_IMPROVEMENT
+                        # Default to not met if unclear
+                        assessment = CategoryAssessment.NOT_MET
                     
                     assessments[category_normalized] = assessment
                     break
@@ -95,19 +104,42 @@ class EvaluationService:
         Determine rubric context from session type.
         
         Args:
-            session_type: Session type string (e.g., "HPV", "OHI", "HPV Vaccine", "Oral Health")
+            session_type: Session type string (e.g., "HPV", "OHI", "Tobacco", "Perio", etc.)
             
         Returns:
             RubricContext enum value
         """
-        session_type_upper = session_type.upper()
+        # Normalize for comparison
+        session_type_normalized = session_type.upper().strip()
         
-        if 'HPV' in session_type_upper:
+        # Use more specific matching to avoid false positives
+        # Check for exact matches or specific keywords
+        if session_type_normalized in ['TOBACCO', 'TOBACCO CESSATION'] or \
+           session_type_normalized.startswith('TOBACCO'):
+            return RubricContext.TOBACCO
+        elif session_type_normalized in ['PERIO', 'PERIODONTITIS', 'PERIODONTITIS AND GUM HEALTH'] or \
+             session_type_normalized.startswith('PERIO'):
+            return RubricContext.PERIO
+        elif session_type_normalized in ['HPV', 'HPV VACCINE', 'HPV VACCINATION'] or \
+             session_type_normalized.startswith('HPV'):
             return RubricContext.HPV
-        elif 'OHI' in session_type_upper or 'ORAL' in session_type_upper:
+        elif session_type_normalized in ['OHI', 'ORAL HEALTH', 'ORAL HYGIENE', 'DENTAL HYGIENE'] or \
+             session_type_normalized.startswith('OHI') or \
+             session_type_normalized.startswith('ORAL') or \
+             session_type_normalized.startswith('DENTAL'):
             return RubricContext.OHI
         
-        # Default to HPV if unclear
+        # Fallback: Use containment checks as last resort
+        if 'TOBACCO' in session_type_normalized or 'SMOK' in session_type_normalized or 'CESSATION' in session_type_normalized:
+            return RubricContext.TOBACCO
+        elif 'PERIO' in session_type_normalized or 'GUM' in session_type_normalized:
+            return RubricContext.PERIO
+        elif 'HPV' in session_type_normalized:
+            return RubricContext.HPV
+        elif 'OHI' in session_type_normalized or 'ORAL' in session_type_normalized or 'DENTAL' in session_type_normalized:
+            return RubricContext.OHI
+        
+        # Default to HPV if still unclear
         return RubricContext.HPV
     
     @staticmethod
@@ -124,8 +156,8 @@ class EvaluationService:
         notes = {}
         lines = feedback_text.split('\n')
         
-        # Pattern to extract category and notes
-        pattern = r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\[)?\s*(?:Meets Criteria|Needs Improvement)\s*(?:\])?\s*(?:\*{0,2})?\s*[-–—]\s*(.+)$'
+        # Pattern to extract category and notes (supports both binary and granular scoring)
+        pattern = r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\[)?\s*(?:Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*\([\d/]+\))?\s*(?:\])?\s*(?:\*{0,2})?\s*[-–—]\s*(.+)$'
         
         for line in lines:
             line = line.strip()
