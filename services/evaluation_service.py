@@ -109,18 +109,37 @@ class EvaluationService:
         Returns:
             RubricContext enum value
         """
-        session_type_upper = session_type.upper()
+        # Normalize for comparison
+        session_type_normalized = session_type.upper().strip()
         
-        if 'HPV' in session_type_upper:
-            return RubricContext.HPV
-        elif 'OHI' in session_type_upper or 'ORAL' in session_type_upper or 'DENTAL' in session_type_upper:
-            return RubricContext.OHI
-        elif 'TOBACCO' in session_type_upper or 'SMOK' in session_type_upper or 'CESSATION' in session_type_upper:
+        # Use more specific matching to avoid false positives
+        # Check for exact matches or specific keywords
+        if session_type_normalized in ['TOBACCO', 'TOBACCO CESSATION'] or \
+           session_type_normalized.startswith('TOBACCO'):
             return RubricContext.TOBACCO
-        elif 'PERIO' in session_type_upper or 'GUM' in session_type_upper:
+        elif session_type_normalized in ['PERIO', 'PERIODONTITIS', 'PERIODONTITIS AND GUM HEALTH'] or \
+             session_type_normalized.startswith('PERIO'):
             return RubricContext.PERIO
+        elif session_type_normalized in ['HPV', 'HPV VACCINE', 'HPV VACCINATION'] or \
+             session_type_normalized.startswith('HPV'):
+            return RubricContext.HPV
+        elif session_type_normalized in ['OHI', 'ORAL HEALTH', 'ORAL HYGIENE', 'DENTAL HYGIENE'] or \
+             session_type_normalized.startswith('OHI') or \
+             session_type_normalized.startswith('ORAL') or \
+             session_type_normalized.startswith('DENTAL'):
+            return RubricContext.OHI
         
-        # Default to HPV if unclear
+        # Fallback: Use containment checks as last resort
+        if 'TOBACCO' in session_type_normalized or 'SMOK' in session_type_normalized or 'CESSATION' in session_type_normalized:
+            return RubricContext.TOBACCO
+        elif 'PERIO' in session_type_normalized or 'GUM' in session_type_normalized:
+            return RubricContext.PERIO
+        elif 'HPV' in session_type_normalized:
+            return RubricContext.HPV
+        elif 'OHI' in session_type_normalized or 'ORAL' in session_type_normalized or 'DENTAL' in session_type_normalized:
+            return RubricContext.OHI
+        
+        # Default to HPV if still unclear
         return RubricContext.HPV
     
     @staticmethod

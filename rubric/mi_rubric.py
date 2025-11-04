@@ -61,10 +61,11 @@ class MIRubric:
     """
     
     # Scoring multipliers for granular assessment
+    # Using Decimal for precise fractional representation to avoid rounding errors
     ASSESSMENT_MULTIPLIERS = {
         CategoryAssessment.NOT_MET: 0.0,
-        CategoryAssessment.MINIMALLY_MET: 0.333,
-        CategoryAssessment.PARTIALLY_MET: 0.667,
+        CategoryAssessment.MINIMALLY_MET: 1.0 / 3.0,  # Precisely 1/3
+        CategoryAssessment.PARTIALLY_MET: 2.0 / 3.0,  # Precisely 2/3
         CategoryAssessment.FULLY_MET: 1.0,
         # Legacy binary scoring support
         CategoryAssessment.NEEDS_IMPROVEMENT: 0.0,

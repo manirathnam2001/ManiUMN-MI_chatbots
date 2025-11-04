@@ -386,20 +386,20 @@ if st.session_state.feedback is not None:
 
 # --- Handle chat input (Using improved chat_utils with persona guards) ---
 from chat_utils import handle_chat_input
+import inspect
 
-# Try to call with domain parameters for backward compatibility
-try:
+# Check if handle_chat_input supports domain parameters
+handle_chat_params = inspect.signature(handle_chat_input).parameters
+supports_domain_params = 'domain_name' in handle_chat_params and 'domain_keywords' in handle_chat_params
+
+if supports_domain_params:
     handle_chat_input(PERSONAS, client,
                      domain_name=PERIO_DOMAIN_NAME,
                      domain_keywords=PERIO_DOMAIN_KEYWORDS)
-except TypeError as e:
+else:
     # Fall back to older signature without domain parameters
-    if "domain_name" in str(e) or "domain_keywords" in str(e):
-        logger.warning("Using older chat_utils signature without domain parameters")
-        handle_chat_input(PERSONAS, client)
-    else:
-        # Re-raise if it's a different TypeError
-        raise
+    logger.warning("Using older chat_utils signature without domain parameters")
+    handle_chat_input(PERSONAS, client)
 
 # Add a button to start a new conversation with a different persona
 from chat_utils import handle_new_conversation_button
