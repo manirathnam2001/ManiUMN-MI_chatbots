@@ -38,20 +38,9 @@ class FeedbackFormatter:
     
     @staticmethod
     def format_evaluation_prompt(session_type: str, transcript: str, rag_context: str) -> str:
-        """Generate standardized evaluation prompt for both HPV and OHI assessments using updated 40-point rubric with granular scoring."""
+        """Generate standardized evaluation prompt for both HPV and OHI assessments using new 40-point rubric."""
         # Determine context for criteria text
-        context_map = {
-            "HPV": "HPV vaccination",
-            "OHI": "oral health",
-            "TOBACCO": "tobacco cessation",
-            "PERIO": "periodontitis and gum health"
-        }
-        
-        context_text = "the health topic"
-        for key, value in context_map.items():
-            if key in session_type.upper():
-                context_text = value
-                break
+        context_text = "HPV vaccination" if "HPV" in session_type.upper() else "oral health"
         
         return f"""
         ## Motivational Interviewing Assessment - {session_type} Session
@@ -62,70 +51,61 @@ class FeedbackFormatter:
         {transcript}
 
         **Important Instructions:**
-        - Only evaluate the **student's responses** (lines marked 'User:', 'Student:', or similar indicators)
+        - Only evaluate the **student's responses** (lines marked 'STUDENT' or similar indicators)
         - Do not attribute change talk or motivational statements made by the patient to the student
         - Focus on the student's use of MI techniques, not the patient's responses
-        - **CRITICAL**: Include specific quotes from the student's responses to justify your assessment
 
         ### MI Knowledge Base:
         {rag_context}
 
         ### Assessment Framework:
-        Evaluate the student's MI skills using the UPDATED 40-point rubric with granular scoring (6 categories, total 40 points).
+        Evaluate the student's MI skills using the NEW 40-point binary scoring system (6 categories, total 40 points).
         
-        **Granular Scoring Guidelines:**
-        - **Fully Met (3/3)**: Student demonstrates excellent competency = 100% of category points
-        - **Partially Met (2/3)**: Student demonstrates good competency with room for improvement = 67% of category points
-        - **Minimally Met (1/3)**: Student demonstrates basic competency but significant improvement needed = 33% of category points
-        - **Not Met (0/3)**: Student does not adequately demonstrate the competency = 0 points
+        **Binary Scoring Guidelines:**
+        - **Meets Criteria**: Student demonstrates the category competency = FULL category points
+        - **Needs Improvement**: Student does not adequately demonstrate the competency = 0 points
 
         ### Required Evaluation Format:
         Please structure your feedback exactly as follows for each category:
 
-        **Collaboration (9 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback with conversation quotes]**
-        Criteria for evaluation:
+        **Collaboration (9 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Introduces self, role, is engaging, welcoming
         - Collaborated with the patient by eliciting their ideas for change in {context_text} or by providing support as a partnership
         - Did not lecture; Did not try to "fix" the patient
-        **Example quote(s) from conversation:** "[Direct quote from student that demonstrates this criterion]"
         
-        **Acceptance (6 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback with conversation quotes]**
-        Criteria for evaluation:
+        **Acceptance (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Asks permission before eliciting accurate information about the {context_text}
         - Uses reflections to demonstrate listening
-        **Example quote(s) from conversation:** "[Direct quote from student]"
         
-        **Compassion (6 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback with conversation quotes]**
-        Criteria for evaluation:
+        **Compassion (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Tries to understand the patient's perceptions and/or concerns with the {context_text}
         - Does not judge, shame or belittle the patient
-        **Example quote(s) from conversation:** "[Direct quote from student]"
         
-        **Evocation (6 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback with conversation quotes]**
-        Criteria for evaluation:
+        **Evocation (6 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Uses open-ended questions for patient understanding OR stage of change OR eliciting change talk
         - Supports self-efficacy; emphasizes patient autonomy regarding the {context_text} (rolls with resistance)
-        **Example quote(s) from conversation:** "[Direct quote from student]"
         
-        **Summary (3 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback with conversation quotes]**
-        Criteria for evaluation:
+        **Summary (3 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Reflects big picture; checks accuracy of information and/or next steps
-        **Example quote(s) from conversation:** "[Direct quote from student]"
         
-        **Response Factor (10 pts): [Fully Met/Partially Met/Minimally Met/Not Met] - [Specific feedback]**
-        Criteria for evaluation:
+        **Response Factor (10 pts): [Meets Criteria or Needs Improvement] - [Specific feedback]**
+        Criteria for Meets Criteria:
         - Fast and intuitive responses to questions probed; acceptable average time throughout conversation
 
         ### Additional Requirements:
-        - **MUST include direct quotes** from the student's conversation to justify each score
-        - For each category, cite 1-2 specific examples from the transcript
+        - For each category, provide specific examples from the conversation
         - Highlight what the student did well (strengths)
         - Offer concrete suggestions for improvement with specific MI techniques
         - Include overall recommendations for continued learning and skill development
         - Maintain a supportive and educational tone throughout your feedback
-        - Use granular scoring levels: Fully Met, Partially Met, Minimally Met, or Not Met
+        - Use ONLY "Meets Criteria" or "Needs Improvement" for each category (no partial credit)
 
-        Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations. Total possible score is 40 points. **Always include conversation quotes to support your assessment.**
+        Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations. Total possible score is 40 points.
         """
 
     @staticmethod
