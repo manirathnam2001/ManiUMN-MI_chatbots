@@ -491,10 +491,6 @@ def main():
                                     st.switch_page("pages/OHI.py")
                                 elif bot_type == "HPV":
                                     st.switch_page("pages/HPV.py")
-                                elif bot_type == "Tobacco":
-                                    st.switch_page("pages/Tobacco.py")
-                                elif bot_type == "Perio":
-                                    st.switch_page("pages/Perio.py")
                             except StreamlitAPIException as e:
                                 st.error(
                                     f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
@@ -522,10 +518,6 @@ def main():
                 st.switch_page("pages/OHI.py")
             elif bot_type == "HPV":
                 st.switch_page("pages/HPV.py")
-            elif bot_type == "Tobacco":
-                st.switch_page("pages/Tobacco.py")
-            elif bot_type == "Perio":
-                st.switch_page("pages/Perio.py")
         except StreamlitAPIException as e:
             st.error(
                 f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "

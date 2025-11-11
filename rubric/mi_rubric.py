@@ -1,10 +1,10 @@
 """
-Updated MI Rubric System with Granular Scoring
+New 40-point Binary MI Rubric System
 
-This module implements the Motivational Interviewing rubric with:
+This module implements the revamped Motivational Interviewing rubric with:
 - 6 categories totaling 40 points
-- Granular scoring per category (0/3, 1/3, 2/3, 3/3 of full points)
-- Context-aware criteria text (HPV vaccination vs oral health vs tobacco cessation vs periodontitis)
+- Binary scoring per category (Meets Criteria = full points, Needs Improvement = 0)
+- Context-aware criteria text (HPV vaccination vs oral health)
 - Performance band messages
 
 Categories:
@@ -14,12 +14,6 @@ Categories:
 - Evocation: 6 points
 - Summary: 3 points
 - Response Factor: 10 points
-
-Scoring Levels:
-- Not Met (0/3): 0% of category points
-- Minimally Met (1/3): 33.3% of category points
-- Partially Met (2/3): 66.7% of category points  
-- Fully Met (3/3): 100% of category points
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -30,74 +24,27 @@ class RubricContext(Enum):
     """Context for rubric criteria text substitution."""
     HPV = "HPV"
     OHI = "OHI"
-    TOBACCO = "Tobacco"
-    PERIO = "Perio"
 
 
 class CategoryAssessment(Enum):
-    """Granular assessment levels for each category."""
-    NOT_MET = "Not Met"
-    MINIMALLY_MET = "Minimally Met"
-    PARTIALLY_MET = "Partially Met"
-    FULLY_MET = "Fully Met"
-    
-    # Legacy support for binary scoring
-    NEEDS_IMPROVEMENT = "Needs Improvement"  # Maps to NOT_MET
-    MEETS_CRITERIA = "Meets Criteria"  # Maps to FULLY_MET
+    """Binary assessment for each category."""
+    MEETS_CRITERIA = "Meets Criteria"
+    NEEDS_IMPROVEMENT = "Needs Improvement"
 
 
 class MIRubric:
     """
-    Updated 40-point MI Rubric with granular scoring.
+    New 40-point MI Rubric with binary scoring.
     
     Total = 40 points across 6 categories.
-    Each category supports granular assessment:
-    - Not Met (0/3): 0% of category points
-    - Minimally Met (1/3): 33.3% of category points
-    - Partially Met (2/3): 66.7% of category points
-    - Fully Met (3/3): 100% of category points
-    
-    Also supports legacy binary scoring for backward compatibility.
+    Each category: Meets Criteria = full points, Needs Improvement = 0.
     """
     
-    # Scoring multipliers for granular assessment
-    # Using Decimal for precise fractional representation to avoid rounding errors
-    ASSESSMENT_MULTIPLIERS = {
-        CategoryAssessment.NOT_MET: 0.0,
-        CategoryAssessment.MINIMALLY_MET: 1.0 / 3.0,  # Precisely 1/3
-        CategoryAssessment.PARTIALLY_MET: 2.0 / 3.0,  # Precisely 2/3
-        CategoryAssessment.FULLY_MET: 1.0,
-        # Legacy binary scoring support
-        CategoryAssessment.NEEDS_IMPROVEMENT: 0.0,
-        CategoryAssessment.MEETS_CRITERIA: 1.0,
-    }
-    
-    # Category definitions with point values and criteria
+    # Category definitions with point values
     CATEGORIES = {
         'Collaboration': {
             'points': 9,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Introduces self, role, is engaging, welcoming',
-                    'Collaborated with the patient by eliciting their ideas for change in {context} or by providing support as a partnership',
-                    'Did not lecture; Did not try to "fix" the patient'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Mostly introduced self/role and was engaging',
-                    'Some collaboration but could elicit more patient ideas',
-                    'Mostly avoided lecturing but occasional directive language'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Brief introduction, limited engagement',
-                    'Limited collaboration or partnership building',
-                    'Some lecturing or fixing behavior evident'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Did not introduce self/role/engaging/welcoming',
-                    'Did not collaborate by eliciting patient ideas or provide partnership support',
-                    'Lectured or tried to "fix" the patient'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Introduces self, role, is engaging, welcoming',
                     'Collaborated with the patient by eliciting their ideas for change in {context} or by providing support as a partnership',
@@ -113,23 +60,6 @@ class MIRubric:
         'Acceptance': {
             'points': 6,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Asks permission before eliciting accurate information about the {context}',
-                    'Uses reflections to demonstrate listening'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Usually asks permission before sharing information',
-                    'Some reflections but could be more consistent'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Occasionally asks permission',
-                    'Few reflections or basic listening acknowledgments'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Did not ask permission and/or provided inaccurate information',
-                    'Did not use reflections to demonstrate listening'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Asks permission before eliciting accurate information about the {context}',
                     'Uses reflections to demonstrate listening'
@@ -143,23 +73,6 @@ class MIRubric:
         'Compassion': {
             'points': 6,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Tries to understand the patient\'s perceptions and/or concerns with the {context}',
-                    'Does not judge, shame or belittle the patient'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Shows interest in patient perceptions but could explore more deeply',
-                    'Mostly non-judgmental with occasional directive tone'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Limited exploration of patient perceptions',
-                    'Neutral tone but not actively empathetic'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Did not try to understand perceptions/concerns',
-                    'Judged, shamed or belittled the patient'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Tries to understand the patient\'s perceptions and/or concerns with the {context}',
                     'Does not judge, shame or belittle the patient'
@@ -173,23 +86,6 @@ class MIRubric:
         'Evocation': {
             'points': 6,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Uses open-ended questions for patient understanding OR stage of change OR eliciting change talk',
-                    'Supports self-efficacy; emphasizes patient autonomy regarding the {context} (rolls with resistance)'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Uses some open-ended questions but also closed-ended ones',
-                    'Some support for autonomy but could emphasize more'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Few open-ended questions, mostly closed-ended',
-                    'Limited emphasis on patient autonomy'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Did not ask open-ended questions',
-                    'Did not support self-efficacy/autonomy (did not roll with resistance)'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Uses open-ended questions for patient understanding OR stage of change OR eliciting change talk',
                     'Supports self-efficacy; emphasizes patient autonomy regarding the {context} (rolls with resistance)'
@@ -203,19 +99,6 @@ class MIRubric:
         'Summary': {
             'points': 3,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Reflects big picture; checks accuracy of information and/or next steps'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Brief summary provided but could be more comprehensive'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Attempted summary but missed key points'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Does not summarize appropriately'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Reflects big picture; checks accuracy of information and/or next steps'
                 ],
@@ -227,19 +110,6 @@ class MIRubric:
         'Response Factor': {
             'points': 10,
             'criteria': {
-                CategoryAssessment.FULLY_MET: [
-                    'Fast and intuitive responses to questions probed; acceptable average time throughout conversation'
-                ],
-                CategoryAssessment.PARTIALLY_MET: [
-                    'Generally responsive but occasional delays'
-                ],
-                CategoryAssessment.MINIMALLY_MET: [
-                    'Noticeably slow responses affecting conversation flow'
-                ],
-                CategoryAssessment.NOT_MET: [
-                    'Delay in understanding and responding'
-                ],
-                # Legacy binary support
                 CategoryAssessment.MEETS_CRITERIA: [
                     'Fast and intuitive responses to questions probed; acceptable average time throughout conversation'
                 ],
@@ -293,13 +163,7 @@ class MIRubric:
         criteria = cls.CATEGORIES[category]['criteria'][assessment]
         
         # Apply context substitution
-        context_map = {
-            RubricContext.HPV: "HPV vaccination",
-            RubricContext.OHI: "oral health",
-            RubricContext.TOBACCO: "tobacco cessation",
-            RubricContext.PERIO: "periodontitis and gum health"
-        }
-        context_text = context_map.get(context, "the health topic")
+        context_text = "HPV vaccination" if context == RubricContext.HPV else "oral health"
         return [c.replace('{context}', context_text) for c in criteria]
     
     @classmethod
@@ -324,7 +188,7 @@ class MIRubric:
 
 class MIEvaluator:
     """
-    Evaluates MI performance using the updated 40-point rubric with granular scoring.
+    Evaluates MI performance using the new 40-point binary rubric.
     """
     
     @staticmethod
@@ -345,7 +209,7 @@ class MIEvaluator:
             
         Returns:
             Dict containing:
-                - total_score: float (0-40, with granular fractional scoring)
+                - total_score: int (0-40)
                 - max_possible_score: int (40)
                 - percentage: float
                 - performance_band: str
@@ -353,27 +217,26 @@ class MIEvaluator:
         """
         notes = notes or {}
         category_results = {}
-        total_score = 0.0
+        total_score = 0
         
         # Process each category
         for category_name, category_info in MIRubric.CATEGORIES.items():
             # Handle Response Factor specially if latency data provided
             if category_name == 'Response Factor':
                 if response_factor_latency is not None:
-                    # Auto-determine assessment based on latency (using legacy for auto-calc)
+                    # Auto-determine assessment based on latency
                     assessment = (CategoryAssessment.MEETS_CRITERIA 
                                 if response_factor_latency <= response_factor_threshold
                                 else CategoryAssessment.NEEDS_IMPROVEMENT)
                 else:
-                    # Use provided assessment or default to Not Met if not provided
-                    assessment = assessments.get(category_name, CategoryAssessment.NOT_MET)
+                    # Use provided assessment or default to Needs Improvement if not provided
+                    assessment = assessments.get(category_name, CategoryAssessment.NEEDS_IMPROVEMENT)
             else:
-                # Get assessment from provided assessments, default to Not Met
-                assessment = assessments.get(category_name, CategoryAssessment.NOT_MET)
+                # Get assessment from provided assessments
+                assessment = assessments.get(category_name, CategoryAssessment.NEEDS_IMPROVEMENT)
             
-            # Calculate score using granular multiplier
-            multiplier = MIRubric.ASSESSMENT_MULTIPLIERS.get(assessment, 0.0)
-            points = category_info['points'] * multiplier
+            # Calculate score (binary: full points or 0)
+            points = category_info['points'] if assessment == CategoryAssessment.MEETS_CRITERIA else 0
             total_score += points
             
             # Get criteria text with context substitution

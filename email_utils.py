@@ -506,18 +506,9 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     
     # Get Box email address based on session type
     email_config = config.get('email_config', {})
-    session_type_upper = session_type.upper()
-    
-    if 'OHI' in session_type_upper or 'ORAL' in session_type_upper or 'DENTAL' in session_type_upper:
+    if 'OHI' in session_type.upper():
         recipient = email_config.get('ohi_box_email')
-    elif 'HPV' in session_type_upper:
-        recipient = email_config.get('hpv_box_email')
-    elif 'TOBACCO' in session_type_upper or 'SMOK' in session_type_upper or 'CESSATION' in session_type_upper:
-        recipient = email_config.get('tobacco_box_email')
-    elif 'PERIO' in session_type_upper or 'GUM' in session_type_upper:
-        recipient = email_config.get('perio_box_email')
     else:
-        # Default to HPV if unclear
         recipient = email_config.get('hpv_box_email')
     
     if not recipient:
