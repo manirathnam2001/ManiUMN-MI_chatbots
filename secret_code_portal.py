@@ -49,6 +49,15 @@ logging.basicConfig(level=logging.INFO)
 # Valid bot types supported by the portal (OHI, HPV, TOBACCO, PERIO)
 VALID_BOT_TYPES = ['OHI', 'HPV', 'TOBACCO', 'PERIO']
 
+# Mapping from uppercase bot type to page file path
+# Note: Page file names use Title Case (e.g., Tobacco.py, Perio.py) per existing convention
+BOT_PAGE_MAP = {
+    'OHI': 'pages/OHI.py',
+    'HPV': 'pages/HPV.py',
+    'TOBACCO': 'pages/Tobacco.py',
+    'PERIO': 'pages/Perio.py'
+}
+
 SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
 SHEET_NAME = "Sheet1"
 SERVICE_ACCOUNT_FILE = "umnsod-mibot-ea3154b145f1.json"
@@ -500,19 +509,12 @@ def main():
                             # Navigate internally to the appropriate bot page
                             # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
                             bot_type = result['bot']
-                            # Mapping from uppercase bot type to page file path
-                            bot_page_map = {
-                                'OHI': 'pages/OHI.py',
-                                'HPV': 'pages/HPV.py',
-                                'TOBACCO': 'pages/Tobacco.py',
-                                'PERIO': 'pages/Perio.py'
-                            }
                             try:
-                                if bot_type in bot_page_map:
-                                    st.switch_page(bot_page_map[bot_type])
+                                if bot_type in BOT_PAGE_MAP:
+                                    st.switch_page(BOT_PAGE_MAP[bot_type])
                                 else:
                                     # This shouldn't happen as bot_type is validated
-                                    logger.error(f"Unexpected bot type '{bot_type}' not in bot_page_map")
+                                    logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
                                     st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
                             except StreamlitAPIException as e:
                                 st.error(
@@ -537,18 +539,12 @@ def main():
         
         # Navigate internally to the appropriate bot page
         # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
-        bot_page_map = {
-            'OHI': 'pages/OHI.py',
-            'HPV': 'pages/HPV.py',
-            'TOBACCO': 'pages/Tobacco.py',
-            'PERIO': 'pages/Perio.py'
-        }
         try:
-            if bot_type in bot_page_map:
-                st.switch_page(bot_page_map[bot_type])
+            if bot_type in BOT_PAGE_MAP:
+                st.switch_page(BOT_PAGE_MAP[bot_type])
             else:
                 # This shouldn't happen as bot_type is validated
-                logger.error(f"Unexpected bot type '{bot_type}' not in bot_page_map")
+                logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
                 st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
         except StreamlitAPIException as e:
             st.error(
