@@ -17,19 +17,19 @@ The Secret Code Portal (`secret_code_portal.py`) provides a secure gateway for s
 |--------|------|-------------|----------------|
 | Table No | Text/Number | Student identifier | 1, 2, 3, Table-1, etc. |
 | Name | Text | Student's full name | Alice Johnson, Bob Smith |
-| Bot | Text | Bot assignment (case-insensitive) | OHI, HPV |
+| Bot | Text | Bot assignment (case-insensitive) | OHI, HPV, TOBACCO, PERIO |
 | Secret | Text | Unique access code | abc123, secret456 |
 | Used | Boolean/Text | Whether code has been used | FALSE, TRUE |
 
 ### Example Sheet Data
 
 ```
-Table No | Name           | Bot | Secret    | Used
----------|----------------|-----|-----------|------
-1        | Alice Johnson  | OHI | abc123    | FALSE
-2        | Bob Smith      | HPV | xyz789    | FALSE
-3        | Charlie Brown  | OHI | test456   | TRUE
-4        | Diana Prince   | HPV | super321  | FALSE
+Table No | Name           | Bot     | Secret    | Used
+---------|----------------|---------|-----------|------
+1        | Alice Johnson  | OHI     | abc123    | FALSE
+2        | Bob Smith      | HPV     | xyz789    | FALSE
+3        | Charlie Brown  | TOBACCO | test456   | TRUE
+4        | Diana Prince   | PERIO   | super321  | FALSE
 ```
 
 ## Instructor Workflow
@@ -65,7 +65,7 @@ Table No | Name           | Bot | Secret    | Used
    ```
    Table No: [sequential number or identifier]
    Name: [Student's full name]
-   Bot: [OHI or HPV]
+   Bot: [OHI, HPV, TOBACCO, or PERIO]
    Secret: [generated unique code]
    Used: FALSE
    ```
@@ -118,7 +118,7 @@ Table No | Name           | Bot | Secret    | Used
 
 5. **Access Chatbot**
    - On success: code marked as used
-   - Student redirected to assigned bot (OHI or HPV)
+   - Student redirected to assigned bot (OHI, HPV, Tobacco, or Perio)
    - Can click button or copy URL
 
 ## Deployment Options
@@ -286,8 +286,8 @@ print(f"Successfully connected to: {sheet.title}")
 **Q: Can students use the same code multiple times?**  
 A: No, codes are single-use by default. Instructors can reset the "Used" flag to allow re-use.
 
-**Q: Can I use different bot types besides OHI and HPV?**  
-A: You would need to update the `BOT_URLS` dictionary and validation logic in the code.
+**Q: What bot types are supported?**  
+A: The portal supports four MI bot types: OHI, HPV, TOBACCO, and PERIO. Bot type values in the sheet are case-insensitive.
 
 **Q: How many students can I add?**  
 A: Google Sheets supports up to 10 million cells, so thousands of students are supported.
