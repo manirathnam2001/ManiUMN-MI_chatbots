@@ -2,12 +2,12 @@
 Secret Code Portal - Student Access Gateway
 
 This Streamlit application provides a secure entry point for students to access
-the MI chatbots (OHI or HPV) using secret codes distributed by instructors.
+the MI chatbots (OHI, HPV, TOBACCO, or PERIO) using secret codes distributed by instructors.
 
 Features:
 - Code validation against Google Sheets database
 - Automatic marking of codes as used
-- Redirect to appropriate bot (OHI or HPV)
+- Redirect to appropriate bot (OHI, HPV, Tobacco, or Perio)
 - Real-time data refresh capability
 - Clear error messages for invalid or used codes
 
@@ -35,12 +35,29 @@ Requirements:
 import os
 import json
 import base64
+import logging
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 import gspread
 from google.oauth2.service_account import Credentials
 
+# Configure logging for diagnostics
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 # --- Configuration ---
+# Valid bot types supported by the portal (OHI, HPV, TOBACCO, PERIO)
+VALID_BOT_TYPES = ['OHI', 'HPV', 'TOBACCO', 'PERIO']
+
+# Mapping from uppercase bot type to page file path
+# Note: Page file names use Title Case (e.g., Tobacco.py, Perio.py) per existing convention
+BOT_PAGE_MAP = {
+    'OHI': 'pages/OHI.py',
+    'HPV': 'pages/HPV.py',
+    'TOBACCO': 'pages/Tobacco.py',
+    'PERIO': 'pages/Perio.py'
+}
+
 SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
 SHEET_NAME = "Sheet1"
 SERVICE_ACCOUNT_FILE = "umnsod-mibot-ea3154b145f1.json"
@@ -296,7 +313,7 @@ def validate_and_mark_code(secret_code):
         dict: Result dictionary with keys:
             - success (bool): Whether the code was valid and successfully marked
             - message (str): User-friendly message
-            - bot (str): Bot type (OHI or HPV) if successful
+            - bot (str): Bot type (OHI, HPV, TOBACCO, or PERIO) if successful
             - name (str): Student name if successful
     """
     if 'codes_data' not in st.session_state:
@@ -328,12 +345,17 @@ def validate_and_mark_code(secret_code):
                     'name': None
                 }
             
-            # Validate bot type
-            bot = bot.strip().upper()
-            if bot not in ['OHI', 'HPV']:
+            # Validate bot type - normalize to uppercase for comparison
+            bot_normalized = bot.strip().upper()
+            if bot_normalized not in VALID_BOT_TYPES:
+                # Log rejected bot type for diagnosis
+                logger.warning(
+                    f"Rejected invalid bot type '{bot}' (normalized: '{bot_normalized}') "
+                    f"for code row {row_idx + 2}. Valid types: {VALID_BOT_TYPES}"
+                )
                 return {
                     'success': False,
-                    'message': f'Invalid bot type "{bot}" in the sheet. Please contact your instructor.',
+                    'message': f'Invalid bot type "{bot}" in the sheet. Valid types are: {", ".join(VALID_BOT_TYPES)}. Please contact your instructor.',
                     'bot': None,
                     'name': None
                 }
@@ -347,8 +369,8 @@ def validate_and_mark_code(secret_code):
                 
                 return {
                     'success': True,
-                    'message': f'Welcome, {name}! Redirecting you to the {bot} chatbot...',
-                    'bot': bot,
+                    'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
+                    'bot': bot_normalized,
                     'name': name
                 }
             except Exception as e:
@@ -384,7 +406,7 @@ def main():
         1. Enter your name and Groq API key
         2. Enter your secret code
         3. Click "Submit Code" to verify your access
-        4. You will be redirected to your assigned chatbot (OHI or HPV)
+        4. You will be redirected to your assigned chatbot (OHI, HPV, Tobacco, or Perio)
         
         **Note:** Each code can only be used once. If you encounter any issues, please contact your instructor.
         """
@@ -485,16 +507,15 @@ def main():
                             st.success(result['message'])
                             
                             # Navigate internally to the appropriate bot page
+                            # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
                             bot_type = result['bot']
                             try:
-                                if bot_type == "OHI":
-                                    st.switch_page("pages/OHI.py")
-                                elif bot_type == "HPV":
-                                    st.switch_page("pages/HPV.py")
-                                elif bot_type == "Tobacco":
-                                    st.switch_page("pages/Tobacco.py")
-                                elif bot_type == "Perio":
-                                    st.switch_page("pages/Perio.py")
+                                if bot_type in BOT_PAGE_MAP:
+                                    st.switch_page(BOT_PAGE_MAP[bot_type])
+                                else:
+                                    # This shouldn't happen as bot_type is validated
+                                    logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
+                                    st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
                             except StreamlitAPIException as e:
                                 st.error(
                                     f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
@@ -517,15 +538,14 @@ def main():
         st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
         
         # Navigate internally to the appropriate bot page
+        # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
         try:
-            if bot_type == "OHI":
-                st.switch_page("pages/OHI.py")
-            elif bot_type == "HPV":
-                st.switch_page("pages/HPV.py")
-            elif bot_type == "Tobacco":
-                st.switch_page("pages/Tobacco.py")
-            elif bot_type == "Perio":
-                st.switch_page("pages/Perio.py")
+            if bot_type in BOT_PAGE_MAP:
+                st.switch_page(BOT_PAGE_MAP[bot_type])
+            else:
+                # This shouldn't happen as bot_type is validated
+                logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
+                st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
         except StreamlitAPIException as e:
             st.error(
                 f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
