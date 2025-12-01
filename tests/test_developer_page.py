@@ -73,7 +73,7 @@ def test_mark_code_used_integration():
     
     # Mark as used
     success = mark_row_used(mock_worksheet, row_index)
-    assert success == True
+    assert success is True
     mock_worksheet.update_cell.assert_called_once_with(2, 5, 'TRUE')
 
 

@@ -200,10 +200,14 @@ with st.expander("Sheet Test Options", expanded=False):
                 try:
                     from utils.access_control import get_sheet_client, find_code_row, mark_row_used
                     
+                    # Sheet configuration (same as secret_code_portal.py)
+                    SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
+                    SHEET_NAME = "Sheet1"
+                    
                     # Get the sheet
                     client = get_sheet_client()
-                    sheet = client.open_by_key("1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY")
-                    worksheet = sheet.worksheet("Sheet1")
+                    sheet = client.open_by_key(SHEET_ID)
+                    worksheet = sheet.worksheet(SHEET_NAME)
                     
                     # Find the code
                     result = find_code_row(worksheet, code_to_mark)

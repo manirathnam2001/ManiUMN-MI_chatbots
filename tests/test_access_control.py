@@ -225,7 +225,7 @@ def test_mark_row_used_success():
     mock_worksheet.update_cell.return_value = None
     
     result = mark_row_used(mock_worksheet, 2, 5)
-    assert result == True
+    assert result is True
     mock_worksheet.update_cell.assert_called_once_with(2, 5, 'TRUE')
 
 
@@ -235,7 +235,7 @@ def test_mark_row_used_failure():
     mock_worksheet.update_cell.side_effect = Exception("API Error")
     
     result = mark_row_used(mock_worksheet, 2, 5)
-    assert result == False
+    assert result is False
 
 
 def test_instructor_code_not_marked_used():
