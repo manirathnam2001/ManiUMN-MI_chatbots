@@ -10,13 +10,7 @@ Features:
 - Redirect to appropriate bot (OHI, HPV, Tobacco, or Perio)
 - Real-time data refresh capability
 - Clear error messages for invalid or used codes
-- Robust gspread client with version compatibility
-- Admin-friendly error messages with actionable guidance
-
-Roles:
-- STUDENT: Regular access, codes are marked as used
-- INSTRUCTOR: Infinite access, codes are NOT marked as used
-- DEVELOPER: Access to developer page with test utilities, codes NOT auto-marked
+- Robust error handling with admin-friendly messages
 
 Google Sheet Structure:
 - Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
@@ -44,22 +38,14 @@ import logging
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 
-# Import from centralized access control module
 from utils.access_control import (
     get_sheet_client,
-    normalize_role,
-    normalize_bot_type,
-    find_code_row,
-    mark_row_used,
-    check_sheet_permission,
-    VALID_BOT_TYPES,
-    ROLE_INSTRUCTOR,
-    ROLE_DEVELOPER,
-    ROLE_STUDENT,
-    SheetClientError,
-    MissingSecretsError,
-    MalformedSecretsError,
-    PermissionDeniedError,
+    open_sheet_with_retry,
+    get_sheet_data_with_retry,
+    update_cell_with_retry,
+    CredentialError,
+    SheetAccessError,
+    NetworkError,
 )
 
 # Configure logging for diagnostics
@@ -104,139 +90,156 @@ def get_google_sheets_client():
     Initialize and return Google Sheets client using service account credentials.
     Cached to avoid repeated authentication.
     
-    Uses the centralized access control module which supports:
-    1. gspread.service_account_from_dict (gspread >= 5.0)
-    2. google.oauth2 Credentials + gspread.authorize (fallback)
+    Uses the robust get_sheet_client from utils.access_control which:
+    - Tries multiple credential sources in priority order
+    - Uses gspread.service_account_from_dict when available (gspread >= 5.0)
+    - Provides clear, actionable error messages for administrators
     
     Returns:
-        gspread.Client: Authorized Google Sheets client
+        tuple: (gspread.Client, credential_source, service_account_email)
         
     Raises:
-        SheetClientError subclass with admin-friendly messages
+        CredentialError: If no valid credentials are found or credentials are malformed
     """
-    client, creds_source, service_account_email = _get_cached_client()
+    client, creds_source, service_account_email = get_sheet_client(st.secrets)
     
-    # Store credentials source for debugging
-    if creds_source:
-        st.session_state["googlesa_source"] = creds_source
+    # Store metadata for debugging (non-secret indicators)
+    st.session_state["googlesa_source"] = creds_source
     if service_account_email:
         st.session_state["service_account_email"] = service_account_email
     
-    return client
+    return client, creds_source, service_account_email
 
 
-def display_admin_error(error: SheetClientError):
-    """
-    Display admin-friendly error message with actionable guidance.
+def _display_credential_error(error: CredentialError):
+    """Display a credential error with admin-friendly guidance."""
+    st.error("⚠️ **Configuration Error: Missing or Invalid Credentials**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+---
+
+**Admin Guidance:**
+
+{error.admin_hint}
+""")
     
-    Args:
-        error: SheetClientError subclass with error details
-    """
-    st.error("⚠️ Configuration Error")
-    
-    if isinstance(error, MissingSecretsError):
-        st.warning("**No Google Sheets credentials found.**")
+    # Add expandable section with technical details
+    with st.expander("📋 Quick Setup Guide"):
         st.markdown("""
-        **Administrators:** Please configure one of the following:
-        
-        1. **Streamlit secrets** (recommended for Streamlit Cloud):
-           - `st.secrets["GOOGLESA"]` - TOML table or JSON string
-           - `st.secrets["GOOGLESA_B64"]` - base64-encoded JSON
-        
-        2. **Environment variables**:
-           - `GOOGLESA_B64` - base64-encoded JSON (recommended)
-           - `GOOGLESA` - JSON string with escaped newlines
-        
-        3. **Service account file**:
-           - `umnsod-mibot-ea3154b145f1.json` (for local development)
-        """)
-        
-    elif isinstance(error, MalformedSecretsError):
-        st.warning(f"**Malformed credentials in {error.source}**")
-        st.markdown(f"Error: `{error.detail}`")
-        st.markdown("""
-        **Common fixes:**
-        - For JSON strings: Escape newlines in `private_key` as `\\n`
-        - For GOOGLESA_B64: Run `cat service-account.json | base64 -w 0`
-        - For TOML tables: Use multi-line strings with `'''` for private_key
-        """)
-        
-    elif isinstance(error, PermissionDeniedError):
-        st.warning("**Permission denied when accessing spreadsheet.**")
-        service_email = getattr(error, 'service_account_email', None)
-        if service_email:
-            st.markdown(f"""
-            **Share the spreadsheet with this service account:**
-            
-            📧 `{service_email}`
-            
-            1. Open the spreadsheet in Google Sheets
-            2. Click "Share" in the top right
-            3. Paste the email above and grant "Editor" access
-            4. Click "Share"
-            """)
-        else:
-            st.markdown("""
-            Please ensure the service account has access to the spreadsheet.
-            Check the ADMIN_GUIDE.md for detailed instructions.
-            """)
+**Option 1: Streamlit Cloud (Recommended)**
+1. Go to your Streamlit Cloud dashboard
+2. Navigate to your app's settings → Secrets
+3. Add your service account JSON as a TOML table:
+```toml
+[GOOGLESA]
+type = "service_account"
+project_id = "your-project"
+# ... rest of service account fields
+```
+
+**Option 2: Base64-Encoded (Works everywhere)**
+1. Encode your service account JSON:
+   ```bash
+   cat service-account.json | base64 -w 0
+   ```
+2. Set as `GOOGLESA_B64` secret or environment variable
+
+**Option 3: Local Development**
+1. Place `umnsod-mibot-ea3154b145f1.json` in the application directory
+""")
+
+
+def _display_sheet_access_error(error: SheetAccessError):
+    """Display a sheet access error with admin-friendly guidance."""
+    st.error("⚠️ **Spreadsheet Access Error**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+---
+
+**Admin Guidance:**
+
+{error.admin_hint}
+""")
     
-    # Show retry button
-    if st.button("🔄 Retry Connection"):
-        # Clear the client cache and try again
-        get_google_sheets_client.clear()
-        st.rerun()
+    if error.service_account_email:
+        st.info(f"📧 **Service Account Email:** `{error.service_account_email}`\n\nShare your spreadsheet with this email address and grant 'Editor' access.")
+
+
+def _display_network_error(error: NetworkError):
+    """Display a network error with retry option."""
+    st.warning("⚠️ **Network Error**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+This appears to be a temporary network issue. Please try again.
+""")
 
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def load_codes_from_sheet_cached(_client):
+def load_codes_from_sheet_cached(_client_id: str):
     """
     Load secret codes from Google Sheet. Cached to reduce API calls.
     
     Args:
-        _client: gspread.Client - The underscore prefix is a Streamlit convention
-                 that prevents the argument from being hashed when computing the
-                 cache key. This is necessary because gspread.Client objects are
-                 not hashable.
+        _client_id: Cache key based on client identity (prevents stale cache issues)
     
     Returns:
-        dict: Dictionary with 'worksheet', 'headers', 'rows' keys
-        
-    Raises:
-        PermissionDeniedError: If access is denied
-        Exception: For other errors
+        dict: Dictionary with 'headers', 'rows' keys, or error dict with 'error' and 'error_type' keys
     """
-    # Check permission and open the spreadsheet
-    sheet = check_sheet_permission(
-        _client, 
-        SHEET_ID, 
-        st.session_state.get("service_account_email")
-    )
-    worksheet = sheet.worksheet(SHEET_NAME)
-    
-    # Get all values from the sheet
-    all_values = worksheet.get_all_values()
-    
-    if len(all_values) < 2:
-        raise ValueError("Sheet is empty or has only headers")
-    
-    # Parse the data (first row is headers)
-    headers = all_values[0]
-    data = all_values[1:]
-    
-    # Validate required headers (Role is optional)
-    required_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
-    header_lower = [h.strip().lower() for h in headers]
-    for req in required_headers:
-        if req.lower() not in header_lower:
-            raise ValueError(f"Missing required column: {req}")
-    
-    # Return data structure
-    return {
-        'worksheet': worksheet,
-        'headers': headers,
-        'rows': data
-    }
+    try:
+        # Get Google Sheets client
+        client, creds_source, service_account_email = get_google_sheets_client()
+        
+        # Open the worksheet with retry logic
+        worksheet = open_sheet_with_retry(
+            client, SHEET_ID, SHEET_NAME,
+            service_account_email=service_account_email
+        )
+        
+        # Get all values with retry logic
+        all_values = get_sheet_data_with_retry(worksheet)
+        
+        if len(all_values) < 2:
+            return {
+                'error': 'Sheet is empty or has only headers',
+                'error_type': 'empty_sheet'
+            }
+        
+        # Parse the data (first row is headers)
+        headers = all_values[0]
+        data = all_values[1:]
+        
+        # Validate headers
+        expected_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
+        if headers != expected_headers:
+            return {
+                'error': f'Invalid sheet headers. Expected: {expected_headers}, Got: {headers}',
+                'error_type': 'invalid_headers'
+            }
+        
+        # Return data structure (without worksheet - it will be fetched fresh for writes)
+        return {
+            'headers': headers,
+            'rows': data,
+            'service_account_email': service_account_email
+        }
+        
+    except CredentialError as e:
+        return {'error': str(e), 'error_type': 'credential', 'admin_hint': e.admin_hint}
+    except SheetAccessError as e:
+        return {
+            'error': str(e), 
+            'error_type': 'access', 
+            'admin_hint': e.admin_hint,
+            'service_account_email': e.service_account_email
+        }
+    except NetworkError as e:
+        return {'error': str(e), 'error_type': 'network'}
+    except Exception as e:
+        logger.exception("Unexpected error loading sheet data")
+        return {'error': str(e), 'error_type': 'unknown'}
 
 
 def load_codes_from_sheet(force_refresh=False):
@@ -247,49 +250,46 @@ def load_codes_from_sheet(force_refresh=False):
         force_refresh (bool): If True, force reload from Google Sheets even if data exists
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful, False otherwise (errors are displayed to user)
     """
     # Clear cache if forcing refresh
     if force_refresh:
         load_codes_from_sheet_cached.clear()
+        # Also clear the client cache to get fresh credentials
+        get_google_sheets_client.clear()
     
     # Use cached data if available and not forcing refresh
-    if not force_refresh and 'codes_data' in st.session_state:
+    if not force_refresh and 'codes_data' in st.session_state and 'error' not in st.session_state.codes_data:
         return True
     
+    # Generate a cache key based on current time (for cache invalidation)
+    # This ensures the cached function is called with consistent parameters
     try:
-        # Get client first (may raise SheetClientError)
-        client = get_google_sheets_client()
+        cache_key = st.session_state.get("googlesa_source", "default")
+    except Exception:
+        cache_key = "default"
+    
+    # Load from cached function
+    data = load_codes_from_sheet_cached(cache_key)
+    
+    if 'error' in data:
+        error_type = data.get('error_type', 'unknown')
         
-        # Load from cached function
-        data = load_codes_from_sheet_cached(client)
+        if error_type == 'credential':
+            _display_credential_error(CredentialError(data['error'], data.get('admin_hint')))
+        elif error_type == 'access':
+            error = SheetAccessError(data['error'], data.get('admin_hint'))
+            error.service_account_email = data.get('service_account_email')
+            _display_sheet_access_error(error)
+        elif error_type == 'network':
+            _display_network_error(NetworkError(data['error']))
+        elif error_type == 'empty_sheet':
+            st.warning("⚠️ The access codes sheet is empty. Please add codes to the spreadsheet.")
+        elif error_type == 'invalid_headers':
+            st.error(f"⚠️ **Invalid Sheet Format**\n\n{data['error']}")
+        else:
+            st.error(f"❌ **Unexpected Error:** {data['error']}\n\nPlease contact support if this persists.")
         
-        # Store data in session state
-        st.session_state.codes_data = data
-        st.session_state.last_refresh = None
-        
-        return True
-        
-    except SheetClientError as e:
-        # Display admin-friendly error for credential/permission issues
-        display_admin_error(e)
-        return False
-        
-    except ValueError as e:
-        # Sheet structure issues
-        st.error(f"⚠️ Sheet Structure Error: {str(e)}")
-        st.info("Please verify the sheet has the correct columns: Table No, Name, Bot, Secret, Used, Role (optional)")
-        return False
-        
-    except Exception as e:
-        # Generic error
-        logger.error(f"Error loading codes: {e}")
-        st.error("Failed to load code database.")
-        st.info("Please refresh the page or contact support.")
-        if st.button("🔄 Retry"):
-            get_google_sheets_client.clear()
-            load_codes_from_sheet_cached.clear()
-            st.rerun()
         return False
 
 
@@ -313,7 +313,7 @@ def validate_and_mark_code(secret_code):
             - name (str): Student name if successful
             - role (str): User role (STUDENT, INSTRUCTOR, or DEVELOPER)
     """
-    if 'codes_data' not in st.session_state:
+    if 'codes_data' not in st.session_state or 'error' in st.session_state.codes_data:
         return {
             'success': False,
             'message': 'Code data not loaded. Please refresh the data.',
@@ -322,9 +322,8 @@ def validate_and_mark_code(secret_code):
             'role': ROLE_STUDENT
         }
     
-    worksheet = st.session_state.codes_data['worksheet']
-    headers = st.session_state.codes_data['headers']
     rows = st.session_state.codes_data['rows']
+    service_account_email = st.session_state.codes_data.get('service_account_email')
     
     # Find role column index if it exists
     header_lower = [h.strip().lower() for h in headers]
@@ -388,49 +387,51 @@ def validate_and_mark_code(secret_code):
                     'role': role
                 }
             
-            # Mark the code as used ONLY for STUDENT role
-            # Instructor and Developer roles do not mark codes as used
-            if role == ROLE_STUDENT:
-                try:
-                    # Update the "Used" column (column E, index 5)
-                    cell_row = row_idx + 2  # +2 for 0-index and header
-                    if mark_row_used(worksheet, cell_row, used_column=5):
-                        # Invalidate cache after successful update
-                        load_codes_from_sheet_cached.clear()
-                    else:
-                        return {
-                            'success': False,
-                            'message': 'Error marking code as used. Please try again.',
-                            'bot': None,
-                            'name': None,
-                            'role': role
-                        }
-                except Exception as e:
-                    logger.error(f"Error marking code as used: {e}")
-                    return {
-                        'success': False,
-                        'message': f'Error marking code as used: {str(e)}. Please try again.',
-                        'bot': None,
-                        'name': None,
-                        'role': role
-                    }
-            
-            # Store user role in session
-            st.session_state.user_role = role
-            
-            # Success message varies by role
-            if role == ROLE_INSTRUCTOR:
-                message = f'Welcome, Instructor {name}! Redirecting you to the {bot_normalized} chatbot... (Infinite access enabled)'
-            else:
-                message = f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...'
-            
-            return {
-                'success': True,
-                'message': message,
-                'bot': bot_normalized,
-                'name': name,
-                'role': role
-            }
+            # Mark the code as used (row_idx + 2 because of 0-indexing and header row)
+            try:
+                # Get fresh worksheet for write operation
+                client, _, _ = get_google_sheets_client()
+                worksheet = open_sheet_with_retry(
+                    client, SHEET_ID, SHEET_NAME,
+                    service_account_email=service_account_email
+                )
+                
+                # Update the "Used" column (column E, index 5) with retry logic
+                cell_row = row_idx + 2
+                cell_col = 5
+                update_cell_with_retry(worksheet, cell_row, cell_col, 'TRUE')
+                
+                # Clear the cached sheet data so next load gets fresh data
+                load_codes_from_sheet_cached.clear()
+                
+                return {
+                    'success': True,
+                    'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
+                    'bot': bot_normalized,
+                    'name': name
+                }
+            except SheetAccessError as e:
+                return {
+                    'success': False,
+                    'message': f'Error marking code as used: {e.admin_hint or str(e)}',
+                    'bot': None,
+                    'name': None
+                }
+            except NetworkError as e:
+                return {
+                    'success': False,
+                    'message': f'Network error marking code as used: {str(e)}. Please try again.',
+                    'bot': None,
+                    'name': None
+                }
+            except Exception as e:
+                logger.exception("Unexpected error marking code as used")
+                return {
+                    'success': False,
+                    'message': f'Error marking code as used: {str(e)}. Please try again.',
+                    'bot': None,
+                    'name': None
+                }
     
     # Code not found
     return {
@@ -469,13 +470,26 @@ def main():
         st.session_state.authenticated = False
     if 'redirect_info' not in st.session_state:
         st.session_state.redirect_info = None
+    if 'load_error' not in st.session_state:
+        st.session_state.load_error = False
     
     # Load data from Google Sheets on first run
-    if 'codes_data' not in st.session_state:
+    if 'codes_data' not in st.session_state or st.session_state.load_error:
         with st.spinner("Loading access codes from database..."):
             if not load_codes_from_sheet():
-                st.error("Failed to load code database. Please refresh the page or contact support.")
+                st.session_state.load_error = True
+                # Add a retry button for failed loads
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("🔄 Retry Loading", type="primary", help="Try loading the database again"):
+                        # Clear caches and retry
+                        load_codes_from_sheet_cached.clear()
+                        get_google_sheets_client.clear()
+                        st.rerun()
                 st.stop()
+            else:
+                st.session_state.load_error = False
     
     # Compact refresh button with custom CSS
     st.markdown("""
@@ -496,8 +510,7 @@ def main():
                 if load_codes_from_sheet(force_refresh=True):
                     st.success("Data refreshed successfully!")
                     st.rerun()
-                else:
-                    st.error("Failed to refresh data. Please try again.")
+                # Error messages are already displayed by load_codes_from_sheet
     
     st.markdown("---")
     

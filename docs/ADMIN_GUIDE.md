@@ -1,236 +1,193 @@
-# MI Chatbot Portal - Administrator Guide
+# Admin Guide: Secret Code Portal Configuration
 
-This guide provides deployment and configuration instructions for administrators of the MI Chatbot Portal.
+This guide explains how to configure the Secret Code Portal for production deployment.
 
-## Table of Contents
+## Overview
 
-1. [Google Sheets Setup](#google-sheets-setup)
-2. [Service Account Configuration](#service-account-configuration)
-3. [Deployment Secrets](#deployment-secrets)
-4. [Sheet Column Layout](#sheet-column-layout)
-5. [Troubleshooting](#troubleshooting)
+The Secret Code Portal requires access to a Google Sheets spreadsheet that stores access codes. This requires:
 
----
+1. A Google Cloud service account with appropriate permissions
+2. Configuration of credentials in your deployment environment
+3. Sharing the spreadsheet with the service account
 
-## Google Sheets Setup
+## Required Secrets
 
-### Sheet Structure
+### Option 1: Streamlit Secrets (Recommended for Streamlit Cloud)
 
-The portal reads access codes from a Google Sheet with the following structure:
+Add your service account credentials to Streamlit secrets. You can use either format:
 
-| Column | Name | Description | Required |
-|--------|------|-------------|----------|
-| A | Table No | Identifier for the table/group | Yes |
-| B | Name | Student's full name | Yes |
-| C | Bot | Bot type: OHI, HPV, TOBACCO, or PERIO | Yes |
-| D | Secret | Unique secret code for access | Yes |
-| E | Used | Whether the code has been used (TRUE/FALSE) | Yes |
-| F | Role | User role: STUDENT, INSTRUCTOR, or DEVELOPER | No (defaults to STUDENT) |
+#### TOML Table Format (Recommended)
 
-### Example Sheet Layout
-
-```
-| Table No | Name            | Bot     | Secret   | Used  | Role       |
-|----------|-----------------|---------|----------|-------|------------|
-| 1        | Alice Johnson   | OHI     | ABC123   |       | STUDENT    |
-| 2        | Bob Smith       | HPV     | DEF456   |       | STUDENT    |
-| 3        | Dr. Carol White | OHI     | PROF001  |       | INSTRUCTOR |
-| 4        | Dev Admin       | OHI     | DEV999   |       | DEVELOPER  |
-```
-
-### Sheet ID
-
-The current sheet ID is: `1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY`
-
----
-
-## Service Account Configuration
-
-### Step 1: Create a Service Account
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create or select a project
-3. Navigate to **IAM & Admin** > **Service Accounts**
-4. Click **Create Service Account**
-5. Name it (e.g., `mi-chatbot-portal`)
-6. Grant the role: **No role needed** (the service account only needs access to the specific sheet)
-7. Click **Create Key** and select **JSON**
-8. Download the JSON key file
-
-### Step 2: Enable Google Sheets API
-
-1. Go to **APIs & Services** > **Library**
-2. Search for "Google Sheets API"
-3. Click **Enable**
-
-### Step 3: Share the Spreadsheet
-
-1. Open your Google Sheet
-2. Click **Share** in the top right
-3. Paste the service account email (e.g., `mi-chatbot-portal@project-id.iam.gserviceaccount.com`)
-4. Grant **Editor** access
-5. Click **Share**
-
----
-
-## Deployment Secrets
-
-The portal supports multiple authentication methods (in priority order):
-
-### Method 1: Streamlit Secrets (Recommended for Streamlit Cloud)
-
-**TOML Table Format** (`~/.streamlit/secrets.toml` or Streamlit Cloud Secrets):
+In your Streamlit Cloud secrets or `.streamlit/secrets.toml`:
 
 ```toml
 [GOOGLESA]
 type = "service_account"
 project_id = "your-project-id"
 private_key_id = "your-key-id"
-private_key = """
------BEGIN PRIVATE KEY-----
-YOUR_PRIVATE_KEY_HERE
------END PRIVATE KEY-----
-"""
-client_email = "service-account@your-project.iam.gserviceaccount.com"
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "your-service-account@your-project.iam.gserviceaccount.com"
 client_id = "123456789"
 auth_uri = "https://accounts.google.com/o/oauth2/auth"
 token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 ```
 
-### Method 2: Base64-Encoded JSON (Recommended for Environment Variables)
+#### Base64-Encoded JSON Format
 
-**Creating the base64 string:**
+If you prefer, you can base64-encode your entire service account JSON:
 
 ```bash
-# On Linux/Mac:
-cat service-account.json | base64 -w 0
-
-# On Windows (PowerShell):
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account.json"))
+# Encode your service account JSON file
+cat your-service-account.json | base64 -w 0
 ```
 
-**Setting in Streamlit Secrets:**
+Then add to Streamlit secrets:
 
 ```toml
-GOOGLESA_B64 = "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwicHJvamVjdF9pZCI6Li4ufQ=="
+GOOGLESA_B64 = "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Ii..."
 ```
 
-**Setting as Environment Variable:**
+### Option 2: Environment Variables
+
+For non-Streamlit deployments, use environment variables:
+
+#### GOOGLESA_B64 (Recommended)
 
 ```bash
-export GOOGLESA_B64="eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwicHJvamVjdF9pZCI6Li4ufQ=="
+# Encode your service account JSON
+export GOOGLESA_B64=$(cat your-service-account.json | base64 -w 0)
 ```
 
-### Method 3: JSON String Environment Variable
+#### GOOGLESA (JSON String)
 
 ```bash
-export GOOGLESA='{"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",...}'
+# Use single-line JSON with escaped newlines
+export GOOGLESA='{"type":"service_account","private_key":"-----BEGIN...-----\\n",...}'
 ```
 
-**Note:** Newlines in the private key must be escaped as `\n`.
+### Option 3: Service Account File (Local Development Only)
 
-### Method 4: Service Account File (Local Development)
-
-Place the service account JSON file at:
+For local development, place the service account JSON file as:
 
 ```
 umnsod-mibot-ea3154b145f1.json
 ```
 
----
+in the application root directory.
 
-## Sheet Column Layout
+## Google Sheet Configuration
 
-### Required Columns
+### Required Sheet Structure
 
-| Column | Header Name | Description |
-|--------|-------------|-------------|
-| A | Table No | Group/table identifier |
-| B | Name | Student's display name |
-| C | Bot | One of: OHI, HPV, TOBACCO, PERIO |
-| D | Secret | Unique access code |
-| E | Used | TRUE, FALSE, YES, NO, 1, or empty |
+The portal expects a Google Sheet with the following structure:
 
-### Optional Columns
+| Table No | Name | Bot | Secret | Used |
+|----------|------|-----|--------|------|
+| 1 | John Doe | OHI | abc123 | FALSE |
+| 2 | Jane Smith | HPV | xyz789 | TRUE |
 
-| Column | Header Name | Description |
-|--------|-------------|-------------|
-| F | Role | STUDENT (default), INSTRUCTOR, or DEVELOPER |
+**Columns:**
+- **Table No**: Identifier for the row (any format)
+- **Name**: Student's name
+- **Bot**: Bot type - must be one of: `OHI`, `HPV`, `TOBACCO`, `PERIO`
+- **Secret**: The access code (case-sensitive)
+- **Used**: `TRUE` or `FALSE` (auto-updated when code is used)
 
-### Role Descriptions
+### Sheet ID
 
-| Role | Description |
-|------|-------------|
-| **STUDENT** | Standard access. Code is marked as used after first login. |
-| **INSTRUCTOR** | Infinite access. Code is never marked as used. Can access chatbots unlimited times. |
-| **DEVELOPER** | Developer access. Redirects to Developer Tools page for testing. |
+The default sheet ID is configured in `secret_code_portal.py`:
 
----
+```python
+SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
+```
+
+To use a different sheet, modify this value or set it via configuration.
+
+### Sharing the Sheet
+
+**Critical:** You must share the Google Sheet with your service account email:
+
+1. Open the Google Sheet
+2. Click "Share" in the top right
+3. Enter your service account email (e.g., `your-account@your-project.iam.gserviceaccount.com`)
+4. Grant **Editor** access (required for marking codes as used)
+5. Click "Send" (uncheck "Notify people" if desired)
 
 ## Troubleshooting
 
-### Error: "No Google Sheets credentials found"
+### "Failed to load code database"
 
-**Cause:** The portal cannot find any valid credentials.
+This error indicates the portal cannot connect to Google Sheets. Check:
 
-**Solution:**
-1. Verify you've configured one of the authentication methods above
-2. Check for typos in secret/environment variable names
-3. For Streamlit Cloud: Verify secrets are properly configured in the app settings
+1. **Missing Credentials**: Verify `GOOGLESA` or `GOOGLESA_B64` is set
+2. **Invalid Credentials**: Ensure the JSON is valid and complete
+3. **Sheet Not Shared**: Share the sheet with the service account email
 
-### Error: "Malformed credentials"
+### "Permission denied"
 
-**Cause:** The credentials are present but invalid or incorrectly formatted.
+The service account doesn't have access to the sheet:
 
-**Solution:**
-1. For JSON strings: Ensure newlines in `private_key` are escaped as `\n`
-2. For base64: Re-encode the file using `base64 -w 0`
-3. For TOML: Use triple-quoted strings for the private key
+1. Verify the sheet is shared with the correct email
+2. Ensure **Editor** access is granted (not just Viewer)
+3. Check that the sheet ID is correct
 
-### Error: "Permission denied when accessing spreadsheet"
+### "Spreadsheet not found"
 
-**Cause:** The service account doesn't have access to the Google Sheet.
+The sheet ID is incorrect or the sheet was deleted:
 
-**Solution:**
-1. The error message will display the service account email
-2. Open the Google Sheet and share it with that email address
-3. Grant **Editor** access (needed for marking codes as used)
+1. Verify the sheet exists
+2. Check the sheet ID in the URL matches the configured ID
+3. Ensure the sheet hasn't been moved to trash
 
-### Error: "Missing required column: [column name]"
+### "Invalid sheet headers"
 
-**Cause:** The sheet is missing a required column header.
+The sheet structure doesn't match expected format:
 
-**Solution:**
-1. Verify the first row contains: Table No, Name, Bot, Secret, Used
-2. Headers are case-sensitive and must match exactly
-3. The Role column is optional
+1. Verify the first row contains: `Table No`, `Name`, `Bot`, `Secret`, `Used`
+2. Check for extra spaces or hidden characters
+3. The headers are case-sensitive
 
-### Portal shows "Failed to load code database"
+### Network Errors
 
-**Cause:** Could be multiple issues with sheet access.
+If you see network-related errors:
 
-**Solution:**
-1. Click the "Retry" button to refresh
-2. Check the browser console for error details
-3. Verify the sheet ID matches the configured value
-4. Ensure the sheet has at least 2 rows (header + 1 data row)
+1. Verify internet connectivity
+2. Check if Google APIs are accessible
+3. Try the "Retry Loading" button
+4. These errors often resolve on their own
 
----
+## Creating a Service Account
+
+If you need to create a new service account:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or select a project
+3. Go to **APIs & Services** > **Credentials**
+4. Click **Create Credentials** > **Service Account**
+5. Name your service account and click **Create**
+6. Skip the optional steps and click **Done**
+7. Click on the service account email
+8. Go to **Keys** tab
+9. Click **Add Key** > **Create new key**
+10. Select **JSON** and click **Create**
+11. Save the downloaded file securely
+
+Then encode and configure as described above.
 
 ## Security Best Practices
 
-1. **Never commit** service account JSON files to version control
-2. Use **base64 encoding** for environment variables to avoid escaping issues
-3. Rotate service account keys periodically
-4. Grant **minimum necessary permissions** (Editor on specific sheet only)
-5. Monitor access logs in Google Cloud Console
-
----
+1. **Never commit credentials** to version control
+2. **Use environment variables** or Streamlit secrets for production
+3. **Rotate keys periodically** and revoke old ones
+4. **Limit service account permissions** to only what's needed
+5. **Monitor access** via Google Cloud audit logs
 
 ## Support
 
-For additional support:
-- Contact: UMN School of Dentistry IT
-- Repository: Check the README.md and other documentation files
+If you continue to experience issues:
 
-© 2025 UMN School of Dentistry - MI Practice Portal
+1. Check the application logs for detailed error messages
+2. Verify all configuration steps above
+3. Contact your system administrator

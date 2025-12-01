@@ -1,107 +1,136 @@
 """
 Test suite for utils/access_control.py
 
-Tests the access control module including:
-- gspread client construction with version compatibility
-- Role and bot type normalization
-- Credential parsing from various sources
-- Error handling with admin-friendly messages
+Tests the robust Google Sheets client creation and error handling:
+- Multiple authentication methods
+- gspread version compatibility
+- Clear error messages for various failure scenarios
+- Retry logic with exponential backoff
 """
 
 import unittest
 import os
 import json
 import base64
-import tempfile
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, PropertyMock
+import sys
+
+# Add the parent directory to sys.path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.access_control import (
+    get_sheet_client,
+    open_sheet_with_retry,
+    get_sheet_data_with_retry,
+    update_cell_with_retry,
+    CredentialError,
+    SheetAccessError,
+    NetworkError,
+    _decode_credentials,
+    _get_service_account_email,
+    _get_api_error_code,
+)
 
 
-class TestRoleNormalization(unittest.TestCase):
-    """Test cases for role normalization."""
-    
-    def test_normalize_role_student(self):
-        """Test normalizing student role."""
-        from utils.access_control import normalize_role, ROLE_STUDENT
-        
-        self.assertEqual(normalize_role('student'), ROLE_STUDENT)
-        self.assertEqual(normalize_role('STUDENT'), ROLE_STUDENT)
-        self.assertEqual(normalize_role('  Student  '), ROLE_STUDENT)
-    
-    def test_normalize_role_instructor(self):
-        """Test normalizing instructor role."""
-        from utils.access_control import normalize_role, ROLE_INSTRUCTOR
-        
-        self.assertEqual(normalize_role('instructor'), ROLE_INSTRUCTOR)
-        self.assertEqual(normalize_role('INSTRUCTOR'), ROLE_INSTRUCTOR)
-        self.assertEqual(normalize_role('  Instructor  '), ROLE_INSTRUCTOR)
-    
-    def test_normalize_role_developer(self):
-        """Test normalizing developer role."""
-        from utils.access_control import normalize_role, ROLE_DEVELOPER
-        
-        self.assertEqual(normalize_role('developer'), ROLE_DEVELOPER)
-        self.assertEqual(normalize_role('DEVELOPER'), ROLE_DEVELOPER)
-        self.assertEqual(normalize_role('  Developer  '), ROLE_DEVELOPER)
-    
-    def test_normalize_role_invalid(self):
-        """Test normalizing invalid role returns STUDENT."""
-        from utils.access_control import normalize_role, ROLE_STUDENT
-        
-        self.assertEqual(normalize_role('admin'), ROLE_STUDENT)
-        self.assertEqual(normalize_role(''), ROLE_STUDENT)
-        self.assertEqual(normalize_role(None), ROLE_STUDENT)
-
-
-class TestBotTypeNormalization(unittest.TestCase):
-    """Test cases for bot type normalization."""
-    
-    def test_normalize_bot_type_ohi(self):
-        """Test normalizing OHI bot type."""
-        from utils.access_control import normalize_bot_type
-        
-        self.assertEqual(normalize_bot_type('ohi'), 'OHI')
-        self.assertEqual(normalize_bot_type('OHI'), 'OHI')
-        self.assertEqual(normalize_bot_type('  Ohi  '), 'OHI')
-    
-    def test_normalize_bot_type_hpv(self):
-        """Test normalizing HPV bot type."""
-        from utils.access_control import normalize_bot_type
-        
-        self.assertEqual(normalize_bot_type('hpv'), 'HPV')
-        self.assertEqual(normalize_bot_type('HPV'), 'HPV')
-        self.assertEqual(normalize_bot_type('  Hpv  '), 'HPV')
-    
-    def test_normalize_bot_type_tobacco(self):
-        """Test normalizing Tobacco bot type."""
-        from utils.access_control import normalize_bot_type
-        
-        self.assertEqual(normalize_bot_type('tobacco'), 'TOBACCO')
-        self.assertEqual(normalize_bot_type('TOBACCO'), 'TOBACCO')
-        self.assertEqual(normalize_bot_type('  Tobacco  '), 'TOBACCO')
-    
-    def test_normalize_bot_type_perio(self):
-        """Test normalizing Perio bot type."""
-        from utils.access_control import normalize_bot_type
-        
-        self.assertEqual(normalize_bot_type('perio'), 'PERIO')
-        self.assertEqual(normalize_bot_type('PERIO'), 'PERIO')
-        self.assertEqual(normalize_bot_type('  Perio  '), 'PERIO')
-    
-    def test_normalize_bot_type_invalid(self):
-        """Test normalizing invalid bot type returns None."""
-        from utils.access_control import normalize_bot_type
-        
-        self.assertIsNone(normalize_bot_type('unknown'))
-        self.assertIsNone(normalize_bot_type(''))
-        self.assertIsNone(normalize_bot_type(None))
-
-
-class TestCredentialParsing(unittest.TestCase):
-    """Test cases for credential parsing from various sources."""
+class TestDecodeCredentials(unittest.TestCase):
+    """Test cases for the _decode_credentials helper function."""
     
     def setUp(self):
         """Set up test fixtures."""
-        # Sample service account credentials (fake, for testing only)
+        self.test_creds = {
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key_id": "test-key-id",
+            "private_key": "-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----\n",
+            "client_email": "test@test.iam.gserviceaccount.com",
+            "client_id": "12345",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
+    
+    def test_decode_json_string(self):
+        """Test decoding a valid JSON string."""
+        json_str = json.dumps(self.test_creds)
+        result = _decode_credentials("test_source", json_str, is_base64=False)
+        self.assertEqual(result, self.test_creds)
+    
+    def test_decode_base64_json(self):
+        """Test decoding valid base64-encoded JSON."""
+        json_str = json.dumps(self.test_creds)
+        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+        result = _decode_credentials("test_source", b64_str, is_base64=True)
+        self.assertEqual(result, self.test_creds)
+    
+    def test_decode_invalid_json(self):
+        """Test error handling for invalid JSON."""
+        with self.assertRaises(CredentialError) as context:
+            _decode_credentials("test_source", "not valid json", is_base64=False)
+        self.assertIn("not valid JSON", context.exception.admin_hint)
+    
+    def test_decode_invalid_base64(self):
+        """Test error handling for invalid base64."""
+        with self.assertRaises(CredentialError) as context:
+            _decode_credentials("test_source", "not-valid-base64!!!", is_base64=True)
+        self.assertIn("not valid base64", context.exception.admin_hint)
+    
+    def test_decode_base64_invalid_json(self):
+        """Test error handling for valid base64 but invalid JSON content."""
+        invalid_json = "not valid json"
+        b64_str = base64.b64encode(invalid_json.encode('utf-8')).decode('utf-8')
+        with self.assertRaises(CredentialError) as context:
+            _decode_credentials("test_source", b64_str, is_base64=True)
+        self.assertIn("not valid JSON", context.exception.admin_hint)
+
+
+class TestGetServiceAccountEmail(unittest.TestCase):
+    """Test cases for _get_service_account_email helper."""
+    
+    def test_extract_email(self):
+        """Test extracting email from credentials dict."""
+        creds = {"client_email": "test@test.iam.gserviceaccount.com"}
+        result = _get_service_account_email(creds)
+        self.assertEqual(result, "test@test.iam.gserviceaccount.com")
+    
+    def test_missing_email(self):
+        """Test handling missing email field."""
+        creds = {"type": "service_account"}
+        result = _get_service_account_email(creds)
+        self.assertIsNone(result)
+
+
+class TestGetApiErrorCode(unittest.TestCase):
+    """Test cases for _get_api_error_code helper."""
+    
+    def test_extract_code_from_code_attribute(self):
+        """Test extracting code from error.code attribute."""
+        mock_error = MagicMock()
+        mock_error.code = 403
+        mock_error.response = None
+        result = _get_api_error_code(mock_error)
+        self.assertEqual(result, 403)
+    
+    def test_extract_code_from_response(self):
+        """Test extracting code from error.response.status_code."""
+        mock_error = MagicMock()
+        mock_error.code = None
+        mock_error.response.status_code = 404
+        result = _get_api_error_code(mock_error)
+        self.assertEqual(result, 404)
+    
+    def test_no_code_available(self):
+        """Test when no code is available."""
+        mock_error = MagicMock()
+        mock_error.code = None
+        mock_error.response = None
+        result = _get_api_error_code(mock_error)
+        self.assertIsNone(result)
+
+
+class TestGetSheetClient(unittest.TestCase):
+    """Test cases for get_sheet_client function."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
         self.test_creds = {
             "type": "service_account",
             "project_id": "test-project",
@@ -122,7 +151,6 @@ class TestCredentialParsing(unittest.TestCase):
     
     def tearDown(self):
         """Clean up test fixtures."""
-        # Restore original environment variables
         for var, value in self.original_env.items():
             if value is None:
                 if var in os.environ:
@@ -130,231 +158,242 @@ class TestCredentialParsing(unittest.TestCase):
             else:
                 os.environ[var] = value
     
-    def test_parse_credentials_from_env_b64(self):
-        """Test parsing credentials from GOOGLESA_B64 environment variable."""
-        from utils.access_control import _parse_credentials_from_env
+    def test_streamlit_secrets_toml_table(self):
+        """Test authentication with Streamlit secrets as TOML table."""
+        mock_secrets = {"GOOGLESA": self.test_creds}
         
-        # Encode credentials as base64
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
+            
+            client, source, email = get_sheet_client(streamlit_secrets=mock_secrets)
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(source, "Streamlit secrets (TOML table)")
+            self.assertEqual(email, "test@test.iam.gserviceaccount.com")
+    
+    def test_streamlit_secrets_json_string(self):
+        """Test authentication with Streamlit secrets as JSON string."""
+        json_str = json.dumps(self.test_creds)
+        mock_secrets = {"GOOGLESA": json_str}
+        
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
+            
+            client, source, email = get_sheet_client(streamlit_secrets=mock_secrets)
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(source, "Streamlit secrets (JSON string)")
+    
+    def test_streamlit_secrets_b64(self):
+        """Test authentication with Streamlit secrets GOOGLESA_B64."""
+        json_str = json.dumps(self.test_creds)
+        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+        mock_secrets = {"GOOGLESA_B64": b64_str}
+        
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
+            
+            client, source, email = get_sheet_client(streamlit_secrets=mock_secrets)
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(source, "Streamlit secrets (GOOGLESA_B64)")
+    
+    def test_env_var_b64(self):
+        """Test authentication with GOOGLESA_B64 environment variable."""
         json_str = json.dumps(self.test_creds)
         b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
         os.environ['GOOGLESA_B64'] = b64_str
         
-        creds_dict, source = _parse_credentials_from_env()
-        
-        self.assertIsNotNone(creds_dict)
-        self.assertEqual(creds_dict['project_id'], 'test-project')
-        self.assertEqual(source, "Environment variable (GOOGLESA_B64)")
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
+            
+            client, source, email = get_sheet_client(streamlit_secrets={})
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(source, "Environment variable (GOOGLESA_B64)")
     
-    def test_parse_credentials_from_env_json(self):
-        """Test parsing credentials from GOOGLESA environment variable."""
-        from utils.access_control import _parse_credentials_from_env
-        
+    def test_env_var_json(self):
+        """Test authentication with GOOGLESA environment variable."""
         json_str = json.dumps(self.test_creds)
         os.environ['GOOGLESA'] = json_str
         
-        creds_dict, source = _parse_credentials_from_env()
-        
-        self.assertIsNotNone(creds_dict)
-        self.assertEqual(creds_dict['project_id'], 'test-project')
-        self.assertEqual(source, "Environment variable (GOOGLESA)")
-    
-    def test_parse_credentials_from_env_invalid_b64(self):
-        """Test that invalid base64 raises MalformedSecretsError."""
-        from utils.access_control import _parse_credentials_from_env, MalformedSecretsError
-        
-        os.environ['GOOGLESA_B64'] = "not-valid-base64!!!"
-        
-        with self.assertRaises(MalformedSecretsError) as context:
-            _parse_credentials_from_env()
-        
-        self.assertIn("Invalid base64", str(context.exception))
-    
-    def test_parse_credentials_from_env_invalid_json(self):
-        """Test that invalid JSON raises MalformedSecretsError."""
-        from utils.access_control import _parse_credentials_from_env, MalformedSecretsError
-        
-        os.environ['GOOGLESA'] = "not valid json"
-        
-        with self.assertRaises(MalformedSecretsError) as context:
-            _parse_credentials_from_env()
-        
-        self.assertIn("Invalid JSON", str(context.exception))
-    
-    def test_parse_credentials_from_file(self):
-        """Test parsing credentials from service account file."""
-        from utils.access_control import _parse_credentials_from_file
-        
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(self.test_creds, f)
-            temp_file = f.name
-        
-        try:
-            # Patch SERVICE_ACCOUNT_FILE to use our temp file
-            with patch('utils.access_control.SERVICE_ACCOUNT_FILE', temp_file):
-                creds_dict, source = _parse_credentials_from_file()
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
             
-            self.assertIsNotNone(creds_dict)
-            self.assertEqual(creds_dict['project_id'], 'test-project')
-            self.assertIn("Service account file", source)
-        finally:
-            os.unlink(temp_file)
+            client, source, email = get_sheet_client(streamlit_secrets={})
+            
+            self.assertEqual(client, mock_client)
+            self.assertEqual(source, "Environment variable (GOOGLESA)")
     
-    def test_parse_credentials_from_file_not_found(self):
-        """Test that missing file returns None."""
-        from utils.access_control import _parse_credentials_from_file
-        
-        with patch('utils.access_control.SERVICE_ACCOUNT_FILE', '/nonexistent/file.json'):
-            creds_dict, source = _parse_credentials_from_file()
-        
-        self.assertIsNone(creds_dict)
-        self.assertIsNone(source)
-
-
-class TestServiceAccountEmail(unittest.TestCase):
-    """Test cases for extracting service account email."""
+    def test_no_credentials_error(self):
+        """Test error when no credentials are available."""
+        with patch('utils.access_control.os.path.exists', return_value=False):
+            with self.assertRaises(CredentialError) as context:
+                get_sheet_client(streamlit_secrets={})
+            
+            self.assertIn("No Google service account credentials found", str(context.exception))
+            self.assertIn("GOOGLESA", context.exception.admin_hint)
+            self.assertIn("GOOGLESA_B64", context.exception.admin_hint)
     
-    def test_get_service_account_email(self):
-        """Test extracting service account email from credentials."""
-        from utils.access_control import get_service_account_email
+    def test_priority_order_secrets_over_env(self):
+        """Test that Streamlit secrets take priority over environment variables."""
+        json_str = json.dumps(self.test_creds)
+        os.environ['GOOGLESA'] = json_str
+        mock_secrets = {"GOOGLESA": self.test_creds}
         
-        creds = {'client_email': 'test@test.iam.gserviceaccount.com'}
-        self.assertEqual(
-            get_service_account_email(creds),
-            'test@test.iam.gserviceaccount.com'
-        )
+        with patch('utils.access_control.gspread') as mock_gspread:
+            mock_client = MagicMock()
+            mock_gspread.service_account_from_dict.return_value = mock_client
+            
+            client, source, email = get_sheet_client(streamlit_secrets=mock_secrets)
+            
+            # Should use Streamlit secrets, not env var
+            self.assertEqual(source, "Streamlit secrets (TOML table)")
     
-    def test_get_service_account_email_missing(self):
-        """Test extracting email when key is missing."""
-        from utils.access_control import get_service_account_email
+    def test_fallback_to_authorize_when_service_account_from_dict_missing(self):
+        """Test fallback to gspread.authorize when service_account_from_dict is unavailable."""
+        mock_secrets = {"GOOGLESA": self.test_creds}
         
-        creds = {'project_id': 'test-project'}
-        self.assertIsNone(get_service_account_email(creds))
+        with patch('utils.access_control.gspread') as mock_gspread:
+            # Remove service_account_from_dict to simulate older gspread
+            del mock_gspread.service_account_from_dict
+            mock_gspread.service_account_from_dict = None
+            mock_client = MagicMock()
+            mock_gspread.authorize.return_value = mock_client
+            
+            with patch('utils.access_control.hasattr', side_effect=lambda obj, name: name != 'service_account_from_dict'):
+                with patch('google.oauth2.service_account.Credentials') as mock_creds:
+                    mock_creds_instance = MagicMock()
+                    mock_creds.from_service_account_info.return_value = mock_creds_instance
+                    
+                    client, source, email = get_sheet_client(streamlit_secrets=mock_secrets)
+                    
+                    mock_gspread.authorize.assert_called_once_with(mock_creds_instance)
 
 
-class TestSheetClientCreation(unittest.TestCase):
-    """Test cases for gspread client creation with version compatibility."""
+class TestOpenSheetWithRetry(unittest.TestCase):
+    """Test cases for open_sheet_with_retry function."""
     
     def setUp(self):
         """Set up test fixtures."""
-        self.test_creds = {
-            "type": "service_account",
-            "project_id": "test-project",
-            "private_key_id": "test-key-id",
-            "private_key": "-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----\n",
-            "client_email": "test@test.iam.gserviceaccount.com",
-            "client_id": "12345",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token"
-        }
-        
-        # Clear environment variables
-        for var in ['GOOGLESA', 'GOOGLESA_B64']:
-            if var in os.environ:
-                del os.environ[var]
+        self.mock_client = MagicMock()
+        self.mock_sheet = MagicMock()
+        self.mock_worksheet = MagicMock()
+        self.mock_client.open_by_key.return_value = self.mock_sheet
+        self.mock_sheet.worksheet.return_value = self.mock_worksheet
     
-    def test_client_creation_with_service_account_from_dict(self):
-        """Test client creation using gspread.service_account_from_dict."""
-        from utils.access_control import get_sheet_client
-        import gspread
-        
-        json_str = json.dumps(self.test_creds)
-        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
-        os.environ['GOOGLESA_B64'] = b64_str
-        
-        with patch.object(gspread, 'service_account_from_dict') as mock_sa_from_dict:
-            mock_client = MagicMock()
-            mock_sa_from_dict.return_value = mock_client
-            
-            client, source, email = get_sheet_client()
-            
-            self.assertEqual(client, mock_client)
-            mock_sa_from_dict.assert_called_once()
+    def test_successful_open(self):
+        """Test successful sheet opening."""
+        result = open_sheet_with_retry(
+            self.mock_client, "test-sheet-id", "Sheet1"
+        )
+        self.assertEqual(result, self.mock_worksheet)
     
-    def test_client_creation_fallback_to_authorize(self):
-        """Test client creation falling back to gspread.authorize."""
-        from utils.access_control import get_sheet_client
-        import gspread
-        from google.oauth2.service_account import Credentials
+    def test_spreadsheet_not_found(self):
+        """Test handling of spreadsheet not found error."""
+        import gspread.exceptions
+        self.mock_client.open_by_key.side_effect = gspread.exceptions.SpreadsheetNotFound()
         
-        json_str = json.dumps(self.test_creds)
-        b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
-        os.environ['GOOGLESA_B64'] = b64_str
+        with self.assertRaises(SheetAccessError) as context:
+            open_sheet_with_retry(self.mock_client, "test-sheet-id", "Sheet1")
         
-        # Simulate service_account_from_dict not available
-        with patch.object(gspread, 'service_account_from_dict', side_effect=AttributeError()), \
-             patch.object(Credentials, 'from_service_account_info') as mock_creds_info, \
-             patch.object(gspread, 'authorize') as mock_authorize:
-            
-            mock_creds = MagicMock()
-            mock_creds_info.return_value = mock_creds
-            mock_client = MagicMock()
-            mock_authorize.return_value = mock_client
-            
-            client, source, email = get_sheet_client()
-            
-            self.assertEqual(client, mock_client)
-            mock_creds_info.assert_called_once()
-            mock_authorize.assert_called_once_with(mock_creds)
+        self.assertIn("not found", str(context.exception).lower())
     
-    def test_client_creation_no_credentials(self):
-        """Test client creation with no credentials raises MissingSecretsError."""
-        from utils.access_control import MissingSecretsError
+    def test_worksheet_not_found(self):
+        """Test handling of worksheet not found error."""
+        import gspread.exceptions
+        self.mock_sheet.worksheet.side_effect = gspread.exceptions.WorksheetNotFound()
         
-        # Clear all credential sources
-        for var in ['GOOGLESA', 'GOOGLESA_B64']:
-            if var in os.environ:
-                del os.environ[var]
+        with self.assertRaises(SheetAccessError) as context:
+            open_sheet_with_retry(self.mock_client, "test-sheet-id", "Sheet1")
         
-        # Need to reload the module to pick up our patched SERVICE_ACCOUNT_FILE
-        import utils.access_control as ac
-        original_file = ac.SERVICE_ACCOUNT_FILE
-        try:
-            ac.SERVICE_ACCOUNT_FILE = '/nonexistent/file.json'
-            with self.assertRaises(MissingSecretsError):
-                ac.get_sheet_client()
-        finally:
-            ac.SERVICE_ACCOUNT_FILE = original_file
+        self.assertIn("worksheet", str(context.exception).lower())
+    
+    def test_permission_denied(self):
+        """Test handling of permission denied error."""
+        import gspread.exceptions
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.json.return_value = {"error": {"message": "Permission denied", "code": 403}}
+        error = gspread.exceptions.APIError(mock_response)
+        # Set the code attribute directly to match the response
+        error.code = 403
+        self.mock_client.open_by_key.side_effect = error
+        
+        with self.assertRaises(SheetAccessError) as context:
+            open_sheet_with_retry(
+                self.mock_client, "test-sheet-id", "Sheet1",
+                service_account_email="test@test.iam.gserviceaccount.com",
+                max_retries=0  # Skip retries for test speed
+            )
+        
+        self.assertIn("permission", context.exception.admin_hint.lower())
+        self.assertEqual(context.exception.service_account_email, "test@test.iam.gserviceaccount.com")
 
 
-class TestExceptions(unittest.TestCase):
-    """Test cases for custom exceptions."""
+class TestUpdateCellWithRetry(unittest.TestCase):
+    """Test cases for update_cell_with_retry function."""
     
-    def test_missing_secrets_error_message(self):
-        """Test MissingSecretsError contains helpful message."""
-        from utils.access_control import MissingSecretsError
-        
-        error = MissingSecretsError()
-        
-        self.assertIn("No Google Sheets credentials found", str(error))
-        self.assertIn("st.secrets['GOOGLESA']", str(error))
-        self.assertIn("GOOGLESA_B64", str(error))
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_worksheet = MagicMock()
     
-    def test_malformed_secrets_error_message(self):
-        """Test MalformedSecretsError contains source and detail."""
-        from utils.access_control import MalformedSecretsError
+    def test_successful_update(self):
+        """Test successful cell update."""
+        result = update_cell_with_retry(self.mock_worksheet, 1, 1, "test")
+        self.assertTrue(result)
+        self.mock_worksheet.update_cell.assert_called_once_with(1, 1, "test")
+    
+    def test_permission_denied(self):
+        """Test handling of permission denied on update."""
+        import gspread.exceptions
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.json.return_value = {"error": {"message": "Permission denied", "code": 403}}
+        error = gspread.exceptions.APIError(mock_response)
+        error.code = 403
+        self.mock_worksheet.update_cell.side_effect = error
         
-        error = MalformedSecretsError(
-            source="GOOGLESA_B64 environment variable",
-            detail="Invalid base64 encoding"
+        with self.assertRaises(SheetAccessError) as context:
+            update_cell_with_retry(self.mock_worksheet, 1, 1, "test", max_retries=0)
+        
+        self.assertIn("permission", context.exception.admin_hint.lower())
+
+
+class TestErrorClasses(unittest.TestCase):
+    """Test cases for custom exception classes."""
+    
+    def test_credential_error(self):
+        """Test CredentialError exception."""
+        error = CredentialError("Test error", admin_hint="Test hint")
+        self.assertEqual(str(error), "Test error")
+        self.assertEqual(error.admin_hint, "Test hint")
+    
+    def test_credential_error_default_hint(self):
+        """Test CredentialError with default admin_hint."""
+        error = CredentialError("Test error")
+        self.assertEqual(error.admin_hint, "Test error")
+    
+    def test_sheet_access_error(self):
+        """Test SheetAccessError exception."""
+        error = SheetAccessError(
+            "Test error",
+            admin_hint="Test hint",
+            service_account_email="test@test.com"
         )
-        
-        self.assertIn("Malformed credentials", str(error))
-        self.assertIn("GOOGLESA_B64 environment variable", str(error))
-        self.assertIn("Invalid base64 encoding", str(error))
+        self.assertEqual(str(error), "Test error")
+        self.assertEqual(error.admin_hint, "Test hint")
+        self.assertEqual(error.service_account_email, "test@test.com")
     
-    def test_permission_denied_error_with_email(self):
-        """Test PermissionDeniedError includes share instructions."""
-        from utils.access_control import PermissionDeniedError
-        
-        error = PermissionDeniedError(
-            sheet_id="test-sheet-id",
-            service_account_email="test@test.iam.gserviceaccount.com"
-        )
-        
-        self.assertIn("Permission denied", str(error))
-        self.assertIn("test@test.iam.gserviceaccount.com", str(error))
-        self.assertIn("share the spreadsheet", str(error).lower())
+    def test_network_error(self):
+        """Test NetworkError exception."""
+        error = NetworkError("Network failed")
+        self.assertEqual(str(error), "Network failed")
 
 
 if __name__ == '__main__':
