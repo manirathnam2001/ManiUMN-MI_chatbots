@@ -194,7 +194,10 @@ def load_codes_from_sheet_cached(_client):
     Load secret codes from Google Sheet. Cached to reduce API calls.
     
     Args:
-        _client: gspread.Client (underscore prefix tells Streamlit not to hash it)
+        _client: gspread.Client - The underscore prefix is a Streamlit convention
+                 that prevents the argument from being hashed when computing the
+                 cache key. This is necessary because gspread.Client objects are
+                 not hashable.
     
     Returns:
         dict: Dictionary with 'worksheet', 'headers', 'rows' keys

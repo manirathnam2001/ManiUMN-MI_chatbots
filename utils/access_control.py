@@ -28,6 +28,7 @@ Usage:
 import os
 import json
 import base64
+import binascii
 import logging
 from typing import Optional, Dict, Any, Tuple, Union
 
@@ -208,7 +209,7 @@ def _parse_credentials_from_secrets(st_secrets) -> Tuple[Optional[Dict[str, Any]
                 decoded = base64.b64decode(b64_secret).decode('utf-8')
                 creds_dict = json.loads(decoded)
                 return creds_dict, "Streamlit secrets (GOOGLESA_B64)"
-            except (base64.binascii.Error, UnicodeDecodeError) as e:
+            except (binascii.Error, UnicodeDecodeError) as e:
                 raise MalformedSecretsError(
                     "st.secrets['GOOGLESA_B64']",
                     f"Invalid base64: {str(e)}"
@@ -243,7 +244,7 @@ def _parse_credentials_from_env() -> Tuple[Optional[Dict[str, Any]], Optional[st
             decoded = base64.b64decode(googlesa_b64).decode('utf-8')
             creds_dict = json.loads(decoded)
             return creds_dict, "Environment variable (GOOGLESA_B64)"
-        except (base64.binascii.Error, UnicodeDecodeError) as e:
+        except (binascii.Error, UnicodeDecodeError) as e:
             raise MalformedSecretsError(
                 "GOOGLESA_B64 environment variable",
                 f"Invalid base64: {str(e)}"
@@ -354,8 +355,16 @@ def get_sheet_client(st_secrets=None):
         return client, creds_source, service_account_email
     except AttributeError:
         # gspread.service_account_from_dict not available in older versions
-        pass
+        logger.debug("service_account_from_dict not available, trying fallback")
+    except ValueError as e:
+        # Invalid credentials format
+        raise MalformedSecretsError(
+            creds_source or "unknown source",
+            f"Invalid credentials format: {str(e)}",
+            service_account_email
+        )
     except Exception as e:
+        # Log and continue to fallback for other errors
         logger.warning(f"service_account_from_dict failed: {e}, trying fallback")
     
     # Method 2: Fall back to google.oauth2 Credentials + gspread.authorize
@@ -365,6 +374,13 @@ def get_sheet_client(st_secrets=None):
         client = gspread.authorize(creds)
         logger.info("Created client using google.oauth2.Credentials + gspread.authorize")
         return client, creds_source, service_account_email
+    except ValueError as e:
+        # Invalid credentials content
+        raise MalformedSecretsError(
+            creds_source or "unknown source",
+            f"Invalid service account credentials: {str(e)}",
+            service_account_email
+        )
     except Exception as e:
         raise MalformedSecretsError(
             creds_source or "unknown source",
