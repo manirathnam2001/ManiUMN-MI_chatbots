@@ -10,6 +10,7 @@ Features:
 - Redirect to appropriate bot (OHI, HPV, Tobacco, or Perio)
 - Real-time data refresh capability
 - Clear error messages for invalid or used codes
+- Robust error handling with admin-friendly messages
 
 Google Sheet Structure:
 - Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
@@ -33,13 +34,19 @@ Requirements:
 """
 
 import os
-import json
-import base64
 import logging
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
-import gspread
-from google.oauth2.service_account import Credentials
+
+from utils.access_control import (
+    get_sheet_client,
+    open_sheet_with_retry,
+    get_sheet_data_with_retry,
+    update_cell_with_retry,
+    CredentialError,
+    SheetAccessError,
+    NetworkError,
+)
 
 # Configure logging for diagnostics
 logger = logging.getLogger(__name__)
@@ -76,178 +83,122 @@ def get_google_sheets_client():
     Initialize and return Google Sheets client using service account credentials.
     Cached to avoid repeated authentication.
     
-    Supports five authentication methods (in priority order):
-    1. Streamlit secrets: st.secrets["GOOGLESA"] (TOML table or JSON string)
-    2. Streamlit secrets: st.secrets["GOOGLESA_B64"] (base64-encoded JSON)
-    3. Environment variable: GOOGLESA_B64 (base64-encoded JSON)
-    4. Environment variable: GOOGLESA (JSON string)
-    5. Service account file: umnsod-mibot-ea3154b145f1.json (for local/dev)
+    Uses the robust get_sheet_client from utils.access_control which:
+    - Tries multiple credential sources in priority order
+    - Uses gspread.service_account_from_dict when available (gspread >= 5.0)
+    - Provides clear, actionable error messages for administrators
     
     Returns:
-        gspread.Client: Authorized Google Sheets client
+        tuple: (gspread.Client, credential_source, service_account_email)
         
     Raises:
-        Exception: If authentication fails or credentials are not available
+        CredentialError: If no valid credentials are found or credentials are malformed
     """
-    try:
-        # Setup credentials with required scopes
-        scope = [
-            'https://spreadsheets.google.com/feeds',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        
-        creds = None
-        creds_source = None
-        
-        # Method 1: Try Streamlit secrets first (for Streamlit Cloud deployment)
-        # Supports both TOML table (mapping) and JSON string formats
-        try:
-            if "GOOGLESA" in st.secrets:
-                googlesa_secret = st.secrets["GOOGLESA"]
-                
-                # Check if it's a string (JSON format) or a mapping (TOML table)
-                if isinstance(googlesa_secret, str):
-                    # It's a JSON string, parse it
-                    try:
-                        creds_dict = json.loads(googlesa_secret)
-                        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                        creds_source = "Streamlit secrets (JSON string)"
-                    except json.JSONDecodeError as e:
-                        raise Exception(
-                            f"Failed to parse st.secrets['GOOGLESA'] as JSON: {str(e)}. "
-                            f"If using JSON format, ensure it's valid JSON. "
-                            f"Alternatively, use TOML table format in Streamlit secrets or "
-                            f"use GOOGLESA_B64 with base64-encoded JSON to avoid escaping issues."
-                        )
-                else:
-                    # It's a mapping (TOML table), convert to dict
-                    creds_dict = dict(googlesa_secret)
-                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                    creds_source = "Streamlit secrets (TOML table)"
-        except Exception as e:
-            # Only re-raise if it's a parsing error we explicitly raised
-            if "Failed to parse st.secrets['GOOGLESA']" in str(e):
-                raise
-            # Otherwise, Streamlit secrets not available or failed for other reasons
-            pass
-        
-        # Method 2: Try Streamlit secrets GOOGLESA_B64 (base64-encoded JSON)
-        if creds is None:
-            try:
-                if "GOOGLESA_B64" in st.secrets:
-                    googlesa_b64_secret = st.secrets["GOOGLESA_B64"]
-                    try:
-                        # Decode base64
-                        googlesa_json = base64.b64decode(googlesa_b64_secret).decode('utf-8')
-                        creds_dict = json.loads(googlesa_json)
-                        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                        creds_source = "Streamlit secrets (GOOGLESA_B64)"
-                    except (base64.binascii.Error, UnicodeDecodeError) as e:
-                        raise Exception(
-                            f"Failed to decode st.secrets['GOOGLESA_B64']: {str(e)}. "
-                            f"Ensure it contains valid base64-encoded JSON. "
-                            f"To create base64: cat service-account.json | base64 -w 0"
-                        )
-                    except json.JSONDecodeError as e:
-                        raise Exception(
-                            f"Failed to parse decoded st.secrets['GOOGLESA_B64'] as JSON: {str(e)}. "
-                            f"Ensure the base64 content decodes to valid service account JSON."
-                        )
-            except Exception as e:
-                # Only re-raise if it's a parsing error we explicitly raised
-                if "Failed to decode st.secrets['GOOGLESA_B64']" in str(e) or "Failed to parse decoded st.secrets['GOOGLESA_B64']" in str(e):
-                    raise
-                # Otherwise, Streamlit secrets not available or failed for other reasons
-                pass
-        
-        # Method 3: Try GOOGLESA_B64 environment variable (base64-encoded JSON)
-        if creds is None:
-            googlesa_b64 = os.environ.get('GOOGLESA_B64')
-            if googlesa_b64:
-                try:
-                    # Decode base64
-                    googlesa_json = base64.b64decode(googlesa_b64).decode('utf-8')
-                    creds_dict = json.loads(googlesa_json)
-                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                    creds_source = "Environment variable (GOOGLESA_B64)"
-                except (base64.binascii.Error, UnicodeDecodeError) as e:
-                    raise Exception(
-                        f"Failed to decode GOOGLESA_B64 environment variable: {str(e)}. "
-                        f"Ensure it contains valid base64-encoded JSON."
-                    )
-                except json.JSONDecodeError as e:
-                    raise Exception(
-                        f"Failed to parse decoded GOOGLESA_B64 as JSON: {str(e)}. "
-                        f"Ensure the base64 content decodes to valid JSON."
-                    )
-        
-        # Method 4: Try GOOGLESA environment variable (JSON string)
-        if creds is None:
-            googlesa_env = os.environ.get('GOOGLESA')
-            if googlesa_env:
-                try:
-                    creds_dict = json.loads(googlesa_env)
-                    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                    creds_source = "Environment variable (GOOGLESA)"
-                except json.JSONDecodeError as e:
-                    raise Exception(
-                        f"Failed to parse GOOGLESA environment variable as JSON: {str(e)}. "
-                        f"Common issue: unescaped newlines in private_key field. "
-                        f"Solutions:\n"
-                        f"  1. Use Streamlit secrets (recommended for Streamlit Cloud)\n"
-                        f"  2. Use GOOGLESA_B64 (env var or Streamlit secret) with base64-encoded JSON\n"
-                        f"  3. Ensure GOOGLESA contains single-line JSON with \\n escapes in private_key"
-                    )
-        
-        # Method 5: Fallback to service account file (for local/dev)
-        if creds is None:
-            if os.path.exists(SERVICE_ACCOUNT_FILE):
-                creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=scope)
-                creds_source = f"Service account file ({SERVICE_ACCOUNT_FILE})"
-            else:
-                raise FileNotFoundError(
-                    f"No credentials found. Tried:\n"
-                    f"1. Streamlit secrets (st.secrets['GOOGLESA'])\n"
-                    f"2. Streamlit secrets (st.secrets['GOOGLESA_B64'])\n"
-                    f"3. Environment variable (GOOGLESA_B64)\n"
-                    f"4. Environment variable (GOOGLESA)\n"
-                    f"5. Service account file ('{SERVICE_ACCOUNT_FILE}')\n"
-                    f"Please configure at least one authentication method."
-                )
-        
-        # Store which credentials source was used for debugging (non-secret indicator)
-        if creds_source:
-            st.session_state["googlesa_source"] = creds_source
-        
-        # Authorize and return client
-        client = gspread.authorize(creds)
-        return client
-        
-    except Exception as e:
-        raise Exception(f"Failed to initialize Google Sheets client: {str(e)}")
+    client, creds_source, service_account_email = get_sheet_client(st.secrets)
+    
+    # Store metadata for debugging (non-secret indicators)
+    st.session_state["googlesa_source"] = creds_source
+    if service_account_email:
+        st.session_state["service_account_email"] = service_account_email
+    
+    return client, creds_source, service_account_email
+
+
+def _display_credential_error(error: CredentialError):
+    """Display a credential error with admin-friendly guidance."""
+    st.error("⚠️ **Configuration Error: Missing or Invalid Credentials**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+---
+
+**Admin Guidance:**
+
+{error.admin_hint}
+""")
+    
+    # Add expandable section with technical details
+    with st.expander("📋 Quick Setup Guide"):
+        st.markdown("""
+**Option 1: Streamlit Cloud (Recommended)**
+1. Go to your Streamlit Cloud dashboard
+2. Navigate to your app's settings → Secrets
+3. Add your service account JSON as a TOML table:
+```toml
+[GOOGLESA]
+type = "service_account"
+project_id = "your-project"
+# ... rest of service account fields
+```
+
+**Option 2: Base64-Encoded (Works everywhere)**
+1. Encode your service account JSON:
+   ```bash
+   cat service-account.json | base64 -w 0
+   ```
+2. Set as `GOOGLESA_B64` secret or environment variable
+
+**Option 3: Local Development**
+1. Place `umnsod-mibot-ea3154b145f1.json` in the application directory
+""")
+
+
+def _display_sheet_access_error(error: SheetAccessError):
+    """Display a sheet access error with admin-friendly guidance."""
+    st.error("⚠️ **Spreadsheet Access Error**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+---
+
+**Admin Guidance:**
+
+{error.admin_hint}
+""")
+    
+    if error.service_account_email:
+        st.info(f"📧 **Service Account Email:** `{error.service_account_email}`\n\nShare your spreadsheet with this email address and grant 'Editor' access.")
+
+
+def _display_network_error(error: NetworkError):
+    """Display a network error with retry option."""
+    st.warning("⚠️ **Network Error**")
+    st.markdown(f"""
+**Error:** {str(error)}
+
+This appears to be a temporary network issue. Please try again.
+""")
 
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def load_codes_from_sheet_cached():
+def load_codes_from_sheet_cached(_client_id: str):
     """
     Load secret codes from Google Sheet. Cached to reduce API calls.
     
+    Args:
+        _client_id: Cache key based on client identity (prevents stale cache issues)
+    
     Returns:
-        dict: Dictionary with 'worksheet', 'headers', 'rows' keys, or None if failed
+        dict: Dictionary with 'headers', 'rows' keys, or error dict with 'error' and 'error_type' keys
     """
     try:
         # Get Google Sheets client
-        client = get_google_sheets_client()
+        client, creds_source, service_account_email = get_google_sheets_client()
         
-        # Open the spreadsheet
-        sheet = client.open_by_key(SHEET_ID)
-        worksheet = sheet.worksheet(SHEET_NAME)
+        # Open the worksheet with retry logic
+        worksheet = open_sheet_with_retry(
+            client, SHEET_ID, SHEET_NAME,
+            service_account_email=service_account_email
+        )
         
-        # Get all values from the sheet
-        all_values = worksheet.get_all_values()
+        # Get all values with retry logic
+        all_values = get_sheet_data_with_retry(worksheet)
         
         if len(all_values) < 2:
-            return None
+            return {
+                'error': 'Sheet is empty or has only headers',
+                'error_type': 'empty_sheet'
+            }
         
         # Parse the data (first row is headers)
         headers = all_values[0]
@@ -256,18 +207,32 @@ def load_codes_from_sheet_cached():
         # Validate headers
         expected_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
         if headers != expected_headers:
-            return None
+            return {
+                'error': f'Invalid sheet headers. Expected: {expected_headers}, Got: {headers}',
+                'error_type': 'invalid_headers'
+            }
         
-        # Return data structure
+        # Return data structure (without worksheet - it will be fetched fresh for writes)
         return {
-            'worksheet': worksheet,
             'headers': headers,
-            'rows': data
+            'rows': data,
+            'service_account_email': service_account_email
         }
         
+    except CredentialError as e:
+        return {'error': str(e), 'error_type': 'credential', 'admin_hint': e.admin_hint}
+    except SheetAccessError as e:
+        return {
+            'error': str(e), 
+            'error_type': 'access', 
+            'admin_hint': e.admin_hint,
+            'service_account_email': e.service_account_email
+        }
+    except NetworkError as e:
+        return {'error': str(e), 'error_type': 'network'}
     except Exception as e:
-        st.error(f"Error loading data from Google Sheets: {str(e)}")
-        return None
+        logger.exception("Unexpected error loading sheet data")
+        return {'error': str(e), 'error_type': 'unknown'}
 
 
 def load_codes_from_sheet(force_refresh=False):
@@ -278,21 +243,46 @@ def load_codes_from_sheet(force_refresh=False):
         force_refresh (bool): If True, force reload from Google Sheets even if data exists
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful, False otherwise (errors are displayed to user)
     """
     # Clear cache if forcing refresh
     if force_refresh:
         load_codes_from_sheet_cached.clear()
+        # Also clear the client cache to get fresh credentials
+        get_google_sheets_client.clear()
     
     # Use cached data if available and not forcing refresh
-    if not force_refresh and 'codes_data' in st.session_state:
+    if not force_refresh and 'codes_data' in st.session_state and 'error' not in st.session_state.codes_data:
         return True
     
-    # Load from cached function
-    data = load_codes_from_sheet_cached()
+    # Generate a cache key based on current time (for cache invalidation)
+    # This ensures the cached function is called with consistent parameters
+    try:
+        cache_key = st.session_state.get("googlesa_source", "default")
+    except Exception:
+        cache_key = "default"
     
-    if data is None:
-        st.error("Failed to load code database. Please refresh the page or contact support.")
+    # Load from cached function
+    data = load_codes_from_sheet_cached(cache_key)
+    
+    if 'error' in data:
+        error_type = data.get('error_type', 'unknown')
+        
+        if error_type == 'credential':
+            _display_credential_error(CredentialError(data['error'], data.get('admin_hint')))
+        elif error_type == 'access':
+            error = SheetAccessError(data['error'], data.get('admin_hint'))
+            error.service_account_email = data.get('service_account_email')
+            _display_sheet_access_error(error)
+        elif error_type == 'network':
+            _display_network_error(NetworkError(data['error']))
+        elif error_type == 'empty_sheet':
+            st.warning("⚠️ The access codes sheet is empty. Please add codes to the spreadsheet.")
+        elif error_type == 'invalid_headers':
+            st.error(f"⚠️ **Invalid Sheet Format**\n\n{data['error']}")
+        else:
+            st.error(f"❌ **Unexpected Error:** {data['error']}\n\nPlease contact support if this persists.")
+        
         return False
     
     # Store data in session state
@@ -316,7 +306,7 @@ def validate_and_mark_code(secret_code):
             - bot (str): Bot type (OHI, HPV, TOBACCO, or PERIO) if successful
             - name (str): Student name if successful
     """
-    if 'codes_data' not in st.session_state:
+    if 'codes_data' not in st.session_state or 'error' in st.session_state.codes_data:
         return {
             'success': False,
             'message': 'Code data not loaded. Please refresh the data.',
@@ -324,8 +314,8 @@ def validate_and_mark_code(secret_code):
             'name': None
         }
     
-    worksheet = st.session_state.codes_data['worksheet']
     rows = st.session_state.codes_data['rows']
+    service_account_email = st.session_state.codes_data.get('service_account_email')
     
     # Search for the code in the data
     for row_idx, row in enumerate(rows):
@@ -362,10 +352,20 @@ def validate_and_mark_code(secret_code):
             
             # Mark the code as used (row_idx + 2 because of 0-indexing and header row)
             try:
-                # Update the "Used" column (column E, index 5)
+                # Get fresh worksheet for write operation
+                client, _, _ = get_google_sheets_client()
+                worksheet = open_sheet_with_retry(
+                    client, SHEET_ID, SHEET_NAME,
+                    service_account_email=service_account_email
+                )
+                
+                # Update the "Used" column (column E, index 5) with retry logic
                 cell_row = row_idx + 2
                 cell_col = 5
-                worksheet.update_cell(cell_row, cell_col, 'TRUE')
+                update_cell_with_retry(worksheet, cell_row, cell_col, 'TRUE')
+                
+                # Clear the cached sheet data so next load gets fresh data
+                load_codes_from_sheet_cached.clear()
                 
                 return {
                     'success': True,
@@ -373,7 +373,22 @@ def validate_and_mark_code(secret_code):
                     'bot': bot_normalized,
                     'name': name
                 }
+            except SheetAccessError as e:
+                return {
+                    'success': False,
+                    'message': f'Error marking code as used: {e.admin_hint or str(e)}',
+                    'bot': None,
+                    'name': None
+                }
+            except NetworkError as e:
+                return {
+                    'success': False,
+                    'message': f'Network error marking code as used: {str(e)}. Please try again.',
+                    'bot': None,
+                    'name': None
+                }
             except Exception as e:
+                logger.exception("Unexpected error marking code as used")
                 return {
                     'success': False,
                     'message': f'Error marking code as used: {str(e)}. Please try again.',
@@ -417,13 +432,26 @@ def main():
         st.session_state.authenticated = False
     if 'redirect_info' not in st.session_state:
         st.session_state.redirect_info = None
+    if 'load_error' not in st.session_state:
+        st.session_state.load_error = False
     
     # Load data from Google Sheets on first run
-    if 'codes_data' not in st.session_state:
+    if 'codes_data' not in st.session_state or st.session_state.load_error:
         with st.spinner("Loading access codes from database..."):
             if not load_codes_from_sheet():
-                st.error("Failed to load code database. Please refresh the page or contact support.")
+                st.session_state.load_error = True
+                # Add a retry button for failed loads
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("🔄 Retry Loading", type="primary", help="Try loading the database again"):
+                        # Clear caches and retry
+                        load_codes_from_sheet_cached.clear()
+                        get_google_sheets_client.clear()
+                        st.rerun()
                 st.stop()
+            else:
+                st.session_state.load_error = False
     
     # Compact refresh button with custom CSS
     st.markdown("""
@@ -444,8 +472,7 @@ def main():
                 if load_codes_from_sheet(force_refresh=True):
                     st.success("Data refreshed successfully!")
                     st.rerun()
-                else:
-                    st.error("Failed to refresh data. Please try again.")
+                # Error messages are already displayed by load_codes_from_sheet
     
     st.markdown("---")
     
