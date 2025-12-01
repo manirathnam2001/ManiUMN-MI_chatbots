@@ -6,7 +6,7 @@ the MI chatbots (OHI, HPV, TOBACCO, or PERIO) using secret codes distributed by 
 
 Features:
 - Code validation against Google Sheets database
-- Automatic marking of codes as used
+- Automatic marking of codes as used (except for Instructor/Developer roles)
 - Redirect to appropriate bot (OHI, HPV, Tobacco, or Perio)
 - Real-time data refresh capability
 - Clear error messages for invalid or used codes
@@ -15,7 +15,7 @@ Features:
 Google Sheet Structure:
 - Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
 - Sheet Name: Sheet1
-- Columns: Table No, Name, Bot, Secret, Used
+- Columns: Table No, Name, Bot, Secret, Used, Role (optional)
 
 Usage:
     streamlit run secret_code_portal.py
@@ -52,22 +52,18 @@ from utils.access_control import (
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# --- Configuration ---
-# Valid bot types supported by the portal (OHI, HPV, TOBACCO, PERIO)
-VALID_BOT_TYPES = ['OHI', 'HPV', 'TOBACCO', 'PERIO']
-
 # Mapping from uppercase bot type to page file path
 # Note: Page file names use Title Case (e.g., Tobacco.py, Perio.py) per existing convention
 BOT_PAGE_MAP = {
     'OHI': 'pages/OHI.py',
     'HPV': 'pages/HPV.py',
     'TOBACCO': 'pages/Tobacco.py',
-    'PERIO': 'pages/Perio.py'
+    'PERIO': 'pages/Perio.py',
+    'DEVELOPER': 'pages/developer_page.py'
 }
 
 SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
 SHEET_NAME = "Sheet1"
-SERVICE_ACCOUNT_FILE = "umnsod-mibot-ea3154b145f1.json"
 
 # --- Streamlit page configuration ---
 st.set_page_config(
@@ -75,6 +71,17 @@ st.set_page_config(
     page_icon="🔐",
     layout="centered"
 )
+
+
+def _get_cached_client():
+    """
+    Get the cached Google Sheets client using the centralized access control module.
+    This wrapper handles caching at the Streamlit level.
+    
+    Returns:
+        Tuple of (client, creds_source, service_account_email)
+    """
+    return get_sheet_client(st.secrets)
 
 
 @st.cache_resource
@@ -284,17 +291,16 @@ def load_codes_from_sheet(force_refresh=False):
             st.error(f"❌ **Unexpected Error:** {data['error']}\n\nPlease contact support if this persists.")
         
         return False
-    
-    # Store data in session state
-    st.session_state.codes_data = data
-    st.session_state.last_refresh = None
-    
-    return True
 
 
 def validate_and_mark_code(secret_code):
     """
     Validate a secret code and mark it as used if valid and unused.
+    
+    Supports roles:
+    - STUDENT: Regular access, codes are marked as used
+    - INSTRUCTOR: Infinite access, codes are NOT marked as used
+    - DEVELOPER: Access to developer page, codes NOT auto-marked
     
     Args:
         secret_code (str): The secret code entered by the student
@@ -303,19 +309,25 @@ def validate_and_mark_code(secret_code):
         dict: Result dictionary with keys:
             - success (bool): Whether the code was valid and successfully marked
             - message (str): User-friendly message
-            - bot (str): Bot type (OHI, HPV, TOBACCO, or PERIO) if successful
+            - bot (str): Bot type (OHI, HPV, TOBACCO, PERIO, or DEVELOPER) if successful
             - name (str): Student name if successful
+            - role (str): User role (STUDENT, INSTRUCTOR, or DEVELOPER)
     """
     if 'codes_data' not in st.session_state or 'error' in st.session_state.codes_data:
         return {
             'success': False,
             'message': 'Code data not loaded. Please refresh the data.',
             'bot': None,
-            'name': None
+            'name': None,
+            'role': ROLE_STUDENT
         }
     
     rows = st.session_state.codes_data['rows']
     service_account_email = st.session_state.codes_data.get('service_account_email')
+    
+    # Find role column index if it exists
+    header_lower = [h.strip().lower() for h in headers]
+    role_col_idx = header_lower.index('role') if 'role' in header_lower else None
     
     # Search for the code in the data
     for row_idx, row in enumerate(rows):
@@ -324,21 +336,45 @@ def validate_and_mark_code(secret_code):
             
         table_no, name, bot, secret, used = row[0], row[1], row[2], row[3], row[4]
         
+        # Get role if column exists
+        role = ROLE_STUDENT
+        if role_col_idx is not None and len(row) > role_col_idx:
+            role = normalize_role(row[role_col_idx])
+        
         # Check if this is the matching code
         if secret.strip() == secret_code.strip():
-            # Check if already used
-            if used.strip().upper() == 'TRUE' or used.strip().upper() == 'YES' or used.strip() == '1':
+            # Check if already used (only matters for STUDENT role)
+            used_value = used.strip().upper()
+            is_used = used_value in ('TRUE', 'YES', '1')
+            
+            # Instructors and Developers can reuse codes
+            if is_used and role == ROLE_STUDENT:
                 return {
                     'success': False,
                     'message': 'This code has already been used. Please contact your instructor if you need a new code.',
                     'bot': None,
-                    'name': None
+                    'name': None,
+                    'role': role
                 }
             
-            # Validate bot type - normalize to uppercase for comparison
-            bot_normalized = bot.strip().upper()
+            # Normalize bot type
+            bot_normalized = normalize_bot_type(bot)
+            
+            # Developer role redirects to developer page
+            if role == ROLE_DEVELOPER:
+                # Store auth info before any updates
+                st.session_state.user_role = ROLE_DEVELOPER
+                
+                return {
+                    'success': True,
+                    'message': f'Welcome, {name}! Redirecting you to the Developer Tools page...',
+                    'bot': 'DEVELOPER',
+                    'name': name,
+                    'role': ROLE_DEVELOPER
+                }
+            
+            # Validate bot type for non-developer roles
             if bot_normalized not in VALID_BOT_TYPES:
-                # Log rejected bot type for diagnosis
                 logger.warning(
                     f"Rejected invalid bot type '{bot}' (normalized: '{bot_normalized}') "
                     f"for code row {row_idx + 2}. Valid types: {VALID_BOT_TYPES}"
@@ -347,7 +383,8 @@ def validate_and_mark_code(secret_code):
                     'success': False,
                     'message': f'Invalid bot type "{bot}" in the sheet. Valid types are: {", ".join(VALID_BOT_TYPES)}. Please contact your instructor.',
                     'bot': None,
-                    'name': None
+                    'name': None,
+                    'role': role
                 }
             
             # Mark the code as used (row_idx + 2 because of 0-indexing and header row)
@@ -401,7 +438,8 @@ def validate_and_mark_code(secret_code):
         'success': False,
         'message': 'Invalid code. Please check your code and try again.',
         'bot': None,
-        'name': None
+        'name': None,
+        'role': ROLE_STUDENT
     }
 
 
@@ -523,10 +561,12 @@ def main():
                             st.session_state.authenticated = True
                             st.session_state.redirect_info = {
                                 'bot': result['bot'],
-                                'name': result['name']
+                                'name': result['name'],
+                                'role': result.get('role', ROLE_STUDENT)
                             }
                             st.session_state.student_name = student_name
                             st.session_state.groq_api_key = groq_api_key
+                            st.session_state.user_role = result.get('role', ROLE_STUDENT)
                             
                             # Set environment variable for libraries that need it
                             os.environ["GROQ_API_KEY"] = groq_api_key
@@ -534,7 +574,7 @@ def main():
                             st.success(result['message'])
                             
                             # Navigate internally to the appropriate bot page
-                            # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
+                            # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO, DEVELOPER)
                             bot_type = result['bot']
                             try:
                                 if bot_type in BOT_PAGE_MAP:

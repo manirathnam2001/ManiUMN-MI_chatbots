@@ -68,8 +68,10 @@ if not st.session_state.get('authenticated', False):
     st.stop()
 
 # Check if authorized for Perio bot
+# Uses normalized bot type (uppercase) for consistent comparison
 redirect_info = st.session_state.get('redirect_info', {})
-if redirect_info.get('bot') != 'Perio':
+bot_type = redirect_info.get('bot', '').upper().strip()
+if bot_type != 'PERIO':
     st.error("⚠️ Access Denied: You are not authorized for this chatbot.")
     st.info(f"You are assigned to the {redirect_info.get('bot', 'unknown')} chatbot.")
     if st.button("← Return to Portal"):
