@@ -6,9 +6,7 @@ the MI chatbots (OHI, HPV, TOBACCO, or PERIO) using secret codes distributed by 
 
 Features:
 - Code validation against Google Sheets database
-- Automatic marking of codes as used (for student codes only)
-- Support for Instructor codes (infinite access to all bots, never marked used)
-- Support for Developer codes (access to Developer page, reusable)
+- Automatic marking of codes as used
 - Redirect to appropriate bot (OHI, HPV, Tobacco, or Perio)
 - Real-time data refresh capability
 - Clear error messages for invalid or used codes
@@ -16,8 +14,7 @@ Features:
 Google Sheet Structure:
 - Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
 - Sheet Name: Sheet1
-- Columns: Table No, Name, Bot, Secret, Used, [Role]
-  - Role column is optional; if present, supports: Student, Instructor, Developer
+- Columns: Table No, Name, Bot, Secret, Used
 
 Usage:
     streamlit run secret_code_portal.py
@@ -44,23 +41,13 @@ from streamlit.errors import StreamlitAPIException
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Import access control utilities
-from utils.access_control import (
-    normalize_bot,
-    normalize_role,
-    is_instructor_role,
-    is_developer_role,
-    get_bot_display_name,
-    is_code_used,
-    VALID_BOT_TYPES,
-    ROLE_INSTRUCTOR,
-    ROLE_DEVELOPER,
-    ROLE_STUDENT,
-)
-
 # Configure logging for diagnostics
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# --- Configuration ---
+# Valid bot types supported by the portal (OHI, HPV, TOBACCO, PERIO)
+VALID_BOT_TYPES = ['OHI', 'HPV', 'TOBACCO', 'PERIO']
 
 # Mapping from uppercase bot type to page file path
 # Note: Page file names use Title Case (e.g., Tobacco.py, Perio.py) per existing convention
@@ -70,9 +57,6 @@ BOT_PAGE_MAP = {
     'TOBACCO': 'pages/Tobacco.py',
     'PERIO': 'pages/Perio.py'
 }
-
-# Developer page path
-DEVELOPER_PAGE = 'pages/developer_page.py'
 
 SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
 SHEET_NAME = "Sheet1"
@@ -318,43 +302,29 @@ def load_codes_from_sheet(force_refresh=False):
     return True
 
 
-def validate_code(secret_code):
+def validate_and_mark_code(secret_code):
     """
-    Validate a secret code without marking it as used.
-    
-    This function implements the following logic:
-    1. Find the code in the sheet
-    2. Check role:
-       - INSTRUCTOR: Grant access to all bots, do NOT mark as used
-       - DEVELOPER: Grant access to Developer page, do NOT mark as used
-       - STUDENT (default): Validate bot type but do NOT mark yet
-    
-    Marking is done separately by mark_code_used() after session state is set.
+    Validate a secret code and mark it as used if valid and unused.
     
     Args:
         secret_code (str): The secret code entered by the student
         
     Returns:
         dict: Result dictionary with keys:
-            - success (bool): Whether the code is valid and access should be granted
+            - success (bool): Whether the code was valid and successfully marked
             - message (str): User-friendly message
-            - bot (str): Bot type (OHI, HPV, TOBACCO, PERIO, or 'ALL' for instructors) if successful
-            - name (str): Student/user name if successful
-            - role (str): Role (STUDENT, INSTRUCTOR, DEVELOPER) if successful
-            - row_index (int): Sheet row index for marking (only for students)
-            - should_mark (bool): Whether this code should be marked as used
+            - bot (str): Bot type (OHI, HPV, TOBACCO, or PERIO) if successful
+            - name (str): Student name if successful
     """
     if 'codes_data' not in st.session_state:
         return {
             'success': False,
             'message': 'Code data not loaded. Please refresh the data.',
             'bot': None,
-            'name': None,
-            'role': None,
-            'row_index': None,
-            'should_mark': False
+            'name': None
         }
     
+    worksheet = st.session_state.codes_data['worksheet']
     rows = st.session_state.codes_data['rows']
     
     # Search for the code in the data
@@ -362,57 +332,23 @@ def validate_code(secret_code):
         if len(row) < 5:
             continue
             
-        table_no = row[0] if len(row) > 0 else ''
-        name = row[1] if len(row) > 1 else ''
-        bot = row[2] if len(row) > 2 else ''
-        secret = row[3] if len(row) > 3 else ''
-        used = row[4] if len(row) > 4 else ''
-        role_raw = row[5] if len(row) > 5 else ''  # Role column (optional)
+        table_no, name, bot, secret, used = row[0], row[1], row[2], row[3], row[4]
         
         # Check if this is the matching code
         if secret.strip() == secret_code.strip():
-            # Normalize the role
-            role = normalize_role(role_raw)
-            
-            # Check if already used (only applies to student codes)
-            if role == ROLE_STUDENT and is_code_used(used):
+            # Check if already used
+            if used.strip().upper() == 'TRUE' or used.strip().upper() == 'YES' or used.strip() == '1':
                 return {
                     'success': False,
                     'message': 'This code has already been used. Please contact your instructor if you need a new code.',
                     'bot': None,
-                    'name': None,
-                    'role': None,
-                    'row_index': None,
-                    'should_mark': False
+                    'name': None
                 }
             
-            # Handle INSTRUCTOR role - infinite access to all bots, never marked used
-            if is_instructor_role(role):
-                return {
-                    'success': True,
-                    'message': 'Instructor access granted',
-                    'bot': 'ALL',  # Special value indicating access to all bots
-                    'name': name,
-                    'role': ROLE_INSTRUCTOR,
-                    'row_index': None,
-                    'should_mark': False  # Instructors are never marked
-                }
-            
-            # Handle DEVELOPER role - access to Developer page, never marked used
-            if is_developer_role(role):
-                return {
-                    'success': True,
-                    'message': 'Developer access granted',
-                    'bot': 'DEVELOPER',  # Special value for developer page
-                    'name': name,
-                    'role': ROLE_DEVELOPER,
-                    'row_index': None,
-                    'should_mark': False  # Developers are never marked
-                }
-            
-            # Student role - validate bot type
-            bot_normalized = normalize_bot(bot)
+            # Validate bot type - normalize to uppercase for comparison
+            bot_normalized = bot.strip().upper()
             if bot_normalized not in VALID_BOT_TYPES:
+                # Log rejected bot type for diagnosis
                 logger.warning(
                     f"Rejected invalid bot type '{bot}' (normalized: '{bot_normalized}') "
                     f"for code row {row_idx + 2}. Valid types: {VALID_BOT_TYPES}"
@@ -421,68 +357,37 @@ def validate_code(secret_code):
                     'success': False,
                     'message': f'Invalid bot type "{bot}" in the sheet. Valid types are: {", ".join(VALID_BOT_TYPES)}. Please contact your instructor.',
                     'bot': None,
-                    'name': None,
-                    'role': None,
-                    'row_index': None,
-                    'should_mark': False
+                    'name': None
                 }
             
-            # For students: validation passed, return success with mark info
-            # Marking happens AFTER session state is set
-            cell_row = row_idx + 2  # +2 for 0-indexing and header row
-            return {
-                'success': True,
-                'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
-                'bot': bot_normalized,
-                'name': name,
-                'role': ROLE_STUDENT,
-                'row_index': cell_row,
-                'should_mark': True  # Students should be marked after session setup
-            }
+            # Mark the code as used (row_idx + 2 because of 0-indexing and header row)
+            try:
+                # Update the "Used" column (column E, index 5)
+                cell_row = row_idx + 2
+                cell_col = 5
+                worksheet.update_cell(cell_row, cell_col, 'TRUE')
+                
+                return {
+                    'success': True,
+                    'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
+                    'bot': bot_normalized,
+                    'name': name
+                }
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f'Error marking code as used: {str(e)}. Please try again.',
+                    'bot': None,
+                    'name': None
+                }
     
     # Code not found
     return {
         'success': False,
         'message': 'Invalid code. Please check your code and try again.',
         'bot': None,
-        'name': None,
-        'role': None,
-        'row_index': None,
-        'should_mark': False
+        'name': None
     }
-
-
-def mark_code_used(row_index):
-    """
-    Mark a code as used in the Google Sheet.
-    
-    This should be called AFTER session state is set for student codes.
-    
-    Args:
-        row_index (int): 1-based row index in the sheet
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if 'codes_data' not in st.session_state:
-        logger.error("Cannot mark code: codes_data not in session state")
-        return False
-    
-    worksheet = st.session_state.codes_data['worksheet']
-    
-    try:
-        # Update the "Used" column (column E, index 5)
-        cell_col = 5
-        worksheet.update_cell(row_index, cell_col, 'TRUE')
-        logger.info(f"Marked row {row_index} as used")
-        
-        # Clear the cache so next read gets fresh data
-        load_codes_from_sheet_cached.clear()
-        
-        return True
-    except Exception as e:
-        logger.error(f"Error marking code as used: {e}")
-        return False
 
 
 def main():
@@ -584,10 +489,10 @@ def main():
                     st.error("Please enter a secret code.")
                 else:
                     with st.spinner("Verifying your code..."):
-                        result = validate_code(secret_code)
+                        result = validate_and_mark_code(secret_code)
                         
                         if result['success']:
-                            # STEP 1: Set session state FIRST (before marking)
+                            # Set session state for authentication and credentials
                             st.session_state.authenticated = True
                             st.session_state.redirect_info = {
                                 'bot': result['bot'],
@@ -595,53 +500,29 @@ def main():
                             }
                             st.session_state.student_name = student_name
                             st.session_state.groq_api_key = groq_api_key
-                            st.session_state.user_role = result.get('role', ROLE_STUDENT)
                             
                             # Set environment variable for libraries that need it
                             os.environ["GROQ_API_KEY"] = groq_api_key
                             
-                            # STEP 2: Mark code as used AFTER session state is set (for students only)
-                            if result.get('should_mark', False) and result.get('row_index'):
-                                mark_success = mark_code_used(result['row_index'])
-                                if not mark_success:
-                                    # Log the error but don't prevent access
-                                    # The session is already authorized
-                                    logger.warning(f"Failed to mark code as used for row {result['row_index']}")
-                            
                             st.success(result['message'])
                             
-                            # Handle navigation based on role
+                            # Navigate internally to the appropriate bot page
+                            # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
                             bot_type = result['bot']
-                            user_role = result.get('role', ROLE_STUDENT)
-                            
                             try:
-                                if user_role == ROLE_INSTRUCTOR:
-                                    # Instructor: Show selection page or go to first bot
-                                    # For now, redirect to OHI as default (instructors can navigate)
-                                    st.info("As an instructor, you have access to all chatbots.")
-                                    st.switch_page(BOT_PAGE_MAP['OHI'])
-                                elif user_role == ROLE_DEVELOPER:
-                                    # Developer: Go to developer page
-                                    st.switch_page(DEVELOPER_PAGE)
-                                elif bot_type in BOT_PAGE_MAP:
-                                    # Student: Go to assigned bot
+                                if bot_type in BOT_PAGE_MAP:
                                     st.switch_page(BOT_PAGE_MAP[bot_type])
                                 else:
+                                    # This shouldn't happen as bot_type is validated
                                     logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
                                     st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
                             except StreamlitAPIException as e:
-                                if user_role == ROLE_DEVELOPER:
-                                    st.error(
-                                        "⚠️ Navigation Error: Could not find the Developer page. "
-                                        "This may indicate a deployment issue. Please contact support."
-                                    )
-                                else:
-                                    st.error(
-                                        f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
-                                        f"This may indicate a deployment issue. Please contact support."
-                                    )
+                                st.error(
+                                    f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
+                                    f"This may indicate a deployment issue. Please contact support."
+                                )
                                 st.info(
-                                    "**Technical Details**: The page file is missing or misconfigured. "
+                                    "**Technical Details**: The page file `pages/{bot_type}.py` is missing or misconfigured. "
                                     "This should be resolved by the system administrator."
                                 )
                         else:
@@ -651,36 +532,27 @@ def main():
     if st.session_state.authenticated and st.session_state.redirect_info:
         redirect_info = st.session_state.redirect_info
         bot_type = redirect_info['bot']
-        user_name = redirect_info.get('name', 'User')
-        user_role = st.session_state.get('user_role', ROLE_STUDENT)
+        student_name = redirect_info.get('name', 'Student')
         
-        st.success(f"✅ Access granted for {user_name}!")
+        st.success(f"✅ Access granted for {student_name}!")
+        st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
         
-        if user_role == ROLE_INSTRUCTOR:
-            st.info("As an instructor, you have access to all chatbots. Redirecting...")
-        elif user_role == ROLE_DEVELOPER:
-            st.info("Developer access granted. Redirecting to Developer page...")
-        else:
-            st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
-        
-        # Navigate based on role
+        # Navigate internally to the appropriate bot page
+        # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO)
         try:
-            if user_role == ROLE_INSTRUCTOR:
-                st.switch_page(BOT_PAGE_MAP['OHI'])
-            elif user_role == ROLE_DEVELOPER:
-                st.switch_page(DEVELOPER_PAGE)
-            elif bot_type in BOT_PAGE_MAP:
+            if bot_type in BOT_PAGE_MAP:
                 st.switch_page(BOT_PAGE_MAP[bot_type])
             else:
+                # This shouldn't happen as bot_type is validated
                 logger.error(f"Unexpected bot type '{bot_type}' not in BOT_PAGE_MAP")
                 st.error(f"⚠️ Configuration Error: Unknown bot type '{bot_type}'.")
         except StreamlitAPIException as e:
             st.error(
-                f"⚠️ Navigation Error: Could not find the appropriate page. "
+                f"⚠️ Navigation Error: Could not find the {bot_type} chatbot page. "
                 f"This may indicate a deployment issue. Please contact support."
             )
             st.info(
-                "**Technical Details**: The page file is missing or misconfigured. "
+                "**Technical Details**: The page file `pages/{bot_type}.py` is missing or misconfigured. "
                 "This should be resolved by the system administrator."
             )
     
