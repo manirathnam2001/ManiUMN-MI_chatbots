@@ -67,20 +67,14 @@ if not st.session_state.get('authenticated', False):
         st.switch_page("secret_code_portal.py")
     st.stop()
 
-# Check if authorized for OHI bot (allow instructors access to all bots)
-user_role = st.session_state.get('user_role', '')
+# Check if authorized for OHI bot
 redirect_info = st.session_state.get('redirect_info', {})
-assigned_bot = redirect_info.get('bot', '')
-
-# Instructors have access to all bots
-if user_role != 'INSTRUCTOR':
-    # For non-instructors, check bot assignment (case-insensitive)
-    if assigned_bot.upper() != 'OHI' and assigned_bot != 'ALL':
-        st.error("⚠️ Access Denied: You are not authorized for this chatbot. "
-                f"You are assigned to the {assigned_bot.upper()} chatbot.")
-        if st.button("← Return to Portal"):
-            st.switch_page("secret_code_portal.py")
-        st.stop()
+if redirect_info.get('bot') != 'OHI':
+    st.error("⚠️ Access Denied: You are not authorized for this chatbot.")
+    st.info(f"You are assigned to the {redirect_info.get('bot', 'unknown')} chatbot.")
+    if st.button("← Return to Portal"):
+        st.switch_page("secret_code_portal.py")
+    st.stop()
 
 # Check if credentials are available
 if 'groq_api_key' not in st.session_state or 'student_name' not in st.session_state:
