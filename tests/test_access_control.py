@@ -28,6 +28,7 @@ from utils.access_control import (
     NetworkError,
     _decode_credentials,
     _get_service_account_email,
+    _get_api_error_code,
 )
 
 
@@ -94,6 +95,34 @@ class TestGetServiceAccountEmail(unittest.TestCase):
         """Test handling missing email field."""
         creds = {"type": "service_account"}
         result = _get_service_account_email(creds)
+        self.assertIsNone(result)
+
+
+class TestGetApiErrorCode(unittest.TestCase):
+    """Test cases for _get_api_error_code helper."""
+    
+    def test_extract_code_from_code_attribute(self):
+        """Test extracting code from error.code attribute."""
+        mock_error = MagicMock()
+        mock_error.code = 403
+        mock_error.response = None
+        result = _get_api_error_code(mock_error)
+        self.assertEqual(result, 403)
+    
+    def test_extract_code_from_response(self):
+        """Test extracting code from error.response.status_code."""
+        mock_error = MagicMock()
+        mock_error.code = None
+        mock_error.response.status_code = 404
+        result = _get_api_error_code(mock_error)
+        self.assertEqual(result, 404)
+    
+    def test_no_code_available(self):
+        """Test when no code is available."""
+        mock_error = MagicMock()
+        mock_error.code = None
+        mock_error.response = None
+        result = _get_api_error_code(mock_error)
         self.assertIsNone(result)
 
 

@@ -14,6 +14,7 @@ Features:
 import os
 import json
 import base64
+import binascii
 import logging
 import time
 from typing import Optional, Dict, Any, Tuple
@@ -69,7 +70,7 @@ def _decode_credentials(source_name: str, value: str, is_base64: bool = False) -
         if is_base64:
             try:
                 decoded = base64.b64decode(value).decode('utf-8')
-            except (base64.binascii.Error, UnicodeDecodeError) as e:
+            except (binascii.Error, UnicodeDecodeError) as e:
                 raise CredentialError(
                     f"Failed to decode {source_name}: {str(e)}",
                     admin_hint=f"The value in {source_name} is not valid base64. "
@@ -111,6 +112,29 @@ def _decode_credentials(source_name: str, value: str, is_base64: bool = False) -
 def _get_service_account_email(creds_dict: Dict[str, Any]) -> Optional[str]:
     """Extract service account email from credentials dictionary."""
     return creds_dict.get('client_email')
+
+
+def _get_api_error_code(error: Exception) -> Optional[int]:
+    """
+    Extract HTTP status code from a gspread APIError.
+    
+    Args:
+        error: The exception, expected to be a gspread.exceptions.APIError
+        
+    Returns:
+        The HTTP status code if available, None otherwise
+    """
+    # Try to get the code attribute directly (set by some gspread versions)
+    code = getattr(error, 'code', None)
+    if code is not None:
+        return code
+    
+    # Try to get from response object
+    response = getattr(error, 'response', None)
+    if response is not None:
+        return getattr(response, 'status_code', None)
+    
+    return None
 
 
 def get_sheet_client(
@@ -358,10 +382,7 @@ def open_sheet_with_retry(
             )
             
         except gspread.exceptions.APIError as e:
-            # Get error code from multiple possible sources
-            error_code = getattr(e, 'code', None)
-            if error_code is None and hasattr(e, 'response') and e.response is not None:
-                error_code = getattr(e.response, 'status_code', None)
+            error_code = _get_api_error_code(e)
             error_msg = str(e).lower()
             
             if error_code == 403 or 'permission' in error_msg or 'forbidden' in error_msg:
@@ -530,10 +551,7 @@ def update_cell_with_retry(
             return True
             
         except gspread.exceptions.APIError as e:
-            # Get error code from multiple possible sources
-            error_code = getattr(e, 'code', None)
-            if error_code is None and hasattr(e, 'response') and e.response is not None:
-                error_code = getattr(e.response, 'status_code', None)
+            error_code = _get_api_error_code(e)
             error_msg = str(e).lower()
             
             if error_code == 403 or 'permission' in error_msg or 'forbidden' in error_msg:
