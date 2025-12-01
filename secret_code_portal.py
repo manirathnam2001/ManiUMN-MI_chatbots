@@ -46,6 +46,12 @@ from utils.access_control import (
     CredentialError,
     SheetAccessError,
     NetworkError,
+    ROLE_STUDENT,
+    ROLE_INSTRUCTOR,
+    ROLE_DEVELOPER,
+    VALID_BOT_TYPES,
+    normalize_role,
+    normalize_bot_type,
 )
 
 # Configure logging for diagnostics
@@ -291,6 +297,10 @@ def load_codes_from_sheet(force_refresh=False):
             st.error(f"❌ **Unexpected Error:** {data['error']}\n\nPlease contact support if this persists.")
         
         return False
+    
+    # Store successful data in session state
+    st.session_state.codes_data = data
+    return True
 
 
 def validate_and_mark_code(secret_code):
@@ -326,6 +336,7 @@ def validate_and_mark_code(secret_code):
     service_account_email = st.session_state.codes_data.get('service_account_email')
     
     # Find role column index if it exists
+    headers = st.session_state.codes_data['headers']
     header_lower = [h.strip().lower() for h in headers]
     role_col_idx = header_lower.index('role') if 'role' in header_lower else None
     
