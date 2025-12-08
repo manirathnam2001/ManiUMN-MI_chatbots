@@ -91,6 +91,14 @@ AMBIGUOUS_ENDING_PHRASES = [
     'alright',
     'sure',
     'thank you',
+    'i get it',
+    'got it',
+    'i understand',
+    'makes sense',
+    'i see',
+    'yeah',
+    'yep',
+    'cool',
 ]
 
 

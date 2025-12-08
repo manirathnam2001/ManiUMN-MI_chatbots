@@ -11,8 +11,13 @@
 
 2. **Verify Headers**
    ```
-   Table No | Name | Bot | Secret | Used
+   Table No | Name | Bot | Secret | Used | Role
    ```
+   
+   **Note**: The `Role` column is optional and supports three values:
+   - `STUDENT` (default if empty)
+   - `INSTRUCTOR` (single code unlocks all bots, never marked as used)
+   - `DEVELOPER` (access to developer page and all apps)
 
 ### Adding a Student
 
@@ -20,10 +25,37 @@
 2. Add new row:
    - **Table No**: Any identifier (1, 2, 3...)
    - **Name**: Student's full name
-   - **Bot**: `OHI` or `HPV`
+   - **Bot**: `OHI`, `HPV`, `TOBACCO`, or `PERIO`
    - **Secret**: Generate unique code (8-12 characters)
    - **Used**: `FALSE`
+   - **Role**: Leave empty (defaults to STUDENT) or set to `STUDENT`, `INSTRUCTOR`, or `DEVELOPER`
 3. Share the secret code with the student
+
+### Adding an Instructor
+
+1. Open the Google Sheet
+2. Add new row:
+   - **Table No**: Any identifier
+   - **Name**: Instructor's full name
+   - **Bot**: Can be any value (e.g., `ALL` or `OHI`) - instructors get access to all bots regardless of this value
+   - **Secret**: Generate unique code (8-12 characters)
+   - **Used**: Leave as `FALSE` (instructor codes are never marked as used during login)
+   - **Role**: Set to `INSTRUCTOR`
+3. Share the secret code with the instructor
+4. **Note**: Instructor will see a bot selection screen to choose which bot to access
+
+### Adding a Developer
+
+1. Open the Google Sheet
+2. Add new row:
+   - **Table No**: Any identifier
+   - **Name**: Developer's full name
+   - **Bot**: Set to `DEVELOPER` (recommended for clarity, though value is ignored for developer role)
+   - **Secret**: Generate unique code (8-12 characters)
+   - **Used**: Leave as `FALSE` (developer codes are never marked as used during login)
+   - **Role**: Set to `DEVELOPER`
+3. Share the secret code with the developer
+4. **Note**: Developer will have access to all apps and the developer page
 
 ### Generating Secret Codes
 

@@ -44,9 +44,10 @@ from persona_texts import (
     HPV_DOMAIN_NAME,
     HPV_DOMAIN_KEYWORDS
 )
+from logger_config import get_logger, log_action, log_error_with_context
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # --- Streamlit page configuration ---
 st.set_page_config(
