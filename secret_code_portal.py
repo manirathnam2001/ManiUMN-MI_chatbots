@@ -396,7 +396,7 @@ def validate_and_mark_code(secret_code):
             # If Role column is absent, check if Bot column is Instructor/Developer
             if role_col_idx is None:
                 # No Role column - check if Bot specifies a role
-                # Note: bot_normalized is already uppercase from normalize_bot_type
+                # bot_normalized is already uppercase from normalize_bot_type, so we can compare directly
                 if bot_normalized == 'INSTRUCTOR':
                     role = ROLE_INSTRUCTOR
                     bot_normalized = 'ALL'  # Instructor gets access to all bots
@@ -404,18 +404,23 @@ def validate_and_mark_code(secret_code):
                     role = ROLE_DEVELOPER
                     bot_normalized = 'DEVELOPER'
             
+            # Helper function to validate bot field for non-student roles
+            def validate_non_student_bot(bot_value, allowed_values, role_name):
+                """Validate bot field for Instructor/Developer roles and log warnings for unexpected values."""
+                bot_upper = bot_value.strip().upper() if bot_value else ""
+                if bot_upper not in VALID_BOT_TYPES and bot_upper not in allowed_values:
+                    logger.warning(
+                        f"{role_name} role with invalid bot '{bot_value}' (normalized: '{bot_normalized}') "
+                        f"on row {row_idx + 2}. Bot should be one of {VALID_BOT_TYPES} or {', '.join(allowed_values)}"
+                    )
+            
             # Developer role redirects to developer page
             if role == ROLE_DEVELOPER:
                 # Store auth info before any updates
                 st.session_state.user_role = ROLE_DEVELOPER
                 
-                # Validate bot is either one of the valid types or 'ALL' or 'DEVELOPER'
-                bot_upper = bot.strip().upper() if bot else ""
-                if bot_upper not in VALID_BOT_TYPES and bot_upper not in ('ALL', 'DEVELOPER'):
-                    logger.warning(
-                        f"Developer role with invalid bot '{bot}' (normalized: '{bot_normalized}') "
-                        f"on row {row_idx + 2}. Bot should be ALL, DEVELOPER, or one of {VALID_BOT_TYPES}"
-                    )
+                # Validate and log if bot field has unexpected value
+                validate_non_student_bot(bot, {'ALL', 'DEVELOPER'}, 'Developer')
                 
                 return {
                     'success': True,
@@ -427,13 +432,8 @@ def validate_and_mark_code(secret_code):
             
             # Instructor role gets access to ALL bots (single code unlocks all)
             if role == ROLE_INSTRUCTOR:
-                # Validate bot is either one of the valid types or 'ALL'
-                bot_upper = bot.strip().upper() if bot else ""
-                if bot_upper not in VALID_BOT_TYPES and bot_upper != 'ALL':
-                    logger.warning(
-                        f"Instructor role with invalid bot '{bot}' (normalized: '{bot_normalized}') "
-                        f"on row {row_idx + 2}. Bot should be ALL or one of {VALID_BOT_TYPES}"
-                    )
+                # Validate and log if bot field has unexpected value
+                validate_non_student_bot(bot, {'ALL'}, 'Instructor')
                 
                 logger.info(f"Instructor '{name}' accessing with unlimited access (bot field: {bot})")
                 return {
