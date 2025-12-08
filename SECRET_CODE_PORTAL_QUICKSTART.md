@@ -37,9 +37,9 @@
 2. Add new row:
    - **Table No**: Any identifier
    - **Name**: Instructor's full name
-   - **Bot**: Can be any value (instructors get access to all bots)
+   - **Bot**: Can be any value (e.g., `ALL` or `OHI`) - instructors get access to all bots regardless of this value
    - **Secret**: Generate unique code (8-12 characters)
-   - **Used**: Can be any value (instructor codes are never marked as used)
+   - **Used**: Leave as `FALSE` (instructor codes are never marked as used during login)
    - **Role**: Set to `INSTRUCTOR`
 3. Share the secret code with the instructor
 4. **Note**: Instructor will see a bot selection screen to choose which bot to access
@@ -50,9 +50,9 @@
 2. Add new row:
    - **Table No**: Any identifier
    - **Name**: Developer's full name
-   - **Bot**: Set to `DEVELOPER`
+   - **Bot**: Set to `DEVELOPER` (recommended for clarity, though value is ignored for developer role)
    - **Secret**: Generate unique code (8-12 characters)
-   - **Used**: Can be any value (developer codes are never marked as used)
+   - **Used**: Leave as `FALSE` (developer codes are never marked as used during login)
    - **Role**: Set to `DEVELOPER`
 3. Share the secret code with the developer
 4. **Note**: Developer will have access to all apps and the developer page

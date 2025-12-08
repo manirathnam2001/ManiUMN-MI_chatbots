@@ -548,8 +548,7 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
             'attempts': 0
         }
     
-    # Log the email mapping for audit trail
-    import logging
+    # Get logger instance (already imported at top of module)
     logger = logging.getLogger(__name__)
     logger.info(f"Email mapping: Session='{session_type}' -> Bot={bot_type} -> Email={recipient}")
     

@@ -320,7 +320,7 @@ TOBACCO_PERSONAS = {
     
     "Bob": {
         "name": "Bob",
-        "background": "24-year-old male who vapes regularly. Started in college, thinks it's safer than smoking. Resistant to quitting, sees it as part of social life and identity.",
+        "background": "24-year-old who vapes regularly. Started in college, thinks it's safer than smoking. Resistant to quitting, sees it as part of social life and identity.",
         "domain": TOBACCO_DOMAIN_NAME,
         "system_prompt": f"""You are "Bob," a realistic patient simulator for Motivational Interviewing practice about {TOBACCO_DOMAIN_NAME}.
 

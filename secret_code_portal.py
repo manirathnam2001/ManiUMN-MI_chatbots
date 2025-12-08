@@ -465,28 +465,6 @@ def validate_and_mark_code(secret_code):
                 'name': name,
                 'role': role
             }
-            except SheetAccessError as e:
-                return {
-                    'success': False,
-                    'message': f'Error marking code as used: {e.admin_hint or str(e)}',
-                    'bot': None,
-                    'name': None
-                }
-            except NetworkError as e:
-                return {
-                    'success': False,
-                    'message': f'Network error marking code as used: {str(e)}. Please try again.',
-                    'bot': None,
-                    'name': None
-                }
-            except Exception as e:
-                logger.exception("Unexpected error marking code as used")
-                return {
-                    'success': False,
-                    'message': f'Error marking code as used: {str(e)}. Please try again.',
-                    'bot': None,
-                    'name': None
-                }
     
     # Code not found
     return {
@@ -580,23 +558,27 @@ def main():
         with col1:
             if st.button("🦷 OHI (Oral Hygiene)", use_container_width=True):
                 st.session_state.redirect_info['bot'] = 'OHI'
-                log_action(logger, "instructor_bot_selection", {"bot": "OHI", "name": st.session_state.redirect_info['name']})
+                instructor_name = st.session_state.redirect_info.get('name', 'Unknown')
+                log_action(logger, "instructor_bot_selection", {"bot": "OHI", "name": instructor_name})
                 st.switch_page(BOT_PAGE_MAP['OHI'])
             
             if st.button("🧬 HPV (Vaccine Counseling)", use_container_width=True):
                 st.session_state.redirect_info['bot'] = 'HPV'
-                log_action(logger, "instructor_bot_selection", {"bot": "HPV", "name": st.session_state.redirect_info['name']})
+                instructor_name = st.session_state.redirect_info.get('name', 'Unknown')
+                log_action(logger, "instructor_bot_selection", {"bot": "HPV", "name": instructor_name})
                 st.switch_page(BOT_PAGE_MAP['HPV'])
         
         with col2:
             if st.button("🚭 Tobacco Cessation", use_container_width=True):
                 st.session_state.redirect_info['bot'] = 'TOBACCO'
-                log_action(logger, "instructor_bot_selection", {"bot": "TOBACCO", "name": st.session_state.redirect_info['name']})
+                instructor_name = st.session_state.redirect_info.get('name', 'Unknown')
+                log_action(logger, "instructor_bot_selection", {"bot": "TOBACCO", "name": instructor_name})
                 st.switch_page(BOT_PAGE_MAP['TOBACCO'])
             
             if st.button("🦷 Periodontitis", use_container_width=True):
                 st.session_state.redirect_info['bot'] = 'PERIO'
-                log_action(logger, "instructor_bot_selection", {"bot": "PERIO", "name": st.session_state.redirect_info['name']})
+                instructor_name = st.session_state.redirect_info.get('name', 'Unknown')
+                log_action(logger, "instructor_bot_selection", {"bot": "PERIO", "name": instructor_name})
                 st.switch_page(BOT_PAGE_MAP['PERIO'])
         
         st.markdown("---")
