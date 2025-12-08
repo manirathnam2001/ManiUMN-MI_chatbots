@@ -44,9 +44,10 @@ from persona_texts import (
     TOBACCO_DOMAIN_NAME,
     TOBACCO_DOMAIN_KEYWORDS
 )
+from logger_config import get_logger, log_action, log_error_with_context
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Convert structured personas to simple dict for backward compatibility
 PERSONAS = {name: persona['system_prompt'] for name, persona in TOBACCO_PERSONAS.items()}

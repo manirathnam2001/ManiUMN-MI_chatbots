@@ -53,10 +53,13 @@ from utils.access_control import (
     normalize_role,
     normalize_bot_type,
 )
+from logger_config import setup_logging, get_logger, log_action, log_error_with_context
+
+# Setup centralized logging
+setup_logging(level=logging.INFO, console_output=True, file_output=True)
 
 # Configure logging for diagnostics
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logger = get_logger(__name__)
 
 # Mapping from uppercase bot type to page file path
 # Note: Page file names use Title Case (e.g., Tobacco.py, Perio.py) per existing convention
@@ -384,7 +387,18 @@ def validate_and_mark_code(secret_code):
                     'role': ROLE_DEVELOPER
                 }
             
-            # Validate bot type for non-developer roles
+            # Instructor role gets access to ALL bots (single code unlocks all)
+            if role == ROLE_INSTRUCTOR:
+                logger.info(f"Instructor '{name}' accessing with unlimited access")
+                return {
+                    'success': True,
+                    'message': f'Welcome, Instructor {name}! You have access to all chatbots. Please select which bot to access.',
+                    'bot': 'ALL',  # Special value indicating access to all bots
+                    'name': name,
+                    'role': ROLE_INSTRUCTOR
+                }
+            
+            # Validate bot type for STUDENT role only
             if bot_normalized not in VALID_BOT_TYPES:
                 logger.warning(
                     f"Rejected invalid bot type '{bot}' (normalized: '{bot_normalized}') "
@@ -398,29 +412,59 @@ def validate_and_mark_code(secret_code):
                     'role': role
                 }
             
-            # Mark the code as used (row_idx + 2 because of 0-indexing and header row)
-            try:
-                # Get fresh worksheet for write operation
-                client, _, _ = get_google_sheets_client()
-                worksheet = open_sheet_with_retry(
-                    client, SHEET_ID, SHEET_NAME,
-                    service_account_email=service_account_email
-                )
-                
-                # Update the "Used" column (column E, index 5) with retry logic
-                cell_row = row_idx + 2
-                cell_col = 5
-                update_cell_with_retry(worksheet, cell_row, cell_col, 'TRUE')
-                
-                # Clear the cached sheet data so next load gets fresh data
-                load_codes_from_sheet_cached.clear()
-                
-                return {
-                    'success': True,
-                    'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
-                    'bot': bot_normalized,
-                    'name': name
-                }
+            # Mark the code as used ONLY for STUDENT role
+            # Instructors can reuse their codes
+            if role == ROLE_STUDENT:
+                try:
+                    # Get fresh worksheet for write operation
+                    client, _, _ = get_google_sheets_client()
+                    worksheet = open_sheet_with_retry(
+                        client, SHEET_ID, SHEET_NAME,
+                        service_account_email=service_account_email
+                    )
+                    
+                    # Update the "Used" column (column E, index 5) with retry logic
+                    cell_row = row_idx + 2
+                    cell_col = 5
+                    update_cell_with_retry(worksheet, cell_row, cell_col, 'TRUE')
+                    
+                    # Clear the cached sheet data so next load gets fresh data
+                    load_codes_from_sheet_cached.clear()
+                    
+                    logger.info(f"Student code marked as used for '{name}' accessing {bot_normalized}")
+                except SheetAccessError as e:
+                    return {
+                        'success': False,
+                        'message': f'Error marking code as used: {e.admin_hint or str(e)}',
+                        'bot': None,
+                        'name': None,
+                        'role': role
+                    }
+                except NetworkError as e:
+                    return {
+                        'success': False,
+                        'message': f'Network error marking code as used: {str(e)}. Please try again.',
+                        'bot': None,
+                        'name': None,
+                        'role': role
+                    }
+                except Exception as e:
+                    logger.exception("Unexpected error marking code as used")
+                    return {
+                        'success': False,
+                        'message': f'Error marking code as used: {str(e)}. Please try again.',
+                        'bot': None,
+                        'name': None,
+                        'role': role
+                    }
+            
+            return {
+                'success': True,
+                'message': f'Welcome, {name}! Redirecting you to the {bot_normalized} chatbot...',
+                'bot': bot_normalized,
+                'name': name,
+                'role': role
+            }
             except SheetAccessError as e:
                 return {
                     'success': False,
@@ -525,6 +569,39 @@ def main():
     
     st.markdown("---")
     
+    # Show bot selector for instructors with access to all bots
+    if st.session_state.authenticated and st.session_state.get('show_bot_selector', False):
+        st.subheader("🎓 Instructor Access: Select a Chatbot")
+        st.info("As an instructor, you have access to all chatbots. Please select which bot you'd like to access.")
+        
+        # Display bot options with descriptions
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🦷 OHI (Oral Hygiene)", use_container_width=True):
+                st.session_state.redirect_info['bot'] = 'OHI'
+                log_action(logger, "instructor_bot_selection", {"bot": "OHI", "name": st.session_state.redirect_info['name']})
+                st.switch_page(BOT_PAGE_MAP['OHI'])
+            
+            if st.button("🧬 HPV (Vaccine Counseling)", use_container_width=True):
+                st.session_state.redirect_info['bot'] = 'HPV'
+                log_action(logger, "instructor_bot_selection", {"bot": "HPV", "name": st.session_state.redirect_info['name']})
+                st.switch_page(BOT_PAGE_MAP['HPV'])
+        
+        with col2:
+            if st.button("🚭 Tobacco Cessation", use_container_width=True):
+                st.session_state.redirect_info['bot'] = 'TOBACCO'
+                log_action(logger, "instructor_bot_selection", {"bot": "TOBACCO", "name": st.session_state.redirect_info['name']})
+                st.switch_page(BOT_PAGE_MAP['TOBACCO'])
+            
+            if st.button("🦷 Periodontitis", use_container_width=True):
+                st.session_state.redirect_info['bot'] = 'PERIO'
+                log_action(logger, "instructor_bot_selection", {"bot": "PERIO", "name": st.session_state.redirect_info['name']})
+                st.switch_page(BOT_PAGE_MAP['PERIO'])
+        
+        st.markdown("---")
+        st.stop()
+    
     # Code entry form
     if not st.session_state.authenticated:
         with st.form("code_entry_form"):
@@ -584,9 +661,15 @@ def main():
                             
                             st.success(result['message'])
                             
+                            # Handle Instructor role with access to all bots
+                            bot_type = result['bot']
+                            if bot_type == 'ALL':
+                                # Store instructor state and show bot selector
+                                st.session_state.show_bot_selector = True
+                                st.rerun()
+                            
                             # Navigate internally to the appropriate bot page
                             # Bot types are normalized to uppercase (OHI, HPV, TOBACCO, PERIO, DEVELOPER)
-                            bot_type = result['bot']
                             try:
                                 if bot_type in BOT_PAGE_MAP:
                                     st.switch_page(BOT_PAGE_MAP[bot_type])
@@ -611,6 +694,11 @@ def main():
         redirect_info = st.session_state.redirect_info
         bot_type = redirect_info['bot']
         student_name = redirect_info.get('name', 'Student')
+        
+        # Handle instructor with access to all bots
+        if bot_type == 'ALL':
+            st.session_state.show_bot_selector = True
+            st.rerun()
         
         st.success(f"✅ Access granted for {student_name}!")
         st.info(f"You have been assigned to the **{bot_type}** chatbot. Redirecting...")
