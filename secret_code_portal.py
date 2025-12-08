@@ -396,11 +396,11 @@ def validate_and_mark_code(secret_code):
             # If Role column is absent, check if Bot column is Instructor/Developer
             if role_col_idx is None:
                 # No Role column - check if Bot specifies a role
-                bot_upper = bot_normalized.upper() if bot_normalized else ""
-                if bot_upper == 'INSTRUCTOR':
+                # Note: bot_normalized is already uppercase from normalize_bot_type
+                if bot_normalized == 'INSTRUCTOR':
                     role = ROLE_INSTRUCTOR
                     bot_normalized = 'ALL'  # Instructor gets access to all bots
-                elif bot_upper == 'DEVELOPER':
+                elif bot_normalized == 'DEVELOPER':
                     role = ROLE_DEVELOPER
                     bot_normalized = 'DEVELOPER'
             
