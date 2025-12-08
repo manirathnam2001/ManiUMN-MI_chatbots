@@ -220,13 +220,30 @@ def load_codes_from_sheet_cached(_client_id: str):
         headers = all_values[0]
         data = all_values[1:]
         
-        # Validate headers
-        expected_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
-        if headers != expected_headers:
-            return {
-                'error': f'Invalid sheet headers. Expected: {expected_headers}, Got: {headers}',
-                'error_type': 'invalid_headers'
-            }
+        # Validate headers - Role column is optional
+        required_headers = ['Table No', 'Name', 'Bot', 'Secret', 'Used']
+        optional_headers = ['Role']
+        
+        # Check all required headers are present
+        headers_lower = [h.strip().lower() for h in headers]
+        required_lower = [h.lower() for h in required_headers]
+        
+        for required_h in required_lower:
+            if required_h not in headers_lower:
+                return {
+                    'error': f'Missing required column: {required_h.title()}. Got columns: {headers}',
+                    'error_type': 'invalid_headers'
+                }
+        
+        # Check for unexpected columns (allow Role as optional)
+        allowed_lower = required_lower + [h.lower() for h in optional_headers]
+        for h in headers_lower:
+            if h not in allowed_lower:
+                logger.warning(f"Sheet contains unexpected column: {h}")
+        
+        # Log the headers for debugging
+        has_role_column = 'role' in headers_lower
+        logger.info(f"Sheet headers validated. Has Role column: {has_role_column}. Headers: {headers}")
         
         # Return data structure (without worksheet - it will be fetched fresh for writes)
         return {
@@ -374,10 +391,31 @@ def validate_and_mark_code(secret_code):
             # Normalize bot type
             bot_normalized = normalize_bot_type(bot)
             
+            # Handle role-based logic
+            # If Role column exists and specifies Instructor/Developer, use that role
+            # If Role column is absent, check if Bot column is Instructor/Developer
+            if role_col_idx is None:
+                # No Role column - check if Bot specifies a role
+                bot_upper = bot_normalized.upper() if bot_normalized else ""
+                if bot_upper == 'INSTRUCTOR':
+                    role = ROLE_INSTRUCTOR
+                    bot_normalized = 'ALL'  # Instructor gets access to all bots
+                elif bot_upper == 'DEVELOPER':
+                    role = ROLE_DEVELOPER
+                    bot_normalized = 'DEVELOPER'
+            
             # Developer role redirects to developer page
             if role == ROLE_DEVELOPER:
                 # Store auth info before any updates
                 st.session_state.user_role = ROLE_DEVELOPER
+                
+                # Validate bot is either one of the valid types or 'ALL' or 'DEVELOPER'
+                bot_upper = bot.strip().upper() if bot else ""
+                if bot_upper not in VALID_BOT_TYPES and bot_upper not in ('ALL', 'DEVELOPER'):
+                    logger.warning(
+                        f"Developer role with invalid bot '{bot}' (normalized: '{bot_normalized}') "
+                        f"on row {row_idx + 2}. Bot should be ALL, DEVELOPER, or one of {VALID_BOT_TYPES}"
+                    )
                 
                 return {
                     'success': True,
@@ -389,7 +427,15 @@ def validate_and_mark_code(secret_code):
             
             # Instructor role gets access to ALL bots (single code unlocks all)
             if role == ROLE_INSTRUCTOR:
-                logger.info(f"Instructor '{name}' accessing with unlimited access")
+                # Validate bot is either one of the valid types or 'ALL'
+                bot_upper = bot.strip().upper() if bot else ""
+                if bot_upper not in VALID_BOT_TYPES and bot_upper != 'ALL':
+                    logger.warning(
+                        f"Instructor role with invalid bot '{bot}' (normalized: '{bot_normalized}') "
+                        f"on row {row_idx + 2}. Bot should be ALL or one of {VALID_BOT_TYPES}"
+                    )
+                
+                logger.info(f"Instructor '{name}' accessing with unlimited access (bot field: {bot})")
                 return {
                     'success': True,
                     'message': f'Welcome, Instructor {name}! You have access to all chatbots. Please select which bot to access.',
@@ -398,11 +444,12 @@ def validate_and_mark_code(secret_code):
                     'role': ROLE_INSTRUCTOR
                 }
             
-            # Validate bot type for STUDENT role only
+            # Validate bot type for STUDENT role
             if bot_normalized not in VALID_BOT_TYPES:
-                logger.warning(
+                logger.error(
                     f"Rejected invalid bot type '{bot}' (normalized: '{bot_normalized}') "
-                    f"for code row {row_idx + 2}. Valid types: {VALID_BOT_TYPES}"
+                    f"for STUDENT on row {row_idx + 2}. Valid bot types: {VALID_BOT_TYPES}. "
+                    f"If you meant to specify a role, use the Role column."
                 )
                 return {
                     'success': False,

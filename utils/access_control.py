@@ -90,11 +90,13 @@ def normalize_bot_type(bot_str: str) -> str:
     """
     Normalize a bot type string to uppercase standard format.
     
+    Handles both bot names and special values like ALL, INSTRUCTOR, DEVELOPER.
+    
     Args:
-        bot_str: Raw bot type from the sheet (e.g., 'ohi', 'Hpv', 'TOBACCO')
+        bot_str: Raw bot type from the sheet (e.g., 'ohi', 'Hpv', 'TOBACCO', 'ALL', 'Instructor')
         
     Returns:
-        Normalized bot type in uppercase (e.g., 'OHI', 'HPV', 'TOBACCO', 'PERIO')
+        Normalized bot type in uppercase (e.g., 'OHI', 'HPV', 'TOBACCO', 'PERIO', 'ALL', 'INSTRUCTOR', 'DEVELOPER')
     """
     if not bot_str:
         return ""
