@@ -23,6 +23,14 @@ import gspread
 
 logger = logging.getLogger(__name__)
 
+# Role constants
+ROLE_STUDENT = "STUDENT"
+ROLE_INSTRUCTOR = "INSTRUCTOR"
+ROLE_DEVELOPER = "DEVELOPER"
+
+# Valid bot types for the portal
+VALID_BOT_TYPES = {'OHI', 'HPV', 'TOBACCO', 'PERIO'}
+
 
 class AccessControlError(Exception):
     """Base exception for access control errors."""
@@ -49,6 +57,48 @@ class SheetAccessError(AccessControlError):
 class NetworkError(AccessControlError):
     """Exception raised for transient network errors."""
     pass
+
+
+# Alias for backward compatibility
+SheetClientError = SheetAccessError
+
+
+def normalize_role(role_str: str) -> str:
+    """
+    Normalize a role string to one of the standard role constants.
+    
+    Args:
+        role_str: Raw role string from the sheet (e.g., 'student', 'INSTRUCTOR', 'Dev')
+        
+    Returns:
+        Normalized role constant (ROLE_STUDENT, ROLE_INSTRUCTOR, or ROLE_DEVELOPER)
+    """
+    if not role_str:
+        return ROLE_STUDENT
+    
+    role_upper = role_str.strip().upper()
+    
+    if role_upper in ('INSTRUCTOR', 'INST', 'TEACHER', 'FACULTY'):
+        return ROLE_INSTRUCTOR
+    elif role_upper in ('DEVELOPER', 'DEV', 'ADMIN'):
+        return ROLE_DEVELOPER
+    else:
+        return ROLE_STUDENT
+
+
+def normalize_bot_type(bot_str: str) -> str:
+    """
+    Normalize a bot type string to uppercase standard format.
+    
+    Args:
+        bot_str: Raw bot type from the sheet (e.g., 'ohi', 'Hpv', 'TOBACCO')
+        
+    Returns:
+        Normalized bot type in uppercase (e.g., 'OHI', 'HPV', 'TOBACCO', 'PERIO')
+    """
+    if not bot_str:
+        return ""
+    return bot_str.strip().upper()
 
 
 def _decode_credentials(source_name: str, value: str, is_base64: bool = False) -> Dict[str, Any]:
@@ -321,6 +371,54 @@ def get_sheet_client(
                     f"Service account: {service_account_email or 'unknown'}"
                 )
             )
+
+
+def check_sheet_permission(
+    client: 'gspread.Client',
+    sheet_id: str,
+    service_account_email: str = None
+) -> 'gspread.Spreadsheet':
+    """
+    Check if the client has permission to access a spreadsheet.
+    
+    Args:
+        client: gspread.Client instance
+        sheet_id: The Google Sheet ID
+        service_account_email: Service account email for error messages
+        
+    Returns:
+        gspread.Spreadsheet instance if accessible
+        
+    Raises:
+        SheetAccessError: If permission is denied or sheet not found
+    """
+    try:
+        return client.open_by_key(sheet_id)
+    except gspread.exceptions.SpreadsheetNotFound:
+        raise SheetAccessError(
+            f"Spreadsheet not found: {sheet_id}",
+            admin_hint=(
+                f"The spreadsheet with ID '{sheet_id}' was not found.\n\n"
+                "Please verify the SHEET_ID is correct and the spreadsheet exists."
+            ),
+            service_account_email=service_account_email
+        )
+    except gspread.exceptions.APIError as e:
+        error_code = _get_api_error_code(e)
+        if error_code == 403:
+            raise SheetAccessError(
+                f"Permission denied for spreadsheet: {sheet_id}",
+                admin_hint=(
+                    f"The service account does not have permission to access this spreadsheet.\n\n"
+                    f"Share the spreadsheet with: {service_account_email or 'your service account email'}"
+                ),
+                service_account_email=service_account_email
+            )
+        raise SheetAccessError(
+            f"API error accessing spreadsheet: {str(e)}",
+            admin_hint=str(e),
+            service_account_email=service_account_email
+        )
 
 
 def open_sheet_with_retry(

@@ -24,11 +24,11 @@ import streamlit as st
 # Import from centralized access control module
 from utils.access_control import (
     get_sheet_client,
-    mark_row_used,
     check_sheet_permission,
     ROLE_DEVELOPER,
     ROLE_INSTRUCTOR,
-    SheetClientError,
+    SheetAccessError,
+    CredentialError,
 )
 
 # Configure logging
@@ -107,10 +107,10 @@ if st.button("Test Sheet Connection"):
                 st.success(f"✅ Successfully accessed the access codes spreadsheet!")
                 worksheets = sheet.worksheets()
                 st.info(f"Available worksheets: {[ws.title for ws in worksheets]}")
-            except SheetClientError as e:
+            except SheetAccessError as e:
                 st.error(f"Permission error: {str(e)}")
                 
-        except SheetClientError as e:
+        except (SheetAccessError, CredentialError) as e:
             st.error(f"Connection failed: {str(e)}")
         except Exception as e:
             st.error(f"Unexpected error: {str(e)}")
@@ -287,8 +287,8 @@ with st.form("mark_code_form"):
                     st.success(f"✅ Row {row_number} updated: Used = {mark_as}")
                     st.info("Note: The cache will be refreshed on the next portal load.")
                     
-                except SheetClientError as e:
-                    st.error(f"Sheet client error: {str(e)}")
+                except SheetAccessError as e:
+                    st.error(f"Sheet access error: {str(e)}")
                 except Exception as e:
                     st.error(f"Error updating sheet: {str(e)}")
 
