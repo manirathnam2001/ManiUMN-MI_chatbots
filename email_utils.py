@@ -504,28 +504,54 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
                 'attempts': 0
             }
     
-    # Get Box email address based on session type
+    # Get Box email address based on session type with strict validation
     email_config = config.get('email_config', {})
     session_type_upper = session_type.upper()
     
+    # Strict mapping for email selection - ensures correct routing
+    recipient = None
+    bot_type = None
+    
     if 'OHI' in session_type_upper or 'ORAL' in session_type_upper or 'DENTAL' in session_type_upper:
         recipient = email_config.get('ohi_box_email')
+        bot_type = 'OHI'
     elif 'HPV' in session_type_upper:
         recipient = email_config.get('hpv_box_email')
+        bot_type = 'HPV'
     elif 'TOBACCO' in session_type_upper or 'SMOK' in session_type_upper or 'CESSATION' in session_type_upper:
         recipient = email_config.get('tobacco_box_email')
-    elif 'PERIO' in session_type_upper or 'GUM' in session_type_upper:
+        bot_type = 'TOBACCO'
+    elif 'PERIO' in session_type_upper or 'GUM' in session_type_upper or 'PERIODON' in session_type_upper:
         recipient = email_config.get('perio_box_email')
+        bot_type = 'PERIO'
     else:
-        # Default to HPV if unclear
+        # Log warning for unrecognized session type
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Unrecognized session type: '{session_type}'. Using HPV as default.")
         recipient = email_config.get('hpv_box_email')
+        bot_type = 'HPV (default)'
     
+    # Validate recipient email is configured
     if not recipient:
         return {
             'success': False,
-            'error': f"Box email not configured for {session_type}",
+            'error': f"Box email not configured for {session_type} (bot_type: {bot_type})",
             'attempts': 0
         }
+    
+    # Validate recipient email format (basic check)
+    if '@u.box.com' not in recipient:
+        return {
+            'success': False,
+            'error': f"Invalid Box email format for {bot_type}: {recipient}",
+            'attempts': 0
+        }
+    
+    # Log the email mapping for audit trail
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Email mapping: Session='{session_type}' -> Bot={bot_type} -> Email={recipient}")
     
     # Set up SMTP logger
     logging_config = config.get('logging', {})
