@@ -294,6 +294,39 @@ with st.form("mark_code_form"):
 
 st.markdown("---")
 
+# --- Bot Access ---
+st.header("🤖 Access Chatbots")
+
+st.markdown("""
+Quickly navigate to any of the MI practice chatbots for testing.
+""")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🦷 OHI (Oral Hygiene)", use_container_width=True):
+        # Set redirect info to allow access to OHI bot
+        st.session_state.redirect_info['bot'] = 'OHI'
+        st.switch_page("pages/OHI.py")
+    
+    if st.button("🧬 HPV (Vaccine Counseling)", use_container_width=True):
+        # Set redirect info to allow access to HPV bot
+        st.session_state.redirect_info['bot'] = 'HPV'
+        st.switch_page("pages/HPV.py")
+
+with col2:
+    if st.button("🚭 Tobacco Cessation", use_container_width=True):
+        # Set redirect info to allow access to Tobacco bot
+        st.session_state.redirect_info['bot'] = 'TOBACCO'
+        st.switch_page("pages/Tobacco.py")
+    
+    if st.button("🦷 Periodontitis", use_container_width=True):
+        # Set redirect info to allow access to Perio bot
+        st.session_state.redirect_info['bot'] = 'PERIO'
+        st.switch_page("pages/Perio.py")
+
+st.markdown("---")
+
 # --- Session Info ---
 st.header("ℹ️ Session Information")
 
