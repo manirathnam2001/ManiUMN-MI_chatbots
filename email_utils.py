@@ -508,6 +508,9 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     email_config = config.get('email_config', {})
     session_type_upper = session_type.upper()
     
+    # Get logger instance at the beginning of the function
+    logger = logging.getLogger(__name__)
+    
     # Strict mapping for email selection - ensures correct routing
     recipient = None
     bot_type = None
@@ -526,13 +529,9 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
         bot_type = 'PERIO'
     else:
         # Log warning for unrecognized session type
-        logger = logging.getLogger(__name__)
         logger.warning(f"Unrecognized session type: '{session_type}'. Using HPV as default.")
         recipient = email_config.get('hpv_box_email')
         bot_type = 'HPV (default)'
-    
-    # Get logger instance for validation and info logging
-    logger = logging.getLogger(__name__)
     
     # Validate recipient email is configured
     if not recipient:

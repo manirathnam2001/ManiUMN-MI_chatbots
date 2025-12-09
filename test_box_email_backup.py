@@ -307,7 +307,9 @@ def main():
     # Test 6: SMTP Connection (Optional - only if credentials available)
     try:
         results['smtp_connection'] = test_connection_only()
-    except Exception:
+    except (KeyError, ValueError, ImportError) as e:
+        # Skip test if configuration or dependencies are missing
+        print(f"\n⏭️  SMTP Connection test skipped: {e}")
         results['smtp_connection'] = None  # Mark as skipped
     
     # Summary
@@ -315,18 +317,21 @@ def main():
     print("Test Summary")
     print("=" * 70)
     
-    for test_name, passed in results.items():
-        if passed is None:
+    # Count tests and display results in single iteration
+    total = 0
+    passed = 0
+    
+    for test_name, test_result in results.items():
+        if test_result is None:
             status = "⏭️  SKIPPED"
-        elif passed:
+        elif test_result:
             status = "✅ PASS"
+            total += 1
+            passed += 1
         else:
             status = "❌ FAIL"
+            total += 1
         print(f"  {test_name.upper()}: {status}")
-    
-    # Count only non-skipped tests
-    total = sum(1 for v in results.values() if v is not None)
-    passed = sum(1 for v in results.values() if v is True)
     
     print("\n" + "-" * 70)
     print(f"Results: {passed}/{total} tests passed")
