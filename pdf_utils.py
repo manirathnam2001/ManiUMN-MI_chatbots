@@ -14,6 +14,7 @@ and handles special character sanitization for proper PDF rendering.
 
 import io
 import re
+import logging
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle

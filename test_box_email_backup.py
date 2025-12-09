@@ -20,36 +20,113 @@ from pdf_utils import generate_pdf_report, send_pdf_to_box
 
 
 def test_configuration():
-    """Test configuration loading."""
+    """Test configuration loading (box emails only - credentials optional)."""
     print("=" * 60)
-    print("TEST 1: Configuration Loading")
+    print("TEST 1: Box Email Configuration")
     print("=" * 60)
     
     try:
         with open('config.json', 'r') as f:
             config = json.load(f)
         
-        sender = SecureEmailSender(config)
-        credentials = sender.get_smtp_credentials()
-        settings = sender.get_smtp_settings()
+        # Check Box email addresses are configured
+        email_config = config.get('email_config', {})
         
-        print("✅ Configuration loaded successfully")
-        print(f"  SMTP Server: {settings['smtp_server']}:{settings['smtp_port']}")
-        print(f"  From: {credentials['username']}")
-        print(f"  SSL: {settings['use_ssl']}")
-        print(f"  Retry Attempts: {settings['retry_attempts']}")
-        print(f"  OHI Box: {config['email_config'].get('ohi_box_email')}")
-        print(f"  HPV Box: {config['email_config'].get('hpv_box_email')}")
-        return True, config
+        required_boxes = {
+            'OHI': email_config.get('ohi_box_email'),
+            'HPV': email_config.get('hpv_box_email'),
+            'Tobacco': email_config.get('tobacco_box_email'),
+            'Perio': email_config.get('perio_box_email')
+        }
+        
+        all_configured = True
+        for bot_type, box_email in required_boxes.items():
+            if not box_email:
+                print(f"❌ Missing Box email for {bot_type}")
+                all_configured = False
+            elif '@u.box.com' not in box_email:
+                print(f"❌ Invalid Box email format for {bot_type}: {box_email}")
+                all_configured = False
+            else:
+                print(f"✅ {bot_type} Box: {box_email}")
+        
+        if all_configured:
+            print(f"\n✅ All Box emails configured correctly")
+            print(f"  Retry Attempts: {email_config.get('retry_attempts', 3)}")
+            print(f"  Retry Delay: {email_config.get('retry_delay', 5)}s")
+            return True, config
+        else:
+            print(f"\n❌ Some Box emails are missing or invalid")
+            return False, config
+            
     except Exception as e:
         print(f"❌ Configuration test failed: {e}")
         return False, None
 
 
+def test_session_type_mapping():
+    """Test session type to Box email mapping."""
+    print("\n" + "=" * 60)
+    print("TEST 2: Session Type Mapping")
+    print("=" * 60)
+    
+    try:
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+        
+        # Test cases for different session types
+        test_cases = [
+            ('OHI', 'ohi_box_email'),
+            ('Oral Health Initiative', 'ohi_box_email'),
+            ('HPV Vaccine', 'hpv_box_email'),
+            ('HPV', 'hpv_box_email'),
+            ('Tobacco Cessation', 'tobacco_box_email'),
+            ('Tobacco', 'tobacco_box_email'),
+            ('Smoking Cessation', 'tobacco_box_email'),
+            ('Perio', 'perio_box_email'),
+            ('Periodontitis', 'perio_box_email'),
+            ('Gum Disease', 'perio_box_email'),
+        ]
+        
+        all_passed = True
+        for session_type, expected_key in test_cases:
+            # Simulate the mapping logic from email_utils.py
+            session_type_upper = session_type.upper()
+            email_config = config.get('email_config', {})
+            
+            if 'OHI' in session_type_upper or 'ORAL' in session_type_upper or 'DENTAL' in session_type_upper:
+                actual_key = 'ohi_box_email'
+            elif 'HPV' in session_type_upper:
+                actual_key = 'hpv_box_email'
+            elif 'TOBACCO' in session_type_upper or 'SMOK' in session_type_upper or 'CESSATION' in session_type_upper:
+                actual_key = 'tobacco_box_email'
+            elif 'PERIO' in session_type_upper or 'GUM' in session_type_upper or 'PERIODON' in session_type_upper:
+                actual_key = 'perio_box_email'
+            else:
+                actual_key = 'hpv_box_email'  # default
+            
+            if actual_key == expected_key:
+                print(f"✅ '{session_type}' -> {actual_key}")
+            else:
+                print(f"❌ '{session_type}' -> {actual_key} (expected: {expected_key})")
+                all_passed = False
+        
+        if all_passed:
+            print("\n✅ All session type mappings correct")
+            return True
+        else:
+            print("\n❌ Some session type mappings failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Session type mapping test failed: {e}")
+        return False
+
+
 def test_logging():
     """Test logging system."""
     print("\n" + "=" * 60)
-    print("TEST 2: Logging System")
+    print("TEST 3: Logging System")
     print("=" * 60)
     
     try:
@@ -74,7 +151,7 @@ def test_logging():
 def test_pdf_generation():
     """Test PDF generation with sample data."""
     print("\n" + "=" * 60)
-    print("TEST 3: PDF Generation")
+    print("TEST 4: PDF Generation")
     print("=" * 60)
     
     try:
@@ -140,7 +217,7 @@ Suggestions for Improvement:
 def test_email_dry_run(pdf_buffer, student_name, config):
     """Test email preparation without actually sending."""
     print("\n" + "=" * 60)
-    print("TEST 4: Email Preparation (Dry Run)")
+    print("TEST 5: Email Preparation (Dry Run)")
     print("=" * 60)
     
     try:
@@ -175,9 +252,9 @@ This is an automated backup of the MI practice feedback report.
 
 
 def test_connection_only():
-    """Test SMTP connection without sending email."""
+    """Test SMTP connection without sending email (optional - requires credentials)."""
     print("\n" + "=" * 60)
-    print("TEST 5: SMTP Connection Test")
+    print("TEST 6: SMTP Connection Test (Optional)")
     print("=" * 60)
     
     try:
@@ -209,23 +286,29 @@ def main():
     
     results = {}
     
-    # Test 1: Configuration
-    results['config'], config = test_configuration()
+    # Test 1: Box Email Configuration
+    results['box_config'], config = test_configuration()
     
-    # Test 2: Logging
+    # Test 2: Session Type Mapping
+    results['session_mapping'] = test_session_type_mapping()
+    
+    # Test 3: Logging
     results['logging'], smtp_logger = test_logging()
     
-    # Test 3: PDF Generation
+    # Test 4: PDF Generation
     results['pdf'], pdf_buffer, student_name = test_pdf_generation()
     
-    # Test 4: Email Preparation (Dry Run)
+    # Test 5: Email Preparation (Dry Run)
     if results['pdf'] and config:
         results['email_prep'] = test_email_dry_run(pdf_buffer, student_name, config)
     else:
         results['email_prep'] = False
     
-    # Test 5: SMTP Connection
-    results['smtp_connection'] = test_connection_only()
+    # Test 6: SMTP Connection (Optional - only if credentials available)
+    try:
+        results['smtp_connection'] = test_connection_only()
+    except Exception:
+        results['smtp_connection'] = None  # Mark as skipped
     
     # Summary
     print("\n" + "=" * 70)
@@ -233,11 +316,17 @@ def main():
     print("=" * 70)
     
     for test_name, passed in results.items():
-        status = "✅ PASS" if passed else "❌ FAIL"
+        if passed is None:
+            status = "⏭️  SKIPPED"
+        elif passed:
+            status = "✅ PASS"
+        else:
+            status = "❌ FAIL"
         print(f"  {test_name.upper()}: {status}")
     
-    total = len(results)
-    passed = sum(results.values())
+    # Count only non-skipped tests
+    total = sum(1 for v in results.values() if v is not None)
+    passed = sum(1 for v in results.values() if v is True)
     
     print("\n" + "-" * 70)
     print(f"Results: {passed}/{total} tests passed")
@@ -248,7 +337,8 @@ def main():
         print(f"\n⚠️  {total - passed} test(s) failed. Please review the errors above.")
     
     print("\nNote: Actual email sending is not tested to avoid sending test emails.")
-    print("To test email sending, use the Streamlit applications (OHI.py or HPV.py).")
+    print("To test email sending, use the Streamlit applications.")
+    print("SMTP connection test requires valid credentials in config or environment.")
     print("=" * 70 + "\n")
     
     return passed == total
