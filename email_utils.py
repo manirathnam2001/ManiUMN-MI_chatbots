@@ -508,6 +508,9 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     email_config = config.get('email_config', {})
     session_type_upper = session_type.upper()
     
+    # Get logger instance at the beginning of the function
+    logger = logging.getLogger(__name__)
+    
     # Strict mapping for email selection - ensures correct routing
     recipient = None
     bot_type = None
@@ -526,14 +529,13 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
         bot_type = 'PERIO'
     else:
         # Log warning for unrecognized session type
-        import logging
-        logger = logging.getLogger(__name__)
         logger.warning(f"Unrecognized session type: '{session_type}'. Using HPV as default.")
         recipient = email_config.get('hpv_box_email')
         bot_type = 'HPV (default)'
     
     # Validate recipient email is configured
     if not recipient:
+        logger.error(f"Box email not configured for {session_type} (bot_type: {bot_type})")
         return {
             'success': False,
             'error': f"Box email not configured for {session_type} (bot_type: {bot_type})",
@@ -542,14 +544,13 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     
     # Validate recipient email format (basic check)
     if '@u.box.com' not in recipient:
+        logger.error(f"Invalid Box email format for {bot_type}: {recipient}")
         return {
             'success': False,
             'error': f"Invalid Box email format for {bot_type}: {recipient}",
             'attempts': 0
         }
     
-    # Get logger instance (already imported at top of module)
-    logger = logging.getLogger(__name__)
     logger.info(f"Email mapping: Session='{session_type}' -> Bot={bot_type} -> Email={recipient}")
     
     # Set up SMTP logger
@@ -573,9 +574,14 @@ Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 This is an automated backup of the MI practice feedback report.
 """
     
-    # Get retry settings
+    # Get retry settings with validation
     max_retries = email_config.get('retry_attempts', 3)
     retry_delay = email_config.get('retry_delay', 5)
+    
+    # Ensure at least 1 attempt when config is valid
+    if max_retries < 1:
+        logger.warning(f"Invalid retry_attempts value ({max_retries}). Using default of 3.")
+        max_retries = 3
     
     # Send with retry
     result = sender.send_email_with_retry(

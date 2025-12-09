@@ -294,6 +294,47 @@ with st.form("mark_code_form"):
 
 st.markdown("---")
 
+# --- Bot Access ---
+st.header("🤖 Access Chatbots")
+
+st.markdown("""
+Quickly navigate to any of the MI practice chatbots for testing.
+""")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🦷 OHI (Oral Hygiene)", use_container_width=True):
+        # Ensure redirect_info exists and set bot for access control
+        if 'redirect_info' not in st.session_state:
+            st.session_state.redirect_info = {}
+        st.session_state.redirect_info['bot'] = 'OHI'
+        st.switch_page("pages/OHI.py")
+    
+    if st.button("🧬 HPV (Vaccine Counseling)", use_container_width=True):
+        # Ensure redirect_info exists and set bot for access control
+        if 'redirect_info' not in st.session_state:
+            st.session_state.redirect_info = {}
+        st.session_state.redirect_info['bot'] = 'HPV'
+        st.switch_page("pages/HPV.py")
+
+with col2:
+    if st.button("🚭 Tobacco Cessation", use_container_width=True):
+        # Ensure redirect_info exists and set bot for access control
+        if 'redirect_info' not in st.session_state:
+            st.session_state.redirect_info = {}
+        st.session_state.redirect_info['bot'] = 'TOBACCO'
+        st.switch_page("pages/Tobacco.py")
+    
+    if st.button("🦷 Periodontitis", use_container_width=True):
+        # Ensure redirect_info exists and set bot for access control
+        if 'redirect_info' not in st.session_state:
+            st.session_state.redirect_info = {}
+        st.session_state.redirect_info['bot'] = 'PERIO'
+        st.switch_page("pages/Perio.py")
+
+st.markdown("---")
+
 # --- Session Info ---
 st.header("ℹ️ Session Information")
 
