@@ -189,10 +189,10 @@ if st.session_state.selected_persona is None:
     st.markdown("""
     Select a stage of Ava's journey with periodontitis:
     
-    - **Ava_Stage1**: Early stage - noticing bleeding gums, unaware of risk
-    - **Ava_Stage2**: Progression - diagnosed with early periodontitis, needs deep cleaning
-    - **Ava_Stage3**: Management - maintaining after treatment, struggling with consistency
-    - **Ava_Stage4**: Advanced - severe bone loss, facing possible tooth extractions
+    - **Alex**: Early stage - noticing bleeding gums, unaware of risk
+    - **Bob**: Progression - diagnosed with early periodontitis, needs deep cleaning
+    - **Charles**: Management - maintaining after treatment, struggling with consistency
+    - **Diana**: Advanced - severe bone loss, facing possible tooth extractions
     """)
     
     selected = st.selectbox(
@@ -210,10 +210,10 @@ if st.session_state.selected_persona is None:
         
         # Customize greeting based on stage
         stage_greetings = {
-            "Ava_Stage1": "Hi, I'm Ava. I wanted to ask about something I've noticed with my gums...",
-            "Ava_Stage2": "Hello, I'm Ava. My dentist just told me I have periodontitis and I'm honestly pretty worried.",
-            "Ava_Stage3": "Hi there, I'm Ava. I've been managing gum disease for a while now, but I'm having trouble staying consistent.",
-            "Ava_Stage4": "Hi, I'm Ava. I'm dealing with advanced periodontitis and facing some difficult decisions."
+            "Alex": "Hi, I'm Ava. I wanted to ask about something I've noticed with my gums...",
+            "Bob": "Hello, I'm Ava. My dentist just told me I have periodontitis and I'm honestly pretty worried.",
+            "Charles": "Hi there, I'm Ava. I've been managing gum disease for a while now, but I'm having trouble staying consistent.",
+            "Diana": "Hi, I'm Ava. I'm dealing with advanced periodontitis and facing some difficult decisions."
         }
         
         greeting = stage_greetings.get(selected, f"Hello! I'm {selected}, nice to meet you today.")
