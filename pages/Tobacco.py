@@ -189,10 +189,10 @@ if st.session_state.selected_persona is None:
     st.markdown("""
     Select a patient persona to practice with:
     
-    - **Marcus**: 50-year-old male smoker interested in quitting
-    - **Emma**: 24-year-old female vaper resistant to quitting
-    - **Jordan**: 32-year-old social smoker who is ambivalent
-    - **Patricia**: 45-year-old former smoker concerned about relapse
+    - **Alex**: 50-year-old male smoker interested in quitting
+    - **Bob**: 24-year-old female vaper resistant to quitting
+    - **Charles**: 32-year-old social smoker who is ambivalent
+    - **Diana**: 45-year-old former smoker concerned about relapse
     """)
     
     selected = st.selectbox(
