@@ -42,6 +42,25 @@ def get_cst_datetime():
     return datetime.now(cst_tz)
 
 
+def get_cst_for_pdf() -> str:
+    """
+    Get CST timestamp formatted for PDF metadata.
+    
+    Returns:
+        String in PDF date format with CST offset, e.g., 'D:20251223173045-06'00''
+    """
+    cst_tz = pytz.timezone('America/Chicago')
+    now_cst = datetime.now(cst_tz)
+    # PDF date format: D:YYYYMMDDHHmmss+HH'mm'
+    offset = now_cst.strftime('%z')  # e.g., '-0600' or '-0500'
+    offset_formatted = f"{offset[:3]}'{offset[3:]}'"  # Convert to -06'00' or -05'00'
+    return f"D:{now_cst.strftime('%Y%m%d%H%M%S')}{offset_formatted}"
+
+
+# CST Timezone constant
+CST_TIMEZONE = pytz.timezone('America/Chicago')
+
+
 # Backward compatibility alias
 def get_formatted_utc_time():
     """Returns current time in CST timezone (America/Chicago).
