@@ -39,7 +39,10 @@ class ConversationState(Enum):
     """States for conversation flow control."""
     ACTIVE = "ACTIVE"
     END_SUGGESTED = "END_SUGGESTED"
+    PENDING_END_CONFIRMATION = "PENDING_END_CONFIRMATION"
+    AWAITING_SECOND_CONFIRMATION = "AWAITING_SECOND_CONFIRMATION"
     ENDED = "ENDED"
+    PARKED = "PARKED"  # Session idle/disconnected but not ended
 
 # Configuration - can be overridden via environment variables
 MIN_TURN_THRESHOLD = int(os.environ.get('MI_MIN_TURN_THRESHOLD', '10'))
@@ -89,17 +92,23 @@ MI_COVERAGE_PATTERNS = {
 }
 
 # Student confirmation patterns - explicit closure phrases
+# These must be clear affirmative closure intents
 STUDENT_CONFIRMATION_PATTERNS = [
-    r'\byes.*end\b',
-    r'\blet\'s end\b',
-    r'\bno more questions\b',
-    r'\bi\'m done\b',
-    r'\bthat\'s all\b',
-    r'\bthank you.*that\'s enough\b',
-    r'\bi think we\'re done\b',
-    r'\bwe can finish\b',
-    r'\bi\'m ready to finish\b',
-    r'\blet\'s wrap up\b',
+    r'\bno,?\s+(we\'re\s+)?done\b',
+    r'\bthat\'s\s+all\b',
+    r'\bwe\s+can\s+end\b',
+    r'\bno\s+more\s+to\s+discuss\b',
+    r'\bfinish\b',
+    r'\byes,?\s+(let\'s\s+)?end\b',
+    r'\blet\'s\s+end\b',
+    r'\bno\s+more\s+questions\b',
+    r'\bi\'m\s+done\b',
+    r'\bwe\s+can\s+finish\b',
+    r'\bi\'m\s+ready\s+to\s+finish\b',
+    r'\blet\'s\s+wrap\s+up\b',
+    r'\bwe\'re\s+good\s+to\s+end\b',
+    r'\bnothing\s+more\b',
+    r'\ball\s+set\b',
 ]
 
 # Ambiguous phrases that should NOT trigger ending
@@ -267,6 +276,46 @@ def detect_student_confirmation(user_message: str) -> bool:
     return False
 
 
+def is_ambiguous_response(user_message: str) -> bool:
+    """
+    Check if user response is ambiguous and should not trigger ending.
+    
+    Args:
+        user_message: The user's message
+        
+    Returns:
+        bool: True if message is ambiguous
+    """
+    message_lower = user_message.lower().strip()
+    
+    # Check if entire message is just an ambiguous phrase
+    if message_lower in AMBIGUOUS_ENDING_PHRASES:
+        return True
+    
+    # Check if message is very short and only contains ambiguous words
+    words = message_lower.split()
+    if len(words) <= 2 and all(word in AMBIGUOUS_ENDING_PHRASES for word in words):
+        return True
+    
+    return False
+
+
+def generate_patient_confirmation_prompt(first_ask: bool = True) -> str:
+    """
+    Generate confirmation prompt in patient voice.
+    
+    Args:
+        first_ask: If True, first confirmation ask. If False, second confirmation.
+        
+    Returns:
+        str: Confirmation prompt in patient persona
+    """
+    if first_ask:
+        return "Before we wrap up, doctor, is there anything more you'd like to discuss about this case?"
+    else:
+        return "Just to confirm, doctor—are you okay ending here?"
+
+
 def detect_end_token(assistant_message: str) -> bool:
     """
     Detect if the assistant message contains the explicit end token.
@@ -281,6 +330,235 @@ def detect_end_token(assistant_message: str) -> bool:
     if has_token:
         logger.info(f"End token '{END_TOKEN}' detected in assistant message")
     return has_token
+
+
+def should_continue_v3(
+    conversation_context: Dict,
+    last_assistant_text: str,
+    last_user_text: Optional[str] = None
+) -> Dict:
+    """
+    Production-ready conversation ending with explicit student confirmation.
+    
+    Implements a state machine with patient-persona confirmation:
+    - ACTIVE: Normal conversation
+    - PENDING_END_CONFIRMATION: Bot asks patient-voice confirmation (first)
+    - AWAITING_SECOND_CONFIRMATION: Bot asks second confirmation if ambiguous
+    - ENDED: Conversation concluded with explicit confirmation
+    - PARKED: Session idle/disconnected but not ended
+    
+    Args:
+        conversation_context: Dictionary containing:
+            - chat_history: List of messages
+            - turn_count: Number of student turns
+            - end_control_state: Current state (optional, defaults to ACTIVE)
+            - confirmation_flag: Whether confirmation was explicitly given
+            - termination_trigger: What/who triggered the end process
+        last_assistant_text: The most recent assistant message
+        last_user_text: The most recent user message (optional)
+        
+    Returns:
+        Dictionary with:
+            - continue: bool (True = continue conversation, False = allow ending)
+            - state: str (new conversation state)
+            - reason: str (explanation for the decision)
+            - confirmation_prompt: str (patient-voice confirmation question if needed)
+            - requires_confirmation: bool (if confirmation prompt should be shown)
+            - metrics: dict (for logging/monitoring)
+    """
+    from config_loader import ConfigLoader
+    
+    # Load feature flags
+    config = ConfigLoader()
+    flags = config.get_feature_flags()
+    require_confirmation = flags.get('require_end_confirmation', True)
+    
+    chat_history = conversation_context.get('chat_history', [])
+    turn_count = conversation_context.get('turn_count', 0)
+    current_state = get_conversation_state(conversation_context)
+    confirmation_flag = conversation_context.get('confirmation_flag', False)
+    termination_trigger = conversation_context.get('termination_trigger', 'unknown')
+    
+    timestamp = datetime.now().isoformat()
+    logger.info(f"[{timestamp}] Evaluating v3: state={current_state.value}, turns={turn_count}, require_conf={require_confirmation}")
+    
+    # Metrics for monitoring
+    metrics = {
+        'timestamp': timestamp,
+        'state': current_state.value,
+        'turn_count': turn_count,
+        'termination_trigger': termination_trigger,
+        'confirmation_flag': confirmation_flag
+    }
+    
+    # State: ENDED - conversation already concluded with confirmation
+    if current_state == ConversationState.ENDED:
+        if not confirmation_flag:
+            logger.warning(f"[{timestamp}] ALERT: Session ended without confirmation flag!")
+            metrics['alert'] = 'ended_without_confirmation'
+        
+        return {
+            'continue': False,
+            'state': ConversationState.ENDED.value,
+            'reason': 'Conversation already ended with confirmation',
+            'confirmation_prompt': None,
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # State: PARKED - session idle/disconnected but not ended
+    if current_state == ConversationState.PARKED:
+        return {
+            'continue': True,
+            'state': ConversationState.PARKED.value,
+            'reason': 'Session parked (disconnected/idle), awaiting reconnect',
+            'confirmation_prompt': "Welcome back, doctor. Shall we continue our discussion?",
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # State: AWAITING_SECOND_CONFIRMATION - already asked once, checking second response
+    if current_state == ConversationState.AWAITING_SECOND_CONFIRMATION:
+        if last_user_text:
+            # Check for explicit affirmative closure
+            if detect_student_confirmation(last_user_text):
+                logger.info(f"[{timestamp}] Student confirmed ending on second ask")
+                set_conversation_state(conversation_context, ConversationState.ENDED)
+                conversation_context['confirmation_flag'] = True
+                metrics['confirmation_result'] = 'confirmed_second_ask'
+                
+                return {
+                    'continue': False,
+                    'state': ConversationState.ENDED.value,
+                    'reason': 'Student confirmed ending after second confirmation',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+            else:
+                # Still no clear affirmative or ambiguous - park the session
+                logger.info(f"[{timestamp}] No clear confirmation after second ask, parking session")
+                set_conversation_state(conversation_context, ConversationState.PARKED)
+                metrics['confirmation_result'] = 'parked_after_second_ask'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.PARKED.value,
+                    'reason': 'No clear confirmation after two asks, session parked',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+        else:
+            # Still waiting for response
+            return {
+                'continue': True,
+                'state': ConversationState.AWAITING_SECOND_CONFIRMATION.value,
+                'reason': 'Awaiting student response to second confirmation',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+    
+    # State: PENDING_END_CONFIRMATION - awaiting first confirmation response
+    if current_state == ConversationState.PENDING_END_CONFIRMATION:
+        if last_user_text:
+            # Check if response is explicit affirmative closure
+            if detect_student_confirmation(last_user_text):
+                logger.info(f"[{timestamp}] Student confirmed ending on first ask")
+                set_conversation_state(conversation_context, ConversationState.ENDED)
+                conversation_context['confirmation_flag'] = True
+                metrics['confirmation_result'] = 'confirmed_first_ask'
+                
+                return {
+                    'continue': False,
+                    'state': ConversationState.ENDED.value,
+                    'reason': 'Student confirmed ending',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+            elif is_ambiguous_response(last_user_text):
+                # Ambiguous response - ask second time
+                logger.info(f"[{timestamp}] Ambiguous response to confirmation, asking second time")
+                set_conversation_state(conversation_context, ConversationState.AWAITING_SECOND_CONFIRMATION)
+                metrics['confirmation_result'] = 'ambiguous_first_response'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.AWAITING_SECOND_CONFIRMATION.value,
+                    'reason': 'Ambiguous response, requesting second confirmation',
+                    'confirmation_prompt': generate_patient_confirmation_prompt(first_ask=False),
+                    'requires_confirmation': True,
+                    'metrics': metrics
+                }
+            else:
+                # Student wants to continue - return to ACTIVE
+                logger.info(f"[{timestamp}] Student indicated continuation, returning to ACTIVE")
+                set_conversation_state(conversation_context, ConversationState.ACTIVE)
+                metrics['confirmation_result'] = 'student_wants_continue'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.ACTIVE.value,
+                    'reason': 'Student indicated they want to continue',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+        else:
+            # Still waiting for first confirmation response
+            return {
+                'continue': True,
+                'state': ConversationState.PENDING_END_CONFIRMATION.value,
+                'reason': 'Awaiting student confirmation to end',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+    
+    # State: ACTIVE - normal conversation flow
+    # Check if conditions met to request ending confirmation
+    if can_suggest_ending(conversation_context):
+        logger.info(f"[{timestamp}] Conditions met to request ending confirmation")
+        set_conversation_state(conversation_context, ConversationState.PENDING_END_CONFIRMATION)
+        conversation_context['termination_trigger'] = 'system_mi_complete'
+        metrics['termination_trigger'] = 'system_mi_complete'
+        
+        # If feature flag disabled, skip confirmation (legacy behavior)
+        if not require_confirmation:
+            logger.warning(f"[{timestamp}] Confirmation disabled by feature flag, allowing end")
+            set_conversation_state(conversation_context, ConversationState.ENDED)
+            conversation_context['confirmation_flag'] = False
+            metrics['alert'] = 'confirmation_bypassed_by_flag'
+            
+            return {
+                'continue': False,
+                'state': ConversationState.ENDED.value,
+                'reason': 'Confirmation disabled by feature flag',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+        
+        return {
+            'continue': True,
+            'state': ConversationState.PENDING_END_CONFIRMATION.value,
+            'reason': 'All MI requirements met, requesting confirmation',
+            'confirmation_prompt': generate_patient_confirmation_prompt(first_ask=True),
+            'requires_confirmation': True,
+            'metrics': metrics
+        }
+    
+    # Continue conversation normally
+    return {
+        'continue': True,
+        'state': ConversationState.ACTIVE.value,
+        'reason': 'Conversation continuing normally',
+        'confirmation_prompt': None,
+        'requires_confirmation': False,
+        'metrics': metrics
+    }
 
 
 def should_continue_v2(
@@ -525,3 +803,77 @@ def prevent_ambiguous_ending(user_message: str) -> bool:
         return True
     
     return False
+
+
+# Metrics tracking for monitoring and alerts
+_termination_metrics = {
+    'sessions_ended_without_confirmation': 0,
+    'sessions_ended_with_confirmation': 0,
+    'sessions_parked': 0,
+    'confirmation_triggers': [],
+    'ambiguous_responses': 0
+}
+
+
+def log_termination_metrics(metrics: Dict) -> None:
+    """
+    Log termination metrics for monitoring and alerting.
+    
+    Args:
+        metrics: Metrics dictionary from should_continue_v3
+    """
+    global _termination_metrics
+    
+    # Track confirmation status
+    if metrics.get('alert') == 'ended_without_confirmation':
+        _termination_metrics['sessions_ended_without_confirmation'] += 1
+        logger.error(f"ALERT: Session ended without confirmation! Metrics: {metrics}")
+    elif metrics.get('confirmation_result') in ['confirmed_first_ask', 'confirmed_second_ask']:
+        _termination_metrics['sessions_ended_with_confirmation'] += 1
+    
+    # Track parked sessions
+    if metrics.get('state') == ConversationState.PARKED.value:
+        _termination_metrics['sessions_parked'] += 1
+    
+    # Track triggers
+    trigger = metrics.get('termination_trigger')
+    if trigger:
+        _termination_metrics['confirmation_triggers'].append({
+            'trigger': trigger,
+            'timestamp': metrics.get('timestamp'),
+            'result': metrics.get('confirmation_result')
+        })
+    
+    # Track ambiguous responses
+    if metrics.get('confirmation_result') == 'ambiguous_first_response':
+        _termination_metrics['ambiguous_responses'] += 1
+    
+    # Log comprehensive metrics periodically (every 10th call)
+    if _termination_metrics['sessions_ended_with_confirmation'] % 10 == 0:
+        logger.info(f"Termination metrics summary: {_termination_metrics}")
+    
+    # Alert if ANY sessions ended without confirmation
+    if _termination_metrics['sessions_ended_without_confirmation'] > 0:
+        logger.error(f"CRITICAL: {_termination_metrics['sessions_ended_without_confirmation']} sessions ended without confirmation!")
+
+
+def get_termination_metrics() -> Dict:
+    """
+    Get current termination metrics for dashboards/monitoring.
+    
+    Returns:
+        Dictionary with current metrics
+    """
+    return _termination_metrics.copy()
+
+
+def reset_termination_metrics() -> None:
+    """Reset termination metrics (for testing or periodic cleanup)."""
+    global _termination_metrics
+    _termination_metrics = {
+        'sessions_ended_without_confirmation': 0,
+        'sessions_ended_with_confirmation': 0,
+        'sessions_parked': 0,
+        'confirmation_triggers': [],
+        'ambiguous_responses': 0
+    }

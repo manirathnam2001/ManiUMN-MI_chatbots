@@ -404,3 +404,146 @@ class FeedbackValidator:
         text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
         
         return text
+    
+    @staticmethod
+    def validate_pdf_payload(feedback: str, session_type: str = "HPV") -> Dict[str, any]:
+        """
+        Validate feedback payload before PDF rendering with strict checks.
+        
+        This implements pre-render validation to catch incomplete feedback payloads
+        that would result in zero scores, empty notes, or mismatched data.
+        
+        Args:
+            feedback: Raw feedback text from LLM
+            session_type: Session type for context-specific validation
+            
+        Returns:
+            Dictionary with:
+                - is_valid: bool
+                - errors: list of error messages
+                - warnings: list of warning messages
+                - scores_present: bool (all scores non-null/non-zero where expected)
+                - notes_present: bool (all notes non-empty)
+                - partial_report: bool (should be marked as partial)
+        """
+        from config_loader import ConfigLoader
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        config = ConfigLoader()
+        flags = config.get_feature_flags()
+        
+        # Check if validation is enabled via feature flag
+        if not flags.get('feedback_data_validation', True):
+            logger.warning("PDF validation disabled by feature flag")
+            return {
+                'is_valid': True,
+                'errors': [],
+                'warnings': ['Validation disabled by feature flag'],
+                'scores_present': True,
+                'notes_present': True,
+                'partial_report': False
+            }
+        
+        validation = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'scores_present': True,
+            'notes_present': True,
+            'partial_report': False
+        }
+        
+        try:
+            # First check completeness
+            completeness = FeedbackValidator.validate_feedback_completeness(feedback)
+            if not completeness['is_valid']:
+                validation['is_valid'] = False
+                validation['errors'].append(f"Missing components: {completeness['missing_components']}")
+                validation['partial_report'] = True
+            
+            validation['warnings'].extend(completeness['warnings'])
+            
+            # Parse and validate scores
+            if NEW_RUBRIC_AVAILABLE:
+                try:
+                    result = EvaluationService.evaluate_session(feedback, session_type)
+                    
+                    # Check for zero scores
+                    zero_score_categories = []
+                    missing_notes_categories = []
+                    
+                    for category_name, category_data in result['categories'].items():
+                        # Check for null or zero points
+                        if category_data.get('points') is None:
+                            validation['errors'].append(f"Null score for category: {category_name}")
+                            validation['is_valid'] = False
+                            validation['scores_present'] = False
+                        elif category_data.get('points') == 0:
+                            zero_score_categories.append(category_name)
+                        
+                        # Check for missing notes
+                        notes = category_data.get('notes', '').strip()
+                        if not notes or notes == '':
+                            missing_notes_categories.append(category_name)
+                            validation['notes_present'] = False
+                    
+                    # Zero scores might be legitimate, but log as warning
+                    if zero_score_categories:
+                        validation['warnings'].append(f"Zero scores for: {', '.join(zero_score_categories)}")
+                    
+                    # Missing notes are more serious
+                    if missing_notes_categories:
+                        validation['errors'].append(f"Missing notes for: {', '.join(missing_notes_categories)}")
+                        validation['partial_report'] = True
+                        # Don't fail validation, but mark as partial
+                    
+                    # Check overall score
+                    if result.get('total_score') is None:
+                        validation['errors'].append("Overall score is null")
+                        validation['is_valid'] = False
+                        validation['scores_present'] = False
+                    
+                except Exception as e:
+                    validation['errors'].append(f"Failed to parse scores: {str(e)}")
+                    validation['is_valid'] = False
+                    validation['scores_present'] = False
+            
+            elif OLD_SCORER_AVAILABLE:
+                try:
+                    from scoring_utils import MIScorer
+                    component_scores = MIScorer.parse_feedback_scores(feedback)
+                    
+                    # Check for missing or zero scores
+                    for score in component_scores:
+                        if score.score is None:
+                            validation['errors'].append(f"Null score for: {score.component}")
+                            validation['is_valid'] = False
+                            validation['scores_present'] = False
+                        elif score.score == 0:
+                            validation['warnings'].append(f"Zero score for: {score.component}")
+                        
+                        if not score.feedback or score.feedback.strip() == '':
+                            validation['errors'].append(f"Missing feedback for: {score.component}")
+                            validation['notes_present'] = False
+                            validation['partial_report'] = True
+                    
+                except Exception as e:
+                    validation['errors'].append(f"Failed to parse scores: {str(e)}")
+                    validation['is_valid'] = False
+                    validation['scores_present'] = False
+            
+            # Log validation results
+            if validation['errors']:
+                logger.error(f"PDF validation failed: {validation['errors']}")
+            if validation['warnings']:
+                logger.warning(f"PDF validation warnings: {validation['warnings']}")
+            if validation['partial_report']:
+                logger.warning("PDF will be marked as partial report")
+            
+        except Exception as e:
+            validation['is_valid'] = False
+            validation['errors'].append(f"Validation exception: {str(e)}")
+            logger.error(f"PDF validation exception: {str(e)}")
+        
+        return validation

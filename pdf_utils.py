@@ -240,6 +240,9 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     """
     Generate a standardized PDF report with consistent MI feedback formatting.
     
+    Implements comprehensive validation to prevent incomplete reports with zero scores
+    or missing notes.
+    
     Args:
         student_name (str): Name of the student
         raw_feedback (str): The exact feedback text displayed in the app
@@ -248,7 +251,15 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         
     Returns:
         io.BytesIO: PDF buffer ready for download
+        
+    Raises:
+        ValueError: If validation fails critically
     """
+    import logging
+    from config_loader import ConfigLoader
+    
+    logger = logging.getLogger(__name__)
+    
     # Input validation
     try:
         validated_name = validate_student_name(student_name)
@@ -258,10 +269,31 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     # Sanitize feedback text for special characters
     clean_feedback = FeedbackValidator.sanitize_special_characters(raw_feedback)
 
-    # Validate feedback completeness
-    validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
-    if not validation['is_valid']:
-        print(f"Warning: Feedback may be incomplete - missing: {validation['missing_components']}")
+    # Comprehensive PDF payload validation with feature flag check
+    config = ConfigLoader()
+    flags = config.get_feature_flags()
+    
+    if flags.get('pdf_score_binding_fix', True):
+        pdf_validation = FeedbackValidator.validate_pdf_payload(clean_feedback, session_type)
+        
+        # Log validation results
+        if not pdf_validation['is_valid']:
+            logger.error(f"PDF validation FAILED for {student_name}: {pdf_validation['errors']}")
+            # Still generate but with warnings
+        if pdf_validation['warnings']:
+            logger.warning(f"PDF validation warnings for {student_name}: {pdf_validation['warnings']}")
+        if pdf_validation['partial_report']:
+            logger.warning(f"Generating PARTIAL report for {student_name}")
+        
+        # Track metrics
+        if not pdf_validation['is_valid'] or pdf_validation['partial_report']:
+            logger.error(f"ALERT: Incomplete PDF report generated for {student_name}")
+    else:
+        # Legacy validation
+        validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
+        if not validation['is_valid']:
+            logger.warning(f"Feedback may be incomplete - missing: {validation['missing_components']}")
+        pdf_validation = {'partial_report': False}
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -301,7 +333,10 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     )
 
     # Header with improved styling
-    elements.append(Paragraph(f"MI Performance Report - {session_type}", title_style))
+    report_title = f"MI Performance Report - {session_type}"
+    if pdf_validation.get('partial_report'):
+        report_title += " (PARTIAL)"
+    elements.append(Paragraph(report_title, title_style))
     elements.append(Spacer(1, 20))
 
     # Student info with enhanced styling
@@ -321,6 +356,18 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     if timestamp_match:
         timestamp = timestamp_match.group(1)
         elements.append(Paragraph(f"<b>Evaluation Date:</b> {timestamp}", info_style))
+    
+    # Add partial report warning if applicable
+    if pdf_validation.get('partial_report'):
+        warning_style = ParagraphStyle(
+            'Warning',
+            parent=styles['Normal'],
+            fontSize=12,
+            textColor=colors.red,
+            spaceAfter=6,
+            fontName='Helvetica-Bold'
+        )
+        elements.append(Paragraph("<b>⚠️ PARTIAL REPORT:</b> Some feedback elements may be incomplete", warning_style))
 
     # Add horizontal line with better styling
     line_style = ParagraphStyle('Line', parent=styles['Normal'], spaceBefore=10, spaceAfter=10)
@@ -369,7 +416,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     # Wrap all text fields in Paragraph for word wrapping
                     category_para = _make_para(category_name, cell_style)
                     assessment_para = _make_para(category_data['assessment'], cell_style)
-                    notes_para = _make_para(category_data.get('notes', ''), cell_style)
+                    
+                    # Add placeholder for missing notes
+                    notes = category_data.get('notes', '').strip()
+                    if not notes:
+                        notes = "[No note provided]"
+                        logger.warning(f"Missing notes for category: {category_name}")
+                    notes_para = _make_para(notes, cell_style)
                     
                     # Format scores as integers for user-facing display
                     points_int = int(round(category_data['points']))
@@ -479,7 +532,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     # Wrap all text fields in Paragraph for word wrapping
                     component_para = _make_para(component.title(), cell_style)
                     status_para = _make_para(details['status'], cell_style)
-                    feedback_para = _make_para(details['feedback'], cell_style)
+                    
+                    # Add placeholder for missing feedback
+                    feedback_text = details.get('feedback', '').strip()
+                    if not feedback_text:
+                        feedback_text = "[No note provided]"
+                        logger.warning(f"Missing feedback for component: {component}")
+                    feedback_para = _make_para(feedback_text, cell_style)
                     
                     # Format scores as integers for user-facing display
                     from scoring_utils import format_score_for_display

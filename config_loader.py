@@ -138,6 +138,38 @@ class ConfigLoader:
         """
         return self.config
     
+    def get_feature_flags(self) -> Dict[str, Any]:
+        """
+        Get feature flags configuration.
+        
+        Returns:
+            Dictionary with feature flags (with safe defaults if not configured)
+        """
+        defaults = {
+            'require_end_confirmation': True,
+            'pdf_score_binding_fix': True,
+            'feedback_data_validation': True,
+            'idle_grace_period_seconds': 300,
+            'enable_termination_metrics': True
+        }
+        
+        # Check environment variables for feature flags first
+        if os.environ.get('REQUIRE_END_CONFIRMATION'):
+            defaults['require_end_confirmation'] = os.environ.get('REQUIRE_END_CONFIRMATION').lower() == 'true'
+        if os.environ.get('PDF_SCORE_BINDING_FIX'):
+            defaults['pdf_score_binding_fix'] = os.environ.get('PDF_SCORE_BINDING_FIX').lower() == 'true'
+        if os.environ.get('FEEDBACK_DATA_VALIDATION'):
+            defaults['feedback_data_validation'] = os.environ.get('FEEDBACK_DATA_VALIDATION').lower() == 'true'
+        
+        # Override with config file values if present
+        if 'feature_flags' in self.config:
+            feature_flags = self.config['feature_flags']
+            for key in defaults.keys():
+                if key in feature_flags:
+                    defaults[key] = feature_flags[key]
+        
+        return defaults
+    
     def validate_required_env_vars(self, required_vars: list) -> Dict[str, bool]:
         """
         Validate that required environment variables are set.

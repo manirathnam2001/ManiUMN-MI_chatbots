@@ -26,5 +26,12 @@
         "smtp_log_file": "SMTP logs/email_backup.log",
         "smtp_max_log_size_mb": 10,
         "smtp_backup_count": 30
+    },
+    "feature_flags": {
+        "require_end_confirmation": true,
+        "pdf_score_binding_fix": true,
+        "feedback_data_validation": true,
+        "idle_grace_period_seconds": 300,
+        "enable_termination_metrics": true
     }
 }
