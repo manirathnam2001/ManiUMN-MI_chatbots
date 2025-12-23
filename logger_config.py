@@ -26,6 +26,8 @@ import sys
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from typing import Optional
 from pathlib import Path
+from datetime import datetime
+import pytz
 
 
 # Default log configuration
@@ -73,16 +75,58 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
-class StructuredFormatter(logging.Formatter):
+class CSTFormatter(logging.Formatter):
     """
-    Custom formatter for structured logging with consistent format.
+    Formatter that outputs timestamps in CST (America/Chicago) timezone.
     
-    Format: [TIMESTAMP] [LEVEL] [MODULE] [FUNCTION] - MESSAGE
+    All log timestamps will show CST or CDT depending on daylight saving time.
+    """
+    
+    def __init__(self, fmt=None, datefmt=None, style='%'):
+        """
+        Initialize CST formatter.
+        
+        Args:
+            fmt: Log format string
+            datefmt: Date format string (optional, defaults to CST format with timezone)
+            style: Format style (%, {, or $)
+        """
+        super().__init__(fmt, datefmt, style)
+        self.cst_tz = pytz.timezone('America/Chicago')
+    
+    def formatTime(self, record, datefmt=None):
+        """
+        Format timestamp in CST timezone with timezone indicator.
+        
+        Args:
+            record: Log record
+            datefmt: Date format string (optional)
+            
+        Returns:
+            Formatted timestamp string with timezone indicator
+        """
+        # Convert record timestamp to CST
+        ct = datetime.fromtimestamp(record.created, tz=pytz.UTC)
+        ct = ct.astimezone(self.cst_tz)
+        
+        if datefmt:
+            # Use custom format and append timezone
+            return ct.strftime(datefmt) + ' ' + ct.strftime('%Z')
+        else:
+            # Default format with timezone
+            return ct.strftime('%Y-%m-%d %I:%M:%S %p %Z')
+
+
+class StructuredFormatter(CSTFormatter):
+    """
+    Custom formatter for structured logging with consistent CST timestamps.
+    
+    Format: [TIMESTAMP CST/CDT] [LEVEL] [MODULE] [FUNCTION] - MESSAGE
     """
     
     def __init__(self, include_function: bool = True):
         """
-        Initialize structured formatter.
+        Initialize structured formatter with CST timezone support.
         
         Args:
             include_function: Whether to include function name in log output
@@ -94,7 +138,8 @@ class StructuredFormatter(logging.Formatter):
         else:
             fmt = '[%(asctime)s] [%(levelname)s] [%(name)s] - %(message)s'
         
-        super().__init__(fmt=fmt, datefmt='%Y-%m-%d %H:%M:%S')
+        # Initialize with CST formatter support
+        super().__init__(fmt=fmt, datefmt='%Y-%m-%d %I:%M:%S %p')
 
 
 def setup_logging(

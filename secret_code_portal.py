@@ -81,6 +81,38 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- Process failed email queue on startup ---
+# This runs once when the application starts to retry any queued emails
+try:
+    from config_loader import ConfigLoader
+    from email_utils import RobustEmailSender
+    from email_queue import EmailQueue
+    
+    config_loader = ConfigLoader()
+    config = config_loader.config
+    
+    # Check if queue processing is enabled
+    if config.get('email_config', {}).get('queue_retry_on_startup', True):
+        email_queue = EmailQueue(
+            queue_dir=config.get('logging', {}).get('smtp_log_directory', 'SMTP logs')
+        )
+        
+        pending_count = email_queue.get_queue_size()
+        if pending_count > 0:
+            logger.info(f"Processing {pending_count} queued emails from previous sessions")
+            
+            sender = RobustEmailSender(config)
+            result = sender.process_failed_queue()
+            
+            logger.info(
+                f"Queue processing complete: {result['succeeded']}/{result['processed']} succeeded, "
+                f"{result['still_failed']} still in queue"
+            )
+except Exception as e:
+    # Don't fail startup if queue processing fails
+    logger.warning(f"Failed to process email queue on startup: {e}")
+
+
 
 def _get_cached_client():
     """

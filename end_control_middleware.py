@@ -95,6 +95,8 @@ MI_COVERAGE_PATTERNS = {
 # These must be clear affirmative closure intents
 STUDENT_CONFIRMATION_PATTERNS = [
     r'\bno,?\s+(we\'re\s+)?done\b',
+    r'\bwe\'re\s+done\b',
+    r'\bi\s+think\s+we\'re\s+done\b',
     r'\bthat\'s\s+all\b',
     r'\bwe\s+can\s+end\b',
     r'\bno\s+more\s+to\s+discuss\b',
@@ -128,6 +130,104 @@ AMBIGUOUS_ENDING_PHRASES = [
     'yep',
     'cool',
 ]
+
+# Patient satisfaction patterns - indicates concerns are being addressed
+PATIENT_SATISFACTION_PATTERNS = [
+    r'\b(that\s+helps?|thank\s+you|makes?\s+sense|i\s+understand|feel\s+better)\b',
+    r'\b(less\s+worried|good\s+to\s+know|appreciate|helpful)\b',
+    r'\b(i\'ll\s+think\s+about\s+it|consider|might\s+try)\b',
+    r'\b(that\s+answers|you\'ve\s+explained|clearer\s+now)\b',
+    r'\b(that\'s\s+reassuring|makes\s+me\s+feel|sounds\s+reasonable)\b',
+]
+
+# Doctor closure signals - student wrapping up
+DOCTOR_CLOSURE_PATTERNS = [
+    r'\b(any\s+other\s+questions?|anything\s+else|is\s+there\s+more)\b',
+    r'\b(glad\s+i\s+could\s+help|happy\s+to\s+help)\b',
+    r'\b(take\s+care|feel\s+free\s+to\s+come\s+back)\b',
+    r'\b(let\s+me\s+know\s+if|don\'t\s+hesitate)\b',
+    r'\b(we\s+covered|discussed\s+everything)\b',
+    r'\b(before\s+we\s+wrap\s+up|before\s+we\s+end|before\s+we\s+finish)\b',
+]
+
+# Patient explicit end confirmation
+PATIENT_END_CONFIRMATION_PATTERNS = [
+    r'\b(no,?\s+that\'s\s+all|no\s+more\s+questions?)\b',
+    r'\b(i\'m\s+good|i\'m\s+all\s+set|nothing\s+else)\b',
+    r'\b(that\'s\s+everything|covered\s+everything)\b',
+    r'\b(ready\s+to\s+go|can\s+leave\s+now)\b',
+    r'\b(i\s+think\s+we\'re\s+done|i\s+think\s+that\'s\s+it)\b',
+]
+
+
+def detect_patient_satisfaction(chat_history: List[Dict]) -> bool:
+    """
+    Detect if patient shows satisfaction with the conversation.
+    
+    Analyzes assistant (patient) messages for satisfaction indicators.
+    
+    Args:
+        chat_history: List of chat messages with 'role' and 'content'
+        
+    Returns:
+        bool: True if patient satisfaction signals detected
+    """
+    # Look at recent assistant messages (patient responses)
+    satisfaction_count = 0
+    recent_messages = [msg for msg in chat_history[-6:] if msg.get('role') == 'assistant']
+    
+    for message in recent_messages:
+        content = message.get('content', '').lower()
+        for pattern in PATIENT_SATISFACTION_PATTERNS:
+            if re.search(pattern, content):
+                satisfaction_count += 1
+                break  # Count each message only once
+    
+    # Need at least 2 satisfaction signals
+    satisfied = satisfaction_count >= 2
+    if satisfied:
+        logger.debug(f"Patient satisfaction detected ({satisfaction_count} signals)")
+    return satisfied
+
+
+def detect_doctor_closure_signal(user_message: str) -> bool:
+    """
+    Detect if doctor (student) is signaling readiness to wrap up.
+    
+    Args:
+        user_message: The latest user (doctor) message
+        
+    Returns:
+        bool: True if doctor closure signal detected
+    """
+    message_lower = user_message.lower().strip()
+    
+    for pattern in DOCTOR_CLOSURE_PATTERNS:
+        if re.search(pattern, message_lower):
+            logger.debug(f"Doctor closure signal detected: '{user_message[:50]}...'")
+            return True
+    
+    return False
+
+
+def detect_patient_end_confirmation(assistant_message: str) -> bool:
+    """
+    Detect if patient explicitly confirms they have no more questions.
+    
+    Args:
+        assistant_message: The patient's response
+        
+    Returns:
+        bool: True if patient confirms readiness to end
+    """
+    message_lower = assistant_message.lower().strip()
+    
+    for pattern in PATIENT_END_CONFIRMATION_PATTERNS:
+        if re.search(pattern, message_lower):
+            logger.debug(f"Patient end confirmation detected: '{assistant_message[:50]}...'")
+            return True
+    
+    return False
 
 
 def get_conversation_state(conversation_context: Dict) -> ConversationState:
@@ -555,6 +655,264 @@ def should_continue_v3(
         'continue': True,
         'state': ConversationState.ACTIVE.value,
         'reason': 'Conversation continuing normally',
+        'confirmation_prompt': None,
+        'requires_confirmation': False,
+        'metrics': metrics
+    }
+
+
+def should_continue_v4(
+    conversation_context: Dict,
+    last_assistant_text: str,
+    last_user_text: Optional[str] = None
+) -> Dict:
+    """
+    Semantic-based conversation ending with mutual confirmation.
+    
+    This version removes hard turn limits as ending triggers and uses semantic signals:
+    - Patient satisfaction detection (concerns being addressed)
+    - Doctor closure signals (ready to wrap up)
+    - Mutual confirmation (both parties signal completion)
+    
+    The MIN_TURN_THRESHOLD is kept only as a minimum conversation length requirement,
+    NOT as a trigger to suggest ending.
+    
+    States:
+    - ACTIVE: Normal conversation
+    - PENDING_END_CONFIRMATION: Waiting for mutual confirmation
+    - AWAITING_SECOND_CONFIRMATION: Asking for second confirmation if ambiguous
+    - ENDED: Conversation concluded with mutual agreement
+    
+    Args:
+        conversation_context: Dictionary containing:
+            - chat_history: List of messages
+            - turn_count: Number of student turns
+            - end_control_state: Current state (optional, defaults to ACTIVE)
+            - confirmation_flag: Whether confirmation was explicitly given
+        last_assistant_text: The most recent assistant (patient) message
+        last_user_text: The most recent user (doctor) message (optional)
+        
+    Returns:
+        Dictionary with:
+            - continue: bool (True = continue conversation, False = allow ending)
+            - state: str (new conversation state)
+            - reason: str (explanation for the decision)
+            - confirmation_prompt: str (confirmation question if needed)
+            - requires_confirmation: bool (if confirmation prompt should be shown)
+            - metrics: dict (for logging/monitoring)
+    """
+    from config_loader import ConfigLoader
+    
+    # Load feature flags
+    config = ConfigLoader()
+    flags = config.get_feature_flags()
+    require_confirmation = flags.get('require_end_confirmation', True)
+    
+    chat_history = conversation_context.get('chat_history', [])
+    turn_count = conversation_context.get('turn_count', 0)
+    current_state = get_conversation_state(conversation_context)
+    confirmation_flag = conversation_context.get('confirmation_flag', False)
+    
+    timestamp = datetime.now().isoformat()
+    logger.info(f"[{timestamp}] Evaluating v4 (semantic): state={current_state.value}, turns={turn_count}")
+    
+    # Metrics for monitoring
+    metrics = {
+        'timestamp': timestamp,
+        'state': current_state.value,
+        'turn_count': turn_count,
+        'confirmation_flag': confirmation_flag,
+        'version': 'v4_semantic'
+    }
+    
+    # State: ENDED - conversation already concluded
+    if current_state == ConversationState.ENDED:
+        return {
+            'continue': False,
+            'state': ConversationState.ENDED.value,
+            'reason': 'Conversation already ended with mutual confirmation',
+            'confirmation_prompt': None,
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # State: PARKED - session idle/disconnected
+    if current_state == ConversationState.PARKED:
+        return {
+            'continue': True,
+            'state': ConversationState.PARKED.value,
+            'reason': 'Session parked, awaiting reconnect',
+            'confirmation_prompt': "Welcome back, doctor. Shall we continue?",
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # State: AWAITING_SECOND_CONFIRMATION
+    if current_state == ConversationState.AWAITING_SECOND_CONFIRMATION:
+        if last_user_text:
+            if detect_student_confirmation(last_user_text):
+                logger.info(f"[{timestamp}] Student confirmed ending on second ask")
+                set_conversation_state(conversation_context, ConversationState.ENDED)
+                conversation_context['confirmation_flag'] = True
+                metrics['confirmation_result'] = 'confirmed_second_ask'
+                
+                return {
+                    'continue': False,
+                    'state': ConversationState.ENDED.value,
+                    'reason': 'Student confirmed ending after second confirmation',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+            else:
+                logger.info(f"[{timestamp}] No clear confirmation after second ask, parking")
+                set_conversation_state(conversation_context, ConversationState.PARKED)
+                metrics['confirmation_result'] = 'parked_after_second_ask'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.PARKED.value,
+                    'reason': 'No clear confirmation after two asks, session parked',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+        else:
+            return {
+                'continue': True,
+                'state': ConversationState.AWAITING_SECOND_CONFIRMATION.value,
+                'reason': 'Awaiting student response to second confirmation',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+    
+    # State: PENDING_END_CONFIRMATION
+    if current_state == ConversationState.PENDING_END_CONFIRMATION:
+        if last_user_text:
+            if detect_student_confirmation(last_user_text):
+                logger.info(f"[{timestamp}] Student confirmed ending")
+                set_conversation_state(conversation_context, ConversationState.ENDED)
+                conversation_context['confirmation_flag'] = True
+                metrics['confirmation_result'] = 'confirmed_first_ask'
+                
+                return {
+                    'continue': False,
+                    'state': ConversationState.ENDED.value,
+                    'reason': 'Student confirmed ending',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+            elif is_ambiguous_response(last_user_text):
+                logger.info(f"[{timestamp}] Ambiguous response, asking second time")
+                set_conversation_state(conversation_context, ConversationState.AWAITING_SECOND_CONFIRMATION)
+                metrics['confirmation_result'] = 'ambiguous_first_response'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.AWAITING_SECOND_CONFIRMATION.value,
+                    'reason': 'Ambiguous response, requesting second confirmation',
+                    'confirmation_prompt': generate_patient_confirmation_prompt(first_ask=False),
+                    'requires_confirmation': True,
+                    'metrics': metrics
+                }
+            else:
+                logger.info(f"[{timestamp}] Student wants to continue, returning to ACTIVE")
+                set_conversation_state(conversation_context, ConversationState.ACTIVE)
+                metrics['confirmation_result'] = 'student_wants_continue'
+                
+                return {
+                    'continue': True,
+                    'state': ConversationState.ACTIVE.value,
+                    'reason': 'Student indicated they want to continue',
+                    'confirmation_prompt': None,
+                    'requires_confirmation': False,
+                    'metrics': metrics
+                }
+        else:
+            return {
+                'continue': True,
+                'state': ConversationState.PENDING_END_CONFIRMATION.value,
+                'reason': 'Awaiting student confirmation',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+    
+    # State: ACTIVE - Check for semantic ending conditions
+    # MIN_TURN_THRESHOLD is kept ONLY as minimum requirement, NOT as trigger
+    if turn_count < MIN_TURN_THRESHOLD:
+        logger.debug(f"Minimum turns not met ({turn_count}/{MIN_TURN_THRESHOLD})")
+        return {
+            'continue': True,
+            'state': ConversationState.ACTIVE.value,
+            'reason': f'Minimum turn threshold not met ({turn_count}/{MIN_TURN_THRESHOLD})',
+            'confirmation_prompt': None,
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # Check MI coverage (still required)
+    mi_coverage = check_mi_coverage(chat_history)
+    missing_components = [comp for comp, present in mi_coverage.items() if not present]
+    
+    if missing_components:
+        logger.debug(f"MI coverage incomplete: {missing_components}")
+        return {
+            'continue': True,
+            'state': ConversationState.ACTIVE.value,
+            'reason': f'MI coverage incomplete: {missing_components}',
+            'confirmation_prompt': None,
+            'requires_confirmation': False,
+            'metrics': metrics
+        }
+    
+    # NEW: Semantic-based ending detection
+    # Check if BOTH patient AND doctor signal readiness
+    patient_satisfied = detect_patient_satisfaction(chat_history)
+    doctor_closing = last_user_text and detect_doctor_closure_signal(last_user_text)
+    patient_confirms = detect_patient_end_confirmation(last_assistant_text)
+    
+    metrics['patient_satisfied'] = patient_satisfied
+    metrics['doctor_closing'] = doctor_closing
+    metrics['patient_confirms'] = patient_confirms
+    
+    # Only suggest ending when BOTH parties show readiness
+    if patient_satisfied and doctor_closing and patient_confirms:
+        logger.info(f"[{timestamp}] Mutual completion signals detected - requesting confirmation")
+        set_conversation_state(conversation_context, ConversationState.PENDING_END_CONFIRMATION)
+        metrics['trigger'] = 'mutual_semantic_signals'
+        
+        if not require_confirmation:
+            logger.warning(f"[{timestamp}] Confirmation disabled by flag, allowing end")
+            set_conversation_state(conversation_context, ConversationState.ENDED)
+            conversation_context['confirmation_flag'] = False
+            metrics['alert'] = 'confirmation_bypassed_by_flag'
+            
+            return {
+                'continue': False,
+                'state': ConversationState.ENDED.value,
+                'reason': 'Confirmation disabled by feature flag',
+                'confirmation_prompt': None,
+                'requires_confirmation': False,
+                'metrics': metrics
+            }
+        
+        return {
+            'continue': True,
+            'state': ConversationState.PENDING_END_CONFIRMATION.value,
+            'reason': 'Mutual completion signals detected, requesting confirmation',
+            'confirmation_prompt': generate_patient_confirmation_prompt(first_ask=True),
+            'requires_confirmation': True,
+            'metrics': metrics
+        }
+    
+    # Continue conversation normally
+    return {
+        'continue': True,
+        'state': ConversationState.ACTIVE.value,
+        'reason': 'Conversation continuing - no mutual completion signals',
         'confirmation_prompt': None,
         'requires_confirmation': False,
         'metrics': metrics

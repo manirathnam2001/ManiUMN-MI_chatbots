@@ -7,6 +7,7 @@ This module provides secure email sending functionality with:
 - Comprehensive error handling and logging
 - Support for PDF attachments
 - Daily rotating logs with retry tracking
+- Robust email delivery with queue persistence
 """
 
 import smtplib
@@ -19,6 +20,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from typing import Optional, Dict, Any, Union
+from pathlib import Path
 import io
 import time
 from datetime import datetime
@@ -473,6 +475,240 @@ class SecureEmailSender:
         return result
 
 
+class RobustEmailSender(SecureEmailSender):
+    """
+    Enhanced email sender with guaranteed delivery mechanisms.
+    
+    Extends SecureEmailSender with:
+    - Multiple retry attempts with exponential backoff
+    - Persistent queue for failed emails
+    - Guaranteed delivery or queueing
+    """
+    
+    MAX_RETRIES = 5
+    RETRY_DELAYS = [5, 10, 30, 60, 120]  # Exponential backoff in seconds
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None, 
+                 logger: Optional[logging.Logger] = None):
+        """
+        Initialize robust email sender.
+        
+        Args:
+            config: Email configuration dictionary (optional)
+            logger: Logger instance for logging operations (optional)
+        """
+        super().__init__(config, logger)
+        
+        # Load retry configuration from config
+        if config and 'email_config' in config:
+            email_config = config['email_config']
+            self.MAX_RETRIES = email_config.get('max_retries', self.MAX_RETRIES)
+            custom_delays = email_config.get('retry_delays')
+            if custom_delays:
+                self.RETRY_DELAYS = custom_delays
+        
+        # Initialize email queue
+        from email_queue import EmailQueue
+        log_dir = config.get('logging', {}).get('smtp_log_directory', 'SMTP logs') if config else 'SMTP logs'
+        self.email_queue = EmailQueue(queue_dir=log_dir)
+    
+    def send_with_guaranteed_delivery(self, 
+                                       pdf_buffer: io.BytesIO, 
+                                       filename: str, 
+                                       recipient: str,
+                                       student_name: str, 
+                                       session_type: str) -> Dict:
+        """
+        Send email with multiple retry attempts and queue for later if fails.
+        
+        This method ensures guaranteed delivery by:
+        1. Attempting to send with exponential backoff retries
+        2. Queuing the email persistently if all retries fail
+        3. Returning detailed status information
+        
+        Args:
+            pdf_buffer: BytesIO buffer containing PDF data
+            filename: Name of the PDF file
+            recipient: Email recipient address (Box email)
+            student_name: Name of the student
+            session_type: Type of MI session
+            
+        Returns:
+            Dictionary with:
+                - success: Boolean indicating if email was sent
+                - attempts: Number of attempts made
+                - queued: Boolean indicating if email was queued
+                - error: Error message if failed (None if successful)
+        """
+        from time_utils import get_cst_timestamp
+        
+        self.logger.info(f"Starting guaranteed delivery for {filename} to {recipient}")
+        
+        # Prepare email content
+        subject = f"{session_type} MI Practice Report - {student_name}"
+        body = f"""MI Practice Report Backup
+
+Student: {student_name}
+Session Type: {session_type}
+Report File: {filename}
+Timestamp: {get_cst_timestamp()}
+
+This is an automated backup of the MI practice feedback report.
+"""
+        
+        # Attempt sending with retries
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                self.logger.info(f"Attempt {attempt + 1}/{self.MAX_RETRIES} to send email")
+                
+                # Create a fresh buffer copy for each attempt
+                email_buffer = io.BytesIO(pdf_buffer.getvalue())
+                
+                # Try to send email
+                success = self.send_email_with_attachment(
+                    recipient=recipient,
+                    subject=subject,
+                    body=body,
+                    attachment_buffer=email_buffer,
+                    attachment_filename=filename,
+                    attachment_type='application/pdf'
+                )
+                
+                if success:
+                    self.logger.info(f"Email sent successfully on attempt {attempt + 1}")
+                    return {
+                        'success': True,
+                        'attempts': attempt + 1,
+                        'queued': False,
+                        'error': None
+                    }
+                    
+            except Exception as e:
+                self.logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                
+                # If not the last attempt, wait before retrying
+                if attempt < self.MAX_RETRIES - 1:
+                    delay = self.RETRY_DELAYS[min(attempt, len(self.RETRY_DELAYS) - 1)]
+                    self.logger.info(f"Waiting {delay} seconds before retry...")
+                    time.sleep(delay)
+        
+        # All retries failed - queue for later
+        self.logger.error(f"All {self.MAX_RETRIES} attempts failed. Queueing email for later.")
+        
+        try:
+            # Get PDF data
+            pdf_data = pdf_buffer.getvalue()
+            
+            # Add to persistent queue
+            entry_id = self.email_queue.add(
+                pdf_data=pdf_data,
+                filename=filename,
+                recipient=recipient,
+                student_name=student_name,
+                session_type=session_type
+            )
+            
+            self.logger.info(f"Email queued with ID: {entry_id}")
+            
+            return {
+                'success': False,
+                'attempts': self.MAX_RETRIES,
+                'queued': True,
+                'queue_id': entry_id,
+                'error': f'All {self.MAX_RETRIES} retry attempts failed. Email queued for later delivery.'
+            }
+            
+        except Exception as queue_error:
+            self.logger.error(f"Failed to queue email: {queue_error}")
+            return {
+                'success': False,
+                'attempts': self.MAX_RETRIES,
+                'queued': False,
+                'error': f'All retries failed and queueing failed: {queue_error}'
+            }
+    
+    def process_failed_queue(self) -> Dict[str, Any]:
+        """
+        Process all failed emails in the queue.
+        
+        This should be called on application startup to retry previously failed emails.
+        
+        Returns:
+            Dictionary with:
+                - total_pending: Number of emails in queue
+                - processed: Number of emails attempted
+                - succeeded: Number successfully sent
+                - still_failed: Number still in queue
+                - results: List of individual results
+        """
+        self.logger.info("Processing failed email queue...")
+        
+        pending_emails = self.email_queue.get_pending()
+        results = {
+            'total_pending': len(pending_emails),
+            'processed': 0,
+            'succeeded': 0,
+            'still_failed': 0,
+            'results': []
+        }
+        
+        for entry in pending_emails:
+            results['processed'] += 1
+            entry_id = entry['id']
+            
+            try:
+                # Load PDF data
+                pdf_path = Path(entry['pdf_path'])
+                if not pdf_path.exists():
+                    self.logger.error(f"PDF file not found for queue entry {entry_id}: {pdf_path}")
+                    results['still_failed'] += 1
+                    continue
+                
+                with open(pdf_path, 'rb') as f:
+                    pdf_data = f.read()
+                
+                # Create buffer
+                pdf_buffer = io.BytesIO(pdf_data)
+                
+                # Attempt to send (with reduced retries for queued emails)
+                old_max_retries = self.MAX_RETRIES
+                self.MAX_RETRIES = 3  # Use fewer retries for queued emails
+                
+                result = self.send_with_guaranteed_delivery(
+                    pdf_buffer=pdf_buffer,
+                    filename=entry['filename'],
+                    recipient=entry['recipient'],
+                    student_name=entry['student_name'],
+                    session_type=entry['session_type']
+                )
+                
+                self.MAX_RETRIES = old_max_retries  # Restore original retry count
+                
+                if result['success']:
+                    # Remove from queue
+                    self.email_queue.remove(entry_id)
+                    results['succeeded'] += 1
+                    self.logger.info(f"Successfully sent queued email {entry_id}")
+                else:
+                    # Increment retry count
+                    self.email_queue.increment_retry_count(entry_id)
+                    results['still_failed'] += 1
+                    self.logger.warning(f"Failed to send queued email {entry_id}")
+                
+                results['results'].append({
+                    'entry_id': entry_id,
+                    'filename': entry['filename'],
+                    'success': result['success']
+                })
+                
+            except Exception as e:
+                self.logger.error(f"Error processing queue entry {entry_id}: {e}")
+                results['still_failed'] += 1
+        
+        self.logger.info(f"Queue processing complete: {results['succeeded']}/{results['processed']} succeeded")
+        return results
+
+
 def send_box_backup_email(pdf_buffer: io.BytesIO,
                          filename: str,
                          student_name: str,
@@ -563,13 +799,14 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     smtp_logger = sender.setup_smtp_logger(log_dir, os.path.basename(log_file))
     
     # Prepare email content
+    from time_utils import get_cst_timestamp
     subject = f"{session_type} MI Practice Report - {student_name}"
     body = f"""MI Practice Report Backup
 
 Student: {student_name}
 Session Type: {session_type}
 Report File: {filename}
-Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Timestamp: {get_cst_timestamp()}
 
 This is an automated backup of the MI practice feedback report.
 """
