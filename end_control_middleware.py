@@ -95,6 +95,8 @@ MI_COVERAGE_PATTERNS = {
 # These must be clear affirmative closure intents
 STUDENT_CONFIRMATION_PATTERNS = [
     r'\bno,?\s+(we\'re\s+)?done\b',
+    r'\bwe\'re\s+done\b',
+    r'\bi\s+think\s+we\'re\s+done\b',
     r'\bthat\'s\s+all\b',
     r'\bwe\s+can\s+end\b',
     r'\bno\s+more\s+to\s+discuss\b',
