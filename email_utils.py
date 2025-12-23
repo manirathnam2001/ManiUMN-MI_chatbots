@@ -563,13 +563,14 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     smtp_logger = sender.setup_smtp_logger(log_dir, os.path.basename(log_file))
     
     # Prepare email content
+    from time_utils import get_cst_timestamp
     subject = f"{session_type} MI Practice Report - {student_name}"
     body = f"""MI Practice Report Backup
 
 Student: {student_name}
 Session Type: {session_type}
 Report File: {filename}
-Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Timestamp: {get_cst_timestamp()}
 
 This is an automated backup of the MI practice feedback report.
 """
