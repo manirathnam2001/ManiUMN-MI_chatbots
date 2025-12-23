@@ -111,6 +111,61 @@ python3 test_box_email_backup.py
 
 ---
 
+## 🛡️ Production-Ready Features ✨ **NEW**
+
+### Conversation End Confirmation
+
+To prevent conversations from ending prematurely without student consent, all bots now implement a **patient-persona confirmation flow**:
+
+- **Two-way confirmation**: Bot asks in patient voice "Before we wrap up, doctor, is there anything more you'd like to discuss about this case?"
+- **Explicit closure required**: Only affirmative responses like "No, we're done" or "That's all" will end the session
+- **Ambiguous handling**: If student gives ambiguous response (e.g., "thanks", "okay"), bot asks second confirmation
+- **Session parking**: If no clear confirmation after two asks, session is parked (not ended) and can be resumed
+- **Metrics tracking**: All termination paths are logged with alerts if sessions end without confirmation
+
+### PDF Report Validation
+
+All generated PDF feedback reports now include comprehensive validation to prevent incomplete reports:
+
+- **Pre-render validation**: Checks for missing scores, empty notes, and data completeness
+- **Placeholder text**: Missing notes are replaced with "[No note provided]"
+- **Partial report marking**: Incomplete PDFs are clearly marked as "(PARTIAL)"
+- **Score reconciliation**: Single canonical score source prevents mismatches
+- **Validation logging**: All failures are logged for monitoring
+
+### Feature Flags
+
+Control these features via `config.json`:
+
+```json
+{
+  "feature_flags": {
+    "require_end_confirmation": true,
+    "pdf_score_binding_fix": true,
+    "feedback_data_validation": true
+  }
+}
+```
+
+Or environment variables:
+```bash
+export REQUIRE_END_CONFIRMATION=true
+export PDF_SCORE_BINDING_FIX=true
+export FEEDBACK_DATA_VALIDATION=true
+```
+
+📖 **See [CONFIRMATION_AND_PDF_FIXES.md](CONFIRMATION_AND_PDF_FIXES.md) for complete documentation including state machine flow, metrics, rollout plan, and troubleshooting.**
+
+### Testing
+
+Run comprehensive tests:
+```bash
+# End confirmation and PDF validation tests
+python3 test_end_confirmation_v3.py
+
+# Existing integration tests
+python3 test_end_control_integration.py
+
 ## 🧬 HPV MI Practice App
 
 This app simulates a realistic patient interaction to practice Motivational Interviewing (MI) skills for HPV vaccination discussions. Users can play the role of a patient or provider to engage in a conversation that focuses on exploring thoughts and feelings about the HPV vaccine.
