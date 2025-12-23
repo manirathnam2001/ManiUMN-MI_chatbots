@@ -114,6 +114,13 @@ def initialize_session_state():
         st.session_state.conversation_state = "active"  # active or ended
     if "turn_count" not in st.session_state:
         st.session_state.turn_count = 0
+    # New state variables for confirmation flow
+    if "end_control_state" not in st.session_state:
+        st.session_state.end_control_state = "ACTIVE"
+    if "confirmation_flag" not in st.session_state:
+        st.session_state.confirmation_flag = False
+    if "termination_trigger" not in st.session_state:
+        st.session_state.termination_trigger = "unknown"
 
 
 def display_persona_selection(personas_dict, app_title):
@@ -440,35 +447,84 @@ CRITICAL INSTRUCTIONS:
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
             
-            # Use end-control middleware to determine if conversation should end
-            conversation_state = {
+            # Use end-control middleware v3 for production-ready confirmation
+            from end_control_middleware import should_continue_v3, log_termination_metrics
+            from config_loader import ConfigLoader
+            
+            config = ConfigLoader()
+            flags = config.get_feature_flags()
+            
+            # Build conversation context with all required fields
+            conversation_context = {
                 'chat_history': st.session_state.chat_history,
-                'turn_count': st.session_state.turn_count
+                'turn_count': st.session_state.turn_count,
+                'end_control_state': st.session_state.get('end_control_state', 'ACTIVE'),
+                'confirmation_flag': st.session_state.get('confirmation_flag', False),
+                'termination_trigger': st.session_state.get('termination_trigger', 'unknown')
             }
             
-            decision = should_continue(
-                conversation_state,
-                assistant_response,
-                user_prompt
-            )
-            
-            # Log the decision for diagnostics
-            log_conversation_trace(conversation_state, decision, {
-                'last_user_message': user_prompt,
-                'last_assistant_message': assistant_response,
-            })
-            
-            # Only end if all policy conditions are met
-            if not decision['continue']:
-                st.session_state.conversation_state = "ended"
-                st.info("💬 The conversation has concluded with all MI requirements met. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                logger.info(f"Conversation ended: {decision['reason']}")
-            elif detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
-                # Legacy ending detection as fallback, but still check minimum requirements
-                if st.session_state.turn_count >= 8:  # Reduced from 12 for legacy compatibility
+            # Use v3 if feature flag enabled, otherwise fallback to legacy
+            if flags.get('require_end_confirmation', True):
+                decision = should_continue_v3(
+                    conversation_context,
+                    assistant_response,
+                    user_prompt
+                )
+                
+                # Log metrics for monitoring
+                log_termination_metrics(decision.get('metrics', {}))
+                
+                # Update session state with new conversation state
+                st.session_state.end_control_state = decision['state']
+                st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
+                
+                # Handle confirmation prompt if needed
+                if decision.get('requires_confirmation') and decision.get('confirmation_prompt'):
+                    # Add confirmation prompt as system message (patient voice)
+                    confirmation_msg = decision['confirmation_prompt']
+                    st.session_state.chat_history.append({"role": "assistant", "content": confirmation_msg})
+                    with st.chat_message("assistant"):
+                        st.markdown(confirmation_msg)
+                    logger.info(f"Showing confirmation prompt: {confirmation_msg}")
+                
+                # Only end if decision says so
+                if not decision['continue']:
                     st.session_state.conversation_state = "ended"
-                    st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                    logger.info("Conversation ended via legacy detection")
+                    st.info("💬 The conversation has concluded with your confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                    logger.info(f"Conversation ended: {decision['reason']}")
+                elif decision['state'] == 'PARKED':
+                    st.warning("💬 Session paused. Reconnect to continue the conversation.")
+                    logger.info(f"Session parked: {decision['reason']}")
+            else:
+                # Legacy behavior with old should_continue
+                conversation_state = {
+                    'chat_history': st.session_state.chat_history,
+                    'turn_count': st.session_state.turn_count
+                }
+                
+                decision = should_continue(
+                    conversation_state,
+                    assistant_response,
+                    user_prompt
+                )
+                
+                # Log the decision for diagnostics
+                log_conversation_trace(conversation_state, decision, {
+                    'last_user_message': user_prompt,
+                    'last_assistant_message': assistant_response,
+                })
+                
+                # Only end if all policy conditions are met
+                if not decision['continue']:
+                    st.session_state.conversation_state = "ended"
+                    st.info("💬 The conversation has concluded with all MI requirements met. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                    logger.info(f"Conversation ended: {decision['reason']}")
+                elif detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
+                    # Legacy ending detection as fallback, but still check minimum requirements
+                    if st.session_state.turn_count >= 8:  # Reduced from 12 for legacy compatibility
+                        st.session_state.conversation_state = "ended"
+                        st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                        logger.info("Conversation ended via legacy detection")
 
 
 def handle_new_conversation_button():
@@ -479,6 +535,10 @@ def handle_new_conversation_button():
         st.session_state.feedback = None  # Clear feedback when starting new conversation
         st.session_state.conversation_state = "active"
         st.session_state.turn_count = 0
+        # Reset confirmation flow states
+        st.session_state.end_control_state = "ACTIVE"
+        st.session_state.confirmation_flag = False
+        st.session_state.termination_trigger = "unknown"
         st.rerun()
 
 
