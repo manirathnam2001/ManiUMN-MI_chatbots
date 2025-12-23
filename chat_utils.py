@@ -20,10 +20,10 @@ from feedback_template import FeedbackFormatter
 from scoring_utils import validate_student_name
 from pdf_utils import generate_pdf_report
 from end_control_middleware import (
-    should_continue,
+    should_continue_v4,  # Use v4 with semantic-based ending
     prevent_ambiguous_ending,
     log_conversation_trace,
-    END_TOKEN,
+    MIN_TURN_THRESHOLD,
 )
 
 # Configure logging for chat utilities
@@ -447,8 +447,8 @@ CRITICAL INSTRUCTIONS:
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
             
-            # Use end-control middleware v3 for production-ready confirmation
-            from end_control_middleware import should_continue_v3, log_termination_metrics
+            # Use end-control middleware v4 for semantic-based ending
+            from end_control_middleware import should_continue_v4, log_termination_metrics
             from config_loader import ConfigLoader
             
             config = ConfigLoader()
@@ -463,9 +463,9 @@ CRITICAL INSTRUCTIONS:
                 'termination_trigger': st.session_state.get('termination_trigger', 'unknown')
             }
             
-            # Use v3 if feature flag enabled, otherwise fallback to legacy
+            # Use v4 with semantic-based ending
             if flags.get('require_end_confirmation', True):
-                decision = should_continue_v3(
+                decision = should_continue_v4(
                     conversation_context,
                     assistant_response,
                     user_prompt
@@ -490,41 +490,35 @@ CRITICAL INSTRUCTIONS:
                 # Only end if decision says so
                 if not decision['continue']:
                     st.session_state.conversation_state = "ended"
-                    st.info("💬 The conversation has concluded with your confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                    st.info("💬 The conversation has concluded with mutual confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
                     logger.info(f"Conversation ended: {decision['reason']}")
                 elif decision['state'] == 'PARKED':
                     st.warning("💬 Session paused. Reconnect to continue the conversation.")
                     logger.info(f"Session parked: {decision['reason']}")
             else:
-                # Legacy behavior with old should_continue
-                conversation_state = {
-                    'chat_history': st.session_state.chat_history,
-                    'turn_count': st.session_state.turn_count
-                }
-                
-                decision = should_continue(
-                    conversation_state,
+                # Fallback: Use semantic-based v4 even if confirmation flag is disabled
+                # This ensures consistent behavior
+                decision = should_continue_v4(
+                    conversation_context,
                     assistant_response,
                     user_prompt
                 )
                 
                 # Log the decision for diagnostics
-                log_conversation_trace(conversation_state, decision, {
+                log_conversation_trace(conversation_context, decision, {
                     'last_user_message': user_prompt,
                     'last_assistant_message': assistant_response,
                 })
                 
-                # Only end if all policy conditions are met
+                # Update session state
+                st.session_state.end_control_state = decision['state']
+                st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
+                
+                # Only end if decision says not to continue
                 if not decision['continue']:
                     st.session_state.conversation_state = "ended"
-                    st.info("💬 The conversation has concluded with all MI requirements met. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                    st.info("💬 The conversation has concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
                     logger.info(f"Conversation ended: {decision['reason']}")
-                elif detect_conversation_ending(st.session_state.chat_history, st.session_state.turn_count):
-                    # Legacy ending detection as fallback, but still check minimum requirements
-                    if st.session_state.turn_count >= 8:  # Reduced from 12 for legacy compatibility
-                        st.session_state.conversation_state = "ended"
-                        st.info("💬 The conversation has naturally concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                        logger.info("Conversation ended via legacy detection")
 
 
 def handle_new_conversation_button():
@@ -546,6 +540,8 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
+    Uses semantic-based mutual confirmation logic instead of hard turn limits.
+    
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
@@ -554,19 +550,19 @@ def should_enable_feedback_button():
     # Only enable feedback if:
     # 1. A persona is selected
     # 2. There's a conversation history with at least a few exchanges
-    # 3. The conversation has ended OR we have enough turns (for backward compatibility)
+    # 3. The conversation has ended via mutual confirmation
     if st.session_state.selected_persona is None:
         return False
     
     if len(st.session_state.chat_history) < 4:  # At least 2 exchanges
         return False
     
-    # Enable if conversation ended (via end-control middleware)
+    # Primary condition: conversation ended via semantic mutual confirmation
     if st.session_state.conversation_state == "ended":
         return True
     
-    # For backward compatibility, also enable after minimum turns
-    # This allows manual ending if the conversation is long enough
+    # Fallback: Allow if minimum turns met (for manual ending if needed)
+    # But this should rarely be used with semantic ending
     if st.session_state.turn_count >= MIN_TURN_THRESHOLD:
         return True
     
