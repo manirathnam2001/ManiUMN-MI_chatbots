@@ -279,27 +279,37 @@ class FeedbackFormatter:
 
     @staticmethod
     def create_download_filename(student_name: str, session_type: str, persona: str = None) -> str:
-        """Create standardized filename for PDF downloads."""
-        from scoring_utils import validate_student_name
+        """
+        Create standardized filename for PDF downloads.
         
-        # Sanitize student name for filename
-        safe_name = validate_student_name(student_name)
+        Uses the new centralized naming convention: [Student]-[Bot]-[Persona] Feedback.pdf
         
-        # Create base filename
-        filename_parts = ["MI_Feedback_Report", safe_name]
+        Args:
+            student_name: Student's name
+            session_type: Session type (e.g., "HPV Vaccine", "OHI", "Perio", "Tobacco")
+            persona: Optional persona name
+            
+        Returns:
+            Standardized filename string
+        """
+        from pdf_utils import construct_feedback_filename
         
-        if persona:
-            filename_parts.append(persona)
-        
-        filename = "_".join(filename_parts) + ".pdf"
-        
-        # Session type specific prefix
-        if "HPV" in session_type.upper():
-            return f"HPV_{filename}"
-        elif "OHI" in session_type.upper():
-            return f"OHI_{filename}"
+        # Determine bot name from session type
+        session_upper = session_type.upper()
+        if 'HPV' in session_upper:
+            bot_name = 'HPV'
+        elif 'OHI' in session_upper or 'ORAL' in session_upper or 'DENTAL' in session_upper:
+            bot_name = 'OHI'
+        elif 'TOBACCO' in session_upper or 'SMOK' in session_upper or 'CESSATION' in session_upper:
+            bot_name = 'Tobacco'
+        elif 'PERIO' in session_upper or 'GUM' in session_upper or 'PERIODON' in session_upper:
+            bot_name = 'Perio'
         else:
-            return filename
+            # Fallback to extracting first word or using session type
+            bot_name = session_type.split()[0] if session_type else 'MI'
+        
+        # Use centralized function
+        return construct_feedback_filename(student_name, bot_name, persona)
 
 
 class FeedbackValidator:

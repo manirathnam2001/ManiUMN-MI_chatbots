@@ -45,6 +45,57 @@ except ImportError:
 from feedback_template import FeedbackValidator, FeedbackFormatter
 
 
+def construct_feedback_filename(student_name: str, bot_name: str, persona_name: str = None) -> str:
+    """
+    Construct standardized feedback filename following the convention:
+    [Student name]-[Bot name]-[Persona name] Feedback.pdf
+    
+    Examples:
+        - construct_feedback_filename("Mani", "OHI", "Charles") -> "Mani-OHI-Charles Feedback.pdf"
+        - construct_feedback_filename("John Doe", "HPV", "Diana") -> "John_Doe-HPV-Diana Feedback.pdf"
+        - construct_feedback_filename("Jane", "Perio", None) -> "Jane-Perio Feedback.pdf"
+    
+    Args:
+        student_name: Student's name
+        bot_name: Bot/session type name (e.g., "OHI", "HPV", "Perio", "Tobacco")
+        persona_name: Optional persona name (e.g., "Charles", "Diana", "Alex")
+        
+    Returns:
+        Sanitized filename string safe for filesystem use
+        
+    Raises:
+        ValueError: If student_name or bot_name is empty/invalid
+    """
+    # Validate and sanitize student name
+    if not student_name or not student_name.strip():
+        raise ValueError("Student name cannot be empty")
+    
+    # Validate bot name
+    if not bot_name or not bot_name.strip():
+        raise ValueError("Bot name cannot be empty")
+    
+    # Sanitize names for filesystem safety
+    # Replace spaces with underscores and remove special characters except hyphens
+    student_safe = re.sub(r'[^\w\s-]', '', student_name.strip())
+    student_safe = re.sub(r'\s+', '_', student_safe)
+    
+    bot_safe = re.sub(r'[^\w\s-]', '', bot_name.strip())
+    bot_safe = re.sub(r'\s+', '_', bot_safe)
+    
+    # Build filename parts
+    parts = [student_safe, bot_safe]
+    
+    if persona_name and persona_name.strip():
+        persona_safe = re.sub(r'[^\w\s-]', '', persona_name.strip())
+        persona_safe = re.sub(r'\s+', '_', persona_safe)
+        parts.append(persona_safe)
+    
+    # Construct filename: "[Student]-[Bot]-[Persona] Feedback.pdf"
+    filename = "-".join(parts) + " Feedback.pdf"
+    
+    return filename
+
+
 def _soft_wrap_long_tokens(text: str, max_len: int = 30) -> str:
     """
     Insert zero-width spaces into very long tokens to enable wrapping.
