@@ -189,9 +189,11 @@ class FeedbackFormatter:
                 table_data = []
                 
                 for category_name, category_data in result['categories'].items():
-                    points = category_data['points']
+                    # Format scores as integers for user-facing display
+                    points = int(round(category_data['points']))
                     max_points = category_data['max_points']
-                    score_display = f"{points} pts ({points/max_points*100:.0f}%)"
+                    percentage = int(round((category_data['points'] / max_points) * 100))
+                    score_display = f"{points} pts ({percentage}%)"
                     
                     table_data.append({
                         'component': category_name,
@@ -202,14 +204,17 @@ class FeedbackFormatter:
                 
                 return table_data
             elif OLD_SCORER_AVAILABLE:
-                # Fallback to old scorer
+                # Fallback to old scorer with integer formatting
+                from scoring_utils import format_score_for_display
                 component_scores = MIScorer.parse_feedback_scores(feedback)
                 table_data = []
                 
                 for score in component_scores:
-                    # Format score with proper parentheses and max score context
+                    # Format score as integers for user-facing display
                     max_score = MIScorer.COMPONENTS[score.component]
-                    score_display = f"{score.score:.1f} pts ({score.score/max_score*100:.0f}%)"
+                    points_int = format_score_for_display(score.score)
+                    percentage = int(round((score.score / max_score) * 100))
+                    score_display = f"{points_int} pts ({percentage}%)"
                     
                     table_data.append({
                         'component': score.component,

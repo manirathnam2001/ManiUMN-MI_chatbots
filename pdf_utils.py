@@ -320,10 +320,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     assessment_para = _make_para(category_data['assessment'], cell_style)
                     notes_para = _make_para(category_data.get('notes', ''), cell_style)
                     
+                    # Format scores as integers for user-facing display
+                    points_int = int(round(category_data['points']))
+                    
                     data.append([
                         category_para,
                         assessment_para,
-                        f"{category_data['points']}",
+                        f"{points_int}",
                         f"{category_data['max_points']}",
                         notes_para
                     ])
@@ -332,10 +335,14 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 total_label_para = _make_para('TOTAL SCORE', cell_style)
                 total_perf_para = _make_para(f"Overall: {evaluation_result['performance_band']}", cell_style)
                 
+                # Format total score and percentage as integers for display
+                total_score_int = int(round(evaluation_result['total_score']))
+                percentage_int = int(round(evaluation_result['percentage']))
+                
                 data.append([
                     total_label_para,
-                    f"{evaluation_result['percentage']:.1f}%",
-                    f"{evaluation_result['total_score']}",
+                    f"{percentage_int}%",
+                    f"{total_score_int}",
                     f"{evaluation_result['max_possible_score']}",
                     total_perf_para
                 ])
@@ -371,7 +378,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 
                 # Add conditional formatting for scores (row 1 to -2, column 2 is the Score column)
                 for row_idx, (category_name, category_data) in enumerate(evaluation_result['categories'].items(), start=1):
-                    points = category_data['points']
+                    # Use integer rounded values for comparison
+                    points = int(round(category_data['points']))
                     max_points = category_data['max_points']
                     
                     # Apply color based on score: green for full score, red for zero score
@@ -422,11 +430,16 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     status_para = _make_para(details['status'], cell_style)
                     feedback_para = _make_para(details['feedback'], cell_style)
                     
+                    # Format scores as integers for user-facing display
+                    from scoring_utils import format_score_for_display
+                    score_int = format_score_for_display(details['score'])
+                    max_score_int = format_score_for_display(details['max_score'])
+                    
                     data.append([
                         component_para,
                         status_para,
-                        f"{details['score']:.1f}",
-                        f"{details['max_score']:.1f}",
+                        f"{score_int}",
+                        f"{max_score_int}",
                         feedback_para
                     ])
                 
@@ -435,11 +448,16 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 total_perf_text = f"Overall Performance: {_get_performance_level(score_breakdown['percentage'], use_new_rubric=False)}"
                 total_perf_para = _make_para(total_perf_text, cell_style)
                 
+                # Format total score and percentage as integers
+                total_score_int = format_score_for_display(score_breakdown['total_score'])
+                total_possible_int = format_score_for_display(score_breakdown['total_possible'])
+                percentage_int = int(round(score_breakdown['percentage']))
+                
                 data.append([
                     total_label_para,
-                    f"{score_breakdown['percentage']:.1f}%",
-                    f"{score_breakdown['total_score']:.1f}",
-                    f"{score_breakdown['total_possible']:.1f}",
+                    f"{percentage_int}%",
+                    f"{total_score_int}",
+                    f"{total_possible_int}",
                     total_perf_para
                 ])
                 
