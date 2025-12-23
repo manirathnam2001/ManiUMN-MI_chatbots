@@ -45,6 +45,57 @@ except ImportError:
 from feedback_template import FeedbackValidator, FeedbackFormatter
 
 
+def construct_feedback_filename(student_name: str, bot_name: str, persona_name: str = None) -> str:
+    """
+    Construct standardized feedback filename following the convention:
+    [Student name]-[Bot name]-[Persona name] Feedback.pdf
+    
+    Examples:
+        - construct_feedback_filename("Mani", "OHI", "Charles") -> "Mani-OHI-Charles Feedback.pdf"
+        - construct_feedback_filename("John Doe", "HPV", "Diana") -> "John_Doe-HPV-Diana Feedback.pdf"
+        - construct_feedback_filename("Jane", "Perio", None) -> "Jane-Perio Feedback.pdf"
+    
+    Args:
+        student_name: Student's name
+        bot_name: Bot/session type name (e.g., "OHI", "HPV", "Perio", "Tobacco")
+        persona_name: Optional persona name (e.g., "Charles", "Diana", "Alex")
+        
+    Returns:
+        Sanitized filename string safe for filesystem use
+        
+    Raises:
+        ValueError: If student_name or bot_name is empty/invalid
+    """
+    # Validate and sanitize student name
+    if not student_name or not student_name.strip():
+        raise ValueError("Student name cannot be empty")
+    
+    # Validate bot name
+    if not bot_name or not bot_name.strip():
+        raise ValueError("Bot name cannot be empty")
+    
+    # Sanitize names for filesystem safety
+    # Replace spaces with underscores and remove special characters except hyphens
+    student_safe = re.sub(r'[^\w\s-]', '', student_name.strip())
+    student_safe = re.sub(r'\s+', '_', student_safe)
+    
+    bot_safe = re.sub(r'[^\w\s-]', '', bot_name.strip())
+    bot_safe = re.sub(r'\s+', '_', bot_safe)
+    
+    # Build filename parts
+    parts = [student_safe, bot_safe]
+    
+    if persona_name and persona_name.strip():
+        persona_safe = re.sub(r'[^\w\s-]', '', persona_name.strip())
+        persona_safe = re.sub(r'\s+', '_', persona_safe)
+        parts.append(persona_safe)
+    
+    # Construct filename: "[Student]-[Bot]-[Persona] Feedback.pdf"
+    filename = "-".join(parts) + " Feedback.pdf"
+    
+    return filename
+
+
 def _soft_wrap_long_tokens(text: str, max_len: int = 30) -> str:
     """
     Insert zero-width spaces into very long tokens to enable wrapping.
@@ -320,10 +371,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     assessment_para = _make_para(category_data['assessment'], cell_style)
                     notes_para = _make_para(category_data.get('notes', ''), cell_style)
                     
+                    # Format scores as integers for user-facing display
+                    points_int = int(round(category_data['points']))
+                    
                     data.append([
                         category_para,
                         assessment_para,
-                        f"{category_data['points']}",
+                        f"{points_int}",
                         f"{category_data['max_points']}",
                         notes_para
                     ])
@@ -332,10 +386,14 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 total_label_para = _make_para('TOTAL SCORE', cell_style)
                 total_perf_para = _make_para(f"Overall: {evaluation_result['performance_band']}", cell_style)
                 
+                # Format total score and percentage as integers for display
+                total_score_int = int(round(evaluation_result['total_score']))
+                percentage_int = int(round(evaluation_result['percentage']))
+                
                 data.append([
                     total_label_para,
-                    f"{evaluation_result['percentage']:.1f}%",
-                    f"{evaluation_result['total_score']}",
+                    f"{percentage_int}%",
+                    f"{total_score_int}",
                     f"{evaluation_result['max_possible_score']}",
                     total_perf_para
                 ])
@@ -371,7 +429,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 
                 # Add conditional formatting for scores (row 1 to -2, column 2 is the Score column)
                 for row_idx, (category_name, category_data) in enumerate(evaluation_result['categories'].items(), start=1):
-                    points = category_data['points']
+                    # Use integer rounded values for comparison
+                    points = int(round(category_data['points']))
                     max_points = category_data['max_points']
                     
                     # Apply color based on score: green for full score, red for zero score
@@ -422,11 +481,16 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     status_para = _make_para(details['status'], cell_style)
                     feedback_para = _make_para(details['feedback'], cell_style)
                     
+                    # Format scores as integers for user-facing display
+                    from scoring_utils import format_score_for_display
+                    score_int = format_score_for_display(details['score'])
+                    max_score_int = format_score_for_display(details['max_score'])
+                    
                     data.append([
                         component_para,
                         status_para,
-                        f"{details['score']:.1f}",
-                        f"{details['max_score']:.1f}",
+                        f"{score_int}",
+                        f"{max_score_int}",
                         feedback_para
                     ])
                 
@@ -435,11 +499,16 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 total_perf_text = f"Overall Performance: {_get_performance_level(score_breakdown['percentage'], use_new_rubric=False)}"
                 total_perf_para = _make_para(total_perf_text, cell_style)
                 
+                # Format total score and percentage as integers
+                total_score_int = format_score_for_display(score_breakdown['total_score'])
+                total_possible_int = format_score_for_display(score_breakdown['total_possible'])
+                percentage_int = int(round(score_breakdown['percentage']))
+                
                 data.append([
                     total_label_para,
-                    f"{score_breakdown['percentage']:.1f}%",
-                    f"{score_breakdown['total_score']:.1f}",
-                    f"{score_breakdown['total_possible']:.1f}",
+                    f"{percentage_int}%",
+                    f"{total_score_int}",
+                    f"{total_possible_int}",
                     total_perf_para
                 ])
                 

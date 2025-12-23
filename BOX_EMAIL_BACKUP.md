@@ -43,7 +43,9 @@ This document describes the Box email backup feature implemented for the OHI and
     "retry_attempts": 3,
     "retry_delay": 5,
     "ohi_box_email": "OHI_dir.zcdwwmukjr9ab546@u.box.com",
-    "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com"
+    "hpv_box_email": "HPV_Dir.yqz3brxlhcurhp2l@u.box.com",
+    "tobacco_box_email": "Tobacco.uyjxww6ze8qonvnx@u.box.com",
+    "perio_box_email": "Perio_D.5bdqj9rorjklmg30@u.box.com"
   },
   "logging": {
     "smtp_log_directory": "SMTP logs",
@@ -57,6 +59,8 @@ This document describes the Box email backup feature implemented for the OHI and
 ### Box Email Addresses
 - **OHI**: OHI_dir.zcdwwmukjr9ab546@u.box.com
 - **HPV**: HPV_Dir.yqz3brxlhcurhp2l@u.box.com
+- **Tobacco**: Tobacco.uyjxww6ze8qonvnx@u.box.com
+- **Perio**: Perio_D.5bdqj9rorjklmg30@u.box.com
 
 ## Architecture
 

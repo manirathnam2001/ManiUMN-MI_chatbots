@@ -436,6 +436,30 @@ class MIScorer:
         return breakdown
 
 
+def format_score_for_display(score: float) -> int:
+    """
+    Format score for user-facing display as integer.
+    
+    All user-facing outputs (PDFs, feedback tables, suggestions) should display
+    scores as whole numbers. This helper centralizes the rounding logic.
+    
+    Args:
+        score: Float score value
+        
+    Returns:
+        Integer score (rounded using standard rounding)
+    
+    Examples:
+        >>> format_score_for_display(7.5)
+        8
+        >>> format_score_for_display(3.333)
+        3
+        >>> format_score_for_display(6.666)
+        7
+    """
+    return int(round(score))
+
+
 def validate_student_name(name: str) -> str:
     """Validate and sanitize student name for file naming."""
     if not name or not name.strip():

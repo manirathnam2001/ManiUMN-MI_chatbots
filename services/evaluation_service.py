@@ -270,15 +270,21 @@ class EvaluationService:
         Returns:
             Formatted summary string
         """
+        # Format scores as integers for user-facing display
+        total_score = int(round(evaluation_result['total_score']))
+        max_score = evaluation_result['max_possible_score']
+        percentage = int(round(evaluation_result['percentage']))
+        
         lines = []
-        lines.append(f"Total Score: {evaluation_result['total_score']}/{evaluation_result['max_possible_score']}")
-        lines.append(f"Percentage: {evaluation_result['percentage']:.1f}%")
+        lines.append(f"Total Score: {total_score}/{max_score}")
+        lines.append(f"Percentage: {percentage}%")
         lines.append(f"Performance: {evaluation_result['performance_band']}")
         lines.append("")
         lines.append("Category Breakdown:")
         
         for category_name, category_data in evaluation_result['categories'].items():
-            points = category_data['points']
+            # Format category scores as integers
+            points = int(round(category_data['points']))
             max_points = category_data['max_points']
             assessment = category_data['assessment']
             lines.append(f"  {category_name}: {points}/{max_points} - {assessment}")

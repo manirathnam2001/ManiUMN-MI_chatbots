@@ -6,7 +6,37 @@ Tests the fix for duplicate components and score validation.
 
 import sys
 import traceback
-from scoring_utils import MIScorer
+from scoring_utils import MIScorer, format_score_for_display
+
+
+def test_integer_score_formatting():
+    """Test that format_score_for_display returns integer scores."""
+    print("🧪 Testing Integer Score Formatting")
+    
+    test_cases = [
+        (7.5, 8),
+        (3.333, 3),
+        (6.666, 7),
+        (0.0, 0),
+        (10.0, 10),
+        (2.499, 2),
+        (2.5, 2),  # Standard rounding: 2.5 rounds to 2 (banker's rounding)
+        (3.5, 4),  # Standard rounding: 3.5 rounds to 4
+    ]
+    
+    try:
+        for score_float, expected_int in test_cases:
+            result = format_score_for_display(score_float)
+            assert isinstance(result, int), f"Result should be int, got {type(result)}"
+            assert result == expected_int, f"format_score_for_display({score_float}) should be {expected_int}, got {result}"
+        
+        print(f"✅ All integer formatting tests passed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Integer formatting test failed: {e}")
+        traceback.print_exc()
+        return False
 
 
 def test_duplicate_components():
@@ -175,6 +205,7 @@ def main():
     print("🧪 Testing Scoring Consistency Fixes\n")
     
     tests = [
+        ("Integer Score Formatting", test_integer_score_formatting),
         ("Duplicate Components", test_duplicate_components),
         ("Score Consistency Validation", test_score_consistency_validation),
         ("No Conversation Zero Score", test_no_conversation_zero_score),
