@@ -15,6 +15,7 @@ reportlab
 # Utilities
 pytz
 python-dotenv
+python-dateutil
 
 # Google Sheets integration (for secret code portal)
 gspread
