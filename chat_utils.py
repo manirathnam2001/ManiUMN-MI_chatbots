@@ -99,6 +99,12 @@ def initialize_session_state():
         st.session_state.confirmation_flag = False
     if "termination_trigger" not in st.session_state:
         st.session_state.termination_trigger = "unknown"
+    # Mutual intent flags
+    if "user_end_intent" not in st.session_state:
+        st.session_state.user_end_intent = False
+    if "bot_end_ack" not in st.session_state:
+        st.session_state.bot_end_ack = False
+
 
 
 def display_persona_selection(personas_dict, app_title):
@@ -438,7 +444,9 @@ CRITICAL INSTRUCTIONS:
                 'turn_count': st.session_state.turn_count,
                 'end_control_state': st.session_state.get('end_control_state', 'ACTIVE'),
                 'confirmation_flag': st.session_state.get('confirmation_flag', False),
-                'termination_trigger': st.session_state.get('termination_trigger', 'unknown')
+                'termination_trigger': st.session_state.get('termination_trigger', 'unknown'),
+                'user_end_intent': st.session_state.get('user_end_intent', False),
+                'bot_end_ack': st.session_state.get('bot_end_ack', False)
             }
             
             # Use v4 with semantic-based ending
@@ -452,9 +460,11 @@ CRITICAL INSTRUCTIONS:
                 # Log metrics for monitoring
                 log_termination_metrics(decision.get('metrics', {}))
                 
-                # Update session state with new conversation state
+                # Update session state with new conversation state and flags
                 st.session_state.end_control_state = decision['state']
                 st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
+                st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
+                st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
                 
                 # Handle confirmation prompt if needed
                 if decision.get('requires_confirmation') and decision.get('confirmation_prompt'):
@@ -491,6 +501,8 @@ CRITICAL INSTRUCTIONS:
                 # Update session state
                 st.session_state.end_control_state = decision['state']
                 st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
+                st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
+                st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
                 
                 # Only end if decision says not to continue
                 if not decision['continue']:
@@ -511,6 +523,9 @@ def handle_new_conversation_button():
         st.session_state.end_control_state = "ACTIVE"
         st.session_state.confirmation_flag = False
         st.session_state.termination_trigger = "unknown"
+        # Reset mutual intent flags
+        st.session_state.user_end_intent = False
+        st.session_state.bot_end_ack = False
         st.rerun()
 
 
@@ -518,27 +533,22 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
-    CRITICAL: Only enable when conversation has TRULY concluded via mutual confirmation.
-    Do NOT enable based on turn count alone.
+    Per requirement: Button must always be enabled to work on click.
+    Only basic validation to ensure there's a conversation to provide feedback on.
     
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
-    # Only enable feedback if:
+    # Only basic checks to ensure there's something to provide feedback on:
     # 1. A persona is selected
     if st.session_state.selected_persona is None:
         return False
     
-    # 2. There's a conversation history with at least a few exchanges (minimum floor)
-    if len(st.session_state.chat_history) < 8:  # Minimum 4 exchanges
+    # 2. There's at least some conversation history
+    if len(st.session_state.chat_history) < 2:  # At least 1 exchange
         return False
     
-    # 3. ONLY enable if conversation state is ENDED (via mutual confirmation)
-    if st.session_state.get('conversation_state') == "ended":
-        return True
-    
-    # DO NOT enable based on turn count alone
-    # The old code had: if st.session_state.turn_count >= MIN_TURN_THRESHOLD: return True
-    # This is REMOVED to prevent premature ending
+    # Button is always enabled if basic conditions are met
+    return True
     
     return False

@@ -35,20 +35,22 @@ class TestEndConfirmationV3(unittest.TestCase):
         # Reset metrics before each test
         reset_termination_metrics()
         
-        # Sample complete conversation
+        # Sample complete conversation with semantic signals
+        # ASSISTANT (bot/patient) demonstrates MI-consistent responses
+        # USER (student/doctor) engages with the patient
+        # Note: MI coverage is checked in ASSISTANT messages
         self.complete_chat_history = [
             {"role": "assistant", "content": "Hello, I'm Alex, nice to meet you."},
             {"role": "user", "content": "Hi, I'd like to discuss oral hygiene."},
             {"role": "assistant", "content": "What brings you here today?"},  # open-ended
             {"role": "user", "content": "I have some concerns about flossing."},
-            {"role": "assistant", "content": "It sounds like you're worried about your flossing routine."},  # reflection
+            {"role": "assistant", "content": "It sounds like you're worried. That helps, thank you."},  # reflection + satisfaction
             {"role": "user", "content": "Yes, I don't do it regularly."},
-            {"role": "assistant", "content": "What would work best for your situation?"},  # autonomy
+            {"role": "assistant", "content": "You can decide what works best. I feel better."},  # autonomy + satisfaction
             {"role": "user", "content": "Maybe I could try a different approach."},
-            {"role": "assistant", "content": "That's a good idea. You know yourself best."},
-            {"role": "user", "content": "Thank you for the advice."},
-            {"role": "assistant", "content": "To summarize, we've talked about your concerns and options."},  # summary
-            {"role": "user", "content": "Yes, that's helpful."},
+            {"role": "assistant", "content": "To summarize, we've talked about flossing. I appreciate your help."},  # summary + satisfaction
+            {"role": "user", "content": "Any other questions?"},  # Doctor closure signal - MUST be last user
+            {"role": "assistant", "content": "No, that answers everything."},  # patient end confirmation
         ]
     
     @patch('config_loader.ConfigLoader')
@@ -62,7 +64,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         # Active conversation, conditions met
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns for semantic analysis
             'end_control_state': 'ACTIVE'
         }
         
@@ -96,7 +98,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'PENDING_END_CONFIRMATION'
         }
         
@@ -135,7 +137,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'AWAITING_SECOND_CONFIRMATION'
         }
         
@@ -159,7 +161,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'PENDING_END_CONFIRMATION'
         }
         
@@ -183,7 +185,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'PARKED'
         }
         
@@ -212,7 +214,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         # Simulate confirmed ending
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'PENDING_END_CONFIRMATION'
         }
         
@@ -245,7 +247,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'ACTIVE'
         }
         
@@ -272,7 +274,7 @@ class TestEndConfirmationV3(unittest.TestCase):
         
         conversation_context = {
             'chat_history': self.complete_chat_history,
-            'turn_count': self.MIN_TURN_THRESHOLD + 1,
+            'turn_count': max(6, self.MIN_TURN_THRESHOLD + 1),  # Ensure enough turns
             'end_control_state': 'ACTIVE'
         }
         
