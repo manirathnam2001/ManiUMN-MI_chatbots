@@ -16,6 +16,7 @@ All timestamps include timezone indicator (CST or CDT) for clarity.
 
 from datetime import datetime
 import pytz
+from dateutil import parser as dateutil_parser
 
 
 def get_cst_timestamp() -> str:
@@ -81,19 +82,73 @@ def get_current_utc_time():
 
 
 def convert_to_minnesota_time(utc_time_str):
-    """Convert UTC time string to CST timezone with AM/PM and timezone abbreviation.
+    """Convert time string to CST timezone with AM/PM and timezone abbreviation.
+    
+    Supports multiple input formats:
+    - 24-hour UTC format: 'YYYY-MM-DD HH:MM:SS'
+    - 12-hour with AM/PM: 'YYYY-MM-DD hh:MM:SS AM/PM'
+    - 12-hour with AM/PM and timezone: 'YYYY-MM-DD hh:MM:SS AM/PM TZ'
+    - ISO format: 'YYYY-MM-DDTHH:MM:SSZ'
+    - Already formatted Minnesota time (returned as-is if detected)
     
     Args:
-        utc_time_str: UTC time string in format 'YYYY-MM-DD HH:MM:SS'
+        utc_time_str: Time string in various formats
         
     Returns:
         CST time string in format 'YYYY-MM-DD HH:MM:SS AM/PM TIMEZONE'
         Example: '2025-10-07 10:50:21 PM CDT' or '2025-12-23 02:30:45 PM CST'
     """
     cst_tz = pytz.timezone('America/Chicago')
-    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
-    utc_dt = pytz.utc.localize(utc_dt)
-    cst_time = utc_dt.astimezone(cst_tz)
+    
+    # Check if already in Minnesota format (has AM/PM and CST/CDT)
+    # Pattern: YYYY-MM-DD HH:MM:SS AM/PM CST/CDT
+    if ('AM' in utc_time_str or 'PM' in utc_time_str) and ('CST' in utc_time_str or 'CDT' in utc_time_str):
+        # Already in the correct format, return as-is
+        return utc_time_str
+    
+    # Try parsing with specific formats first for better control
+    formats = [
+        '%Y-%m-%d %H:%M:%S',           # 24-hour UTC format
+        '%Y-%m-%d %I:%M:%S %p',        # 12-hour with AM/PM
+        '%Y-%m-%dT%H:%M:%SZ',          # ISO format with Z
+        '%Y-%m-%dT%H:%M:%S',           # ISO format without Z
+    ]
+    
+    parsed_dt = None
+    for fmt in formats:
+        try:
+            parsed_dt = datetime.strptime(utc_time_str, fmt)
+            # Successfully parsed, assume UTC if no timezone info
+            parsed_dt = pytz.utc.localize(parsed_dt)
+            break
+        except ValueError:
+            continue
+    
+    # If specific formats didn't work, try dateutil parser for flexible parsing
+    if parsed_dt is None:
+        try:
+            # Use dateutil parser for flexible parsing
+            parsed_dt = dateutil_parser.parse(utc_time_str)
+            
+            # If the parsed datetime is naive (no timezone), assume UTC
+            if parsed_dt.tzinfo is None:
+                parsed_dt = pytz.utc.localize(parsed_dt)
+            # If it has timezone info but it's CST/CDT, convert to aware datetime
+            elif hasattr(parsed_dt.tzinfo, 'zone'):
+                # Already has timezone, convert to CST
+                pass
+            else:
+                # Convert to UTC first if not already
+                parsed_dt = parsed_dt.astimezone(pytz.utc)
+        except (ValueError, TypeError) as e:
+            # If all parsing attempts fail, raise an informative error
+            raise ValueError(f"Unable to parse timestamp '{utc_time_str}'. Expected formats: "
+                           "'YYYY-MM-DD HH:MM:SS', 'YYYY-MM-DD hh:MM:SS AM/PM', "
+                           "'YYYY-MM-DD hh:MM:SS AM/PM TZ', or ISO format.") from e
+    
+    # Convert to CST
+    cst_time = parsed_dt.astimezone(cst_tz)
+    
     # Format with AM/PM and timezone abbreviation
     formatted_time = cst_time.strftime('%Y-%m-%d %I:%M:%S %p')
     tz_abbr = cst_time.strftime('%Z')
