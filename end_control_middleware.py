@@ -31,7 +31,7 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 # Configuration - can be overridden via environment variables
-MIN_TURN_THRESHOLD = int(os.environ.get('MI_MIN_TURN_THRESHOLD', '10'))
+MIN_TURN_THRESHOLD = int(os.environ.get('MI_MIN_TURN_THRESHOLD', '0'))  # Default 0 for no turn requirement
 END_TOKEN = os.environ.get('MI_END_TOKEN', '<<END>>')
 
 # Conversation states
@@ -44,9 +44,26 @@ class ConversationState(Enum):
     ENDED = "ENDED"
     PARKED = "PARKED"  # Session idle/disconnected but not ended
 
-# Configuration - can be overridden via environment variables
-MIN_TURN_THRESHOLD = int(os.environ.get('MI_MIN_TURN_THRESHOLD', '10'))
-END_TOKEN = os.environ.get('MI_END_TOKEN', '<<END>>')
+# Mutual-Intent Patterns for simple end condition
+# User end intent - phrases indicating student wants to finish
+USER_END_INTENT_PATTERNS = [
+    r'\b(bye|goodbye|see you|farewell)\b',
+    r'\b(thanks?|thank you|thx)\s*(for|so much)?\b',
+    r'\b(done|finished|complete|all set)\b',
+    r'\bthat\'s (all|it|everything)\b',
+    r'\bwe\'re (done|finished|good)\b',
+    r'\bi\'m (done|finished|good|all set)\b',
+]
+
+# Bot end acknowledgment - phrases indicating bot provided closing
+BOT_END_ACK_PATTERNS = [
+    r'\b(goodbye|bye|see you|take care)\b',
+    r'\byou\'re welcome\b',
+    r'\bglad (to help|i could help)\b',
+    r'\bfeel free to (come back|reach out)\b',
+    r'\bhave a (good|great|nice) (day|time)\b',
+    r'\b(best wishes|good luck|all the best)\b',
+]
 
 # MI Coverage requirements - phrases/patterns to detect in assistant messages
 MI_COVERAGE_PATTERNS = {
@@ -158,6 +175,133 @@ PATIENT_END_CONFIRMATION_PATTERNS = [
     r'\b(ready\s+to\s+go|can\s+leave\s+now)\b',
     r'\b(i\s+think\s+we\'re\s+done|i\s+think\s+that\'s\s+it)\b',
 ]
+
+
+def detect_user_end_intent(user_message: str) -> bool:
+    """
+    Detect if the user (student) is signaling intent to end the conversation.
+    
+    Looks for simple goodbye, thanks, or done phrases.
+    
+    Args:
+        user_message: The user's message
+        
+    Returns:
+        bool: True if user shows intent to end
+    """
+    if not user_message:
+        return False
+    
+    message_lower = user_message.lower().strip()
+    
+    for pattern in USER_END_INTENT_PATTERNS:
+        if re.search(pattern, message_lower):
+            logger.info(f"User end intent detected: '{user_message[:50]}...'")
+            return True
+    
+    return False
+
+
+def detect_bot_end_ack(bot_message: str) -> bool:
+    """
+    Detect if the bot (assistant) has provided a closing acknowledgment.
+    
+    Looks for goodbye, farewell, or closing phrases.
+    
+    Args:
+        bot_message: The bot's message
+        
+    Returns:
+        bool: True if bot provided closing acknowledgment
+    """
+    if not bot_message:
+        return False
+    
+    message_lower = bot_message.lower().strip()
+    
+    for pattern in BOT_END_ACK_PATTERNS:
+        if re.search(pattern, message_lower):
+            logger.info(f"Bot end acknowledgment detected: '{bot_message[:50]}...'")
+            return True
+    
+    return False
+
+
+def check_mutual_intent(
+    conversation_context: Dict,
+    last_assistant_text: str,
+    last_user_text: Optional[str] = None
+) -> Dict:
+    """
+    Early-exit check for mutual-intent end condition.
+    
+    This function provides a simple ending mechanism based on mutual intent:
+    - user_end_intent: Student signals they want to end (bye/thanks/done)
+    - bot_end_ack: Bot provides closing acknowledgment
+    
+    When BOTH flags are set, the conversation can end without requiring
+    turn thresholds or MI coverage checks.
+    
+    Args:
+        conversation_context: Dictionary containing:
+            - user_end_intent: Flag set when user signals end
+            - bot_end_ack: Flag set when bot acknowledges end
+        last_assistant_text: The most recent bot message
+        last_user_text: The most recent user message (optional)
+        
+    Returns:
+        Dictionary with:
+            - continue: bool (False if mutual intent detected)
+            - state: str (ENDED if mutual intent)
+            - reason: str (explanation)
+            - mutual_intent: bool (True if both flags set)
+    """
+    user_end_intent = conversation_context.get('user_end_intent', False)
+    bot_end_ack = conversation_context.get('bot_end_ack', False)
+    
+    # Check if user message signals end intent
+    if last_user_text and detect_user_end_intent(last_user_text):
+        user_end_intent = True
+        conversation_context['user_end_intent'] = True
+        logger.info("User end intent flag set")
+    
+    # Check if bot message provides closing acknowledgment
+    if last_assistant_text and detect_bot_end_ack(last_assistant_text):
+        bot_end_ack = True
+        conversation_context['bot_end_ack'] = True
+        logger.info("Bot end acknowledgment flag set")
+    
+    # If both intents are set, allow ending
+    if user_end_intent and bot_end_ack:
+        logger.info("Mutual intent detected - allowing conversation to end")
+        return {
+            'continue': False,
+            'state': ConversationState.ENDED.value,
+            'reason': 'Mutual intent: both student and bot signaled end',
+            'mutual_intent': True,
+            'requires_confirmation': False,
+            'confirmation_prompt': None,
+            'metrics': {
+                'user_end_intent': True,
+                'bot_end_ack': True,
+                'mutual_intent': True
+            }
+        }
+    
+    # Mutual intent not yet achieved
+    return {
+        'continue': True,
+        'state': ConversationState.ACTIVE.value,
+        'reason': f'Mutual intent not complete (user_end_intent={user_end_intent}, bot_end_ack={bot_end_ack})',
+        'mutual_intent': False,
+        'requires_confirmation': False,
+        'confirmation_prompt': None,
+        'metrics': {
+            'user_end_intent': user_end_intent,
+            'bot_end_ack': bot_end_ack,
+            'mutual_intent': False
+        }
+    }
 
 
 def detect_patient_satisfaction(chat_history: List[Dict]) -> bool:
@@ -766,6 +910,21 @@ def should_continue_v4(
             'requires_confirmation': False,
             'metrics': metrics
         }
+    
+    # EARLY EXIT: Check for mutual intent (simple end condition)
+    # This runs BEFORE other strict checks and allows ending without turn/MI requirements
+    mutual_intent_decision = check_mutual_intent(
+        conversation_context,
+        last_assistant_text,
+        last_user_text
+    )
+    
+    # If mutual intent is achieved, end immediately
+    if mutual_intent_decision['mutual_intent']:
+        logger.info(f"[{timestamp}] Mutual intent achieved - ending conversation")
+        set_conversation_state(conversation_context, ConversationState.ENDED)
+        conversation_context['confirmation_flag'] = True
+        return mutual_intent_decision
     
     # State: AWAITING_SECOND_CONFIRMATION
     if current_state == ConversationState.AWAITING_SECOND_CONFIRMATION:

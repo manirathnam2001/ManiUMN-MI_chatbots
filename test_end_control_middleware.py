@@ -149,6 +149,11 @@ def test_detect_end_token():
 def test_should_continue_min_turns():
     """Test minimum turn threshold enforcement."""
     try:
+        # If MIN_TURN_THRESHOLD is 0, skip this test
+        if MIN_TURN_THRESHOLD == 0:
+            print("✅ Minimum turn threshold is 0 (mutual-intent mode) - skipping turn threshold test")
+            return True
+        
         # Below threshold - should continue
         state = {
             'chat_history': [],
@@ -274,7 +279,8 @@ def test_prevent_ambiguous_ending():
 def test_configuration():
     """Test that configuration values are set correctly."""
     try:
-        assert MIN_TURN_THRESHOLD > 0, "MIN_TURN_THRESHOLD should be positive"
+        # MIN_TURN_THRESHOLD can be 0 or positive (0 allows mutual-intent only ending)
+        assert MIN_TURN_THRESHOLD >= 0, "MIN_TURN_THRESHOLD should be non-negative"
         assert END_TOKEN, "END_TOKEN should be defined"
         assert isinstance(MIN_TURN_THRESHOLD, int), "MIN_TURN_THRESHOLD should be integer"
         
