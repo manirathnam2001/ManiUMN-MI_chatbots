@@ -32,41 +32,18 @@ logger = logging.getLogger(__name__)
 
 def detect_conversation_ending(chat_history, turn_count):
     """
-    Detect if the conversation should naturally end.
+    DEPRECATED: This function should NOT be used to auto-end conversations.
+    Conversations should only end via mutual confirmation using semantic signals.
     
     Args:
-        chat_history: List of chat messages
-        turn_count: Current number of turns
+        chat_history: List of chat messages (not used)
+        turn_count: Current number of turns (not used)
         
     Returns:
-        bool: True if conversation should end, False otherwise
+        bool: Always returns False - do not use for ending detection
     """
-    # Check if we've reached reasonable conversation length (8-12 turns)
-    if turn_count >= 12:
-        return True
-    
-    # Check last assistant message for natural ending phrases
-    if len(chat_history) > 0:
-        last_message = chat_history[-1].get('content', '').lower()
-        
-        # Natural ending phrases that indicate conversation closure
-        ending_phrases = [
-            'thank you for',
-            'best of luck',
-            'take care',
-            'good luck',
-            'feel free to reach out',
-            'i appreciate your time',
-            'have a good day',
-            'talk to you later',
-            'see you',
-            'goodbye',
-            'bye',
-        ]
-        
-        if any(phrase in last_message for phrase in ending_phrases):
-            return True
-    
+    # DISABLED: Always return False
+    # Conversations must end via mutual semantic confirmation in end_control_middleware
     return False
 
 
@@ -540,30 +517,27 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
-    Uses semantic-based mutual confirmation logic instead of hard turn limits.
+    CRITICAL: Only enable when conversation has TRULY concluded via mutual confirmation.
+    Do NOT enable based on turn count alone.
     
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
-    from end_control_middleware import MIN_TURN_THRESHOLD
-    
     # Only enable feedback if:
     # 1. A persona is selected
-    # 2. There's a conversation history with at least a few exchanges
-    # 3. The conversation has ended via mutual confirmation
     if st.session_state.selected_persona is None:
         return False
     
-    if len(st.session_state.chat_history) < 4:  # At least 2 exchanges
+    # 2. There's a conversation history with at least a few exchanges (minimum floor)
+    if len(st.session_state.chat_history) < 8:  # Minimum 4 exchanges
         return False
     
-    # Primary condition: conversation ended via semantic mutual confirmation
-    if st.session_state.conversation_state == "ended":
+    # 3. ONLY enable if conversation state is ENDED (via mutual confirmation)
+    if st.session_state.get('conversation_state') == "ended":
         return True
     
-    # Fallback: Allow if minimum turns met (for manual ending if needed)
-    # But this should rarely be used with semantic ending
-    if st.session_state.turn_count >= MIN_TURN_THRESHOLD:
-        return True
+    # DO NOT enable based on turn count alone
+    # The old code had: if st.session_state.turn_count >= MIN_TURN_THRESHOLD: return True
+    # This is REMOVED to prevent premature ending
     
     return False

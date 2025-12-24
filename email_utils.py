@@ -517,7 +517,8 @@ class RobustEmailSender(SecureEmailSender):
                                        filename: str, 
                                        recipient: str,
                                        student_name: str, 
-                                       session_type: str) -> Dict:
+                                       session_type: str,
+                                       progress_callback: Optional[callable] = None) -> Dict:
         """
         Send email with multiple retry attempts and queue for later if fails.
         
@@ -525,6 +526,7 @@ class RobustEmailSender(SecureEmailSender):
         1. Attempting to send with exponential backoff retries
         2. Queuing the email persistently if all retries fail
         3. Returning detailed status information
+        4. Calling progress callback for UI updates
         
         Args:
             pdf_buffer: BytesIO buffer containing PDF data
@@ -532,6 +534,7 @@ class RobustEmailSender(SecureEmailSender):
             recipient: Email recipient address (Box email)
             student_name: Name of the student
             session_type: Type of MI session
+            progress_callback: Optional callback(attempt, max_attempts, status)
             
         Returns:
             Dictionary with:
@@ -556,8 +559,13 @@ Timestamp: {get_cst_timestamp()}
 This is an automated backup of the MI practice feedback report.
 """
         
+        last_error = None
+        
         # Attempt sending with retries
         for attempt in range(self.MAX_RETRIES):
+            if progress_callback:
+                progress_callback(attempt + 1, self.MAX_RETRIES, 'trying')
+            
             try:
                 self.logger.info(f"Attempt {attempt + 1}/{self.MAX_RETRIES} to send email")
                 
@@ -576,24 +584,34 @@ This is an automated backup of the MI practice feedback report.
                 
                 if success:
                     self.logger.info(f"Email sent successfully on attempt {attempt + 1}")
+                    if progress_callback:
+                        progress_callback(attempt + 1, self.MAX_RETRIES, 'success')
                     return {
                         'success': True,
                         'attempts': attempt + 1,
                         'queued': False,
                         'error': None
                     }
+                else:
+                    last_error = "Email sending returned False"
                     
             except Exception as e:
+                last_error = str(e)
                 self.logger.warning(f"Attempt {attempt + 1} failed: {e}")
                 
                 # If not the last attempt, wait before retrying
                 if attempt < self.MAX_RETRIES - 1:
                     delay = self.RETRY_DELAYS[min(attempt, len(self.RETRY_DELAYS) - 1)]
                     self.logger.info(f"Waiting {delay} seconds before retry...")
+                    if progress_callback:
+                        progress_callback(attempt + 1, self.MAX_RETRIES, f'waiting {delay}s')
                     time.sleep(delay)
         
         # All retries failed - queue for later
         self.logger.error(f"All {self.MAX_RETRIES} attempts failed. Queueing email for later.")
+        
+        if progress_callback:
+            progress_callback(self.MAX_RETRIES, self.MAX_RETRIES, 'queuing')
         
         try:
             # Get PDF data
@@ -615,7 +633,7 @@ This is an automated backup of the MI practice feedback report.
                 'attempts': self.MAX_RETRIES,
                 'queued': True,
                 'queue_id': entry_id,
-                'error': f'All {self.MAX_RETRIES} retry attempts failed. Email queued for later delivery.'
+                'error': last_error or f'All {self.MAX_RETRIES} retry attempts failed. Email queued for later delivery.'
             }
             
         except Exception as queue_error:

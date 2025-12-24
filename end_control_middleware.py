@@ -262,11 +262,16 @@ def set_conversation_state(conversation_context: Dict, state: ConversationState)
 
 def can_suggest_ending(conversation_state: Dict) -> bool:
     """
-    Determine if bot can suggest ending based on conversation completeness.
+    Determine if bot can suggest ending based on SEMANTIC signals, not turn count.
+    
+    CRITICAL: Do NOT use MIN_TURN_THRESHOLD as a trigger to suggest ending.
+    Only use it as a minimum floor.
     
     Checks:
-    - Minimum turn threshold
+    - Minimum turn threshold (as a floor only, not a trigger)
     - MI coverage requirements
+    - Doctor has offered closure (semantic signal)
+    - Patient shows satisfaction (semantic signal)
     
     Args:
         conversation_state: Dictionary containing chat_history and turn_count
@@ -277,12 +282,12 @@ def can_suggest_ending(conversation_state: Dict) -> bool:
     chat_history = conversation_state.get('chat_history', [])
     turn_count = conversation_state.get('turn_count', 0)
     
-    # Check minimum turns
+    # Minimum floor - need at least minimum exchanges
     if turn_count < MIN_TURN_THRESHOLD:
         logger.debug(f"Cannot suggest ending: only {turn_count}/{MIN_TURN_THRESHOLD} turns")
         return False
     
-    # Check MI coverage
+    # Check MI coverage (still required)
     mi_coverage = check_mi_coverage(chat_history)
     missing_components = [comp for comp, present in mi_coverage.items() if not present]
     
@@ -290,7 +295,22 @@ def can_suggest_ending(conversation_state: Dict) -> bool:
         logger.debug(f"Cannot suggest ending: missing MI components {missing_components}")
         return False
     
-    logger.debug("All conditions met for suggesting ending")
+    # NEW: Only suggest ending when doctor has offered closure AND patient seems satisfied
+    # Get last user message to check for doctor closure
+    user_messages = [m for m in chat_history if m.get('role') == 'user']
+    if not user_messages:
+        return False
+    
+    last_user_message = user_messages[-1].get('content', '')
+    if not detect_doctor_closure_signal(last_user_message):
+        logger.debug("Cannot suggest ending: doctor has not offered closure")
+        return False
+    
+    if not detect_patient_satisfaction(chat_history):
+        logger.debug("Cannot suggest ending: patient has not shown satisfaction")
+        return False
+    
+    logger.debug("All semantic conditions met for suggesting ending")
     return True
 
 

@@ -347,43 +347,89 @@ if st.session_state.selected_persona is not None:
                 student_name, "HPV", st.session_state.selected_persona
             )
             
-            # Send email backup to Box (fail-safe - won't break if it fails)
-            if 'email_backup_sent' not in st.session_state:
-                st.session_state.email_backup_sent = False
-                
-            if not st.session_state.email_backup_sent:
-                try:
-                    from pdf_utils import send_pdf_to_box
-                    with st.spinner("Backing up report to Box..."):
-                        email_result = send_pdf_to_box(
-                            pdf_buffer=pdf_buffer,
-                            filename=download_filename,
-                            student_name=validated_name,
-                            session_type="HPV Vaccine"
-                        )
-                        
-                        if email_result['success']:
-                            st.success("✅ Report successfully backed up to Box!")
-                            st.session_state.email_backup_sent = True
-                        else:
-                            st.warning(f"⚠️ Box backup failed after {email_result['attempts']} attempts. "
-                                     "Your PDF is still available for download below.")
-                            if email_result.get('error'):
-                                st.info(f"Details: {email_result['error']}")
-                except Exception as e:
-                    st.warning(f"⚠️ Box backup unavailable. Your PDF is still available for download below.")
-                    # Don't show technical error to user, but log it
-                    import logging
-                    logging.error(f"Email backup error: {e}")
+            # Email backup with robust delivery
+            if 'email_backup_status' not in st.session_state:
+                st.session_state.email_backup_status = 'pending'
+            if 'email_backup_result' not in st.session_state:
+                st.session_state.email_backup_result = None
             
-            # Add download button with enhanced label
-            st.download_button(
-                label="📥 Download HPV MI Performance Report (PDF)",
-                data=pdf_buffer.getvalue(),
-                file_name=download_filename,
-                mime="application/pdf",
-                help="Download your complete feedback report as a PDF"
-            )
+            # Email backup section
+            if st.session_state.email_backup_status == 'pending':
+                st.markdown("### 📧 Backing Up Report to Box")
+                
+                progress_placeholder = st.empty()
+                status_placeholder = st.empty()
+                
+                from email_utils import RobustEmailSender
+                from config_loader import ConfigLoader
+                
+                config = ConfigLoader()
+                email_config = config.get_email_config()
+                
+                # Get HPV Box email
+                box_email = email_config.get('hpv_box_email')
+                
+                if box_email:
+                    sender = RobustEmailSender(config.config)
+                    
+                    def update_progress(attempt, max_attempts, status):
+                        progress = attempt / max_attempts
+                        progress_placeholder.progress(progress)
+                        status_placeholder.text(f"Attempt {attempt}/{max_attempts}: {status}")
+                    
+                    result = sender.send_with_guaranteed_delivery(
+                        pdf_buffer=pdf_buffer,
+                        filename=download_filename,
+                        recipient=box_email,
+                        student_name=validated_name,
+                        session_type="HPV Vaccine",
+                        progress_callback=update_progress
+                    )
+                    
+                    st.session_state.email_backup_result = result
+                    
+                    if result['success']:
+                        st.session_state.email_backup_status = 'success'
+                        progress_placeholder.empty()
+                        status_placeholder.empty()
+                        st.success(f"✅ Report backed up to Box successfully! (Attempt {result['attempts']})")
+                    elif result.get('queued'):
+                        st.session_state.email_backup_status = 'queued'
+                        progress_placeholder.empty()
+                        status_placeholder.empty()
+                        st.warning(f"⚠️ Email queued for later delivery. Will retry automatically.")
+                    else:
+                        st.session_state.email_backup_status = 'failed'
+                        progress_placeholder.empty()
+                        status_placeholder.empty()
+                else:
+                    st.session_state.email_backup_status = 'no_email'
+                    st.warning("⚠️ Box email not configured. Report will be available for download only.")
+            
+            # Handle failed status
+            if st.session_state.email_backup_status == 'failed':
+                st.error("❌ Email backup failed after multiple attempts.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Retry Backup"):
+                        st.session_state.email_backup_status = 'pending'
+                        st.session_state.email_backup_result = None
+                        st.rerun()
+                with col2:
+                    if st.button("⚠️ Skip & Download Only"):
+                        st.session_state.email_backup_status = 'skipped'
+                        st.rerun()
+            
+            # Show download button only after backup is resolved
+            if st.session_state.email_backup_status in ['success', 'queued', 'skipped', 'no_email']:
+                st.markdown("### 📄 Download Report")
+                st.download_button(
+                    label="📥 Download HPV MI Performance Report (PDF)",
+                    data=pdf_buffer.getvalue(),
+                    file_name=download_filename,
+                    mime="application/pdf",
+                    help="Download your complete feedback report as a PDF"
+                )
                 
         except ValueError as e:
             st.error(f"Error generating PDF: {e}")
