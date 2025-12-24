@@ -133,12 +133,9 @@ def convert_to_minnesota_time(utc_time_str):
             # If the parsed datetime is naive (no timezone), assume UTC
             if parsed_dt.tzinfo is None:
                 parsed_dt = pytz.utc.localize(parsed_dt)
-            # If it has timezone info but it's CST/CDT, convert to aware datetime
-            elif hasattr(parsed_dt.tzinfo, 'zone'):
-                # Already has timezone, convert to CST
-                pass
             else:
-                # Convert to UTC first if not already
+                # Has timezone info - ensure it's properly converted to UTC for consistency
+                # before converting to CST
                 parsed_dt = parsed_dt.astimezone(pytz.utc)
         except (ValueError, TypeError) as e:
             # If all parsing attempts fail, raise an informative error
