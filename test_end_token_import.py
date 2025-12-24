@@ -47,7 +47,7 @@ def test_end_token_import():
         # Import END_TOKEN from end_control_middleware
         from end_control_middleware import END_TOKEN
         
-        # Create a test f-string similar to the one in chat_utils.py line 345
+        # Create a test f-string similar to the one in chat_utils.py line 346
         test_string = f"include the end token: {END_TOKEN}"
         
         assert END_TOKEN in test_string, "END_TOKEN should be in the formatted string"
