@@ -1,23 +1,26 @@
 """
 End-Control Middleware for MI Chatbots
 
-This module implements hardened conversation ending logic with two-way confirmation
-to prevent premature session termination. It ensures conversations only conclude 
-when all policy conditions are met:
+This module implements conversation ending logic with two paths:
 
-1. Minimum turn threshold reached (configurable, default 10)
+Path 1: Mutual Intent (default, no requirements)
+- User signals end (bye/thanks/done) AND bot acknowledges (goodbye/you're welcome)
+- Immediate ending without turn/MI requirements
+
+Path 2: Semantic-Based (traditional, with requirements)
+1. Minimum turn threshold (configurable, default 0 for mutual-intent mode)
 2. MI coverage requirements met (open-ended Q, reflection, autonomy, summary)
-3. Two-step ending confirmation:
-   - Bot suggests ending (END_SUGGESTED state)
-   - Student explicitly confirms closure
-4. Assistant emits explicit end token (<<END>>)
+3. Semantic signals (doctor closure + patient satisfaction)
+4. Two-step confirmation flow
 
 The middleware provides detailed tracing for diagnosing future incidents.
 
 Conversation States:
 - ACTIVE: Normal conversation in progress
-- END_SUGGESTED: Bot has proposed ending, awaiting student confirmation
-- ENDED: Conversation concluded with student confirmation
+- PENDING_END_CONFIRMATION: Awaiting student confirmation
+- AWAITING_SECOND_CONFIRMATION: Asking for second confirmation if ambiguous
+- ENDED: Conversation concluded
+- PARKED: Session idle/disconnected but not ended
 """
 
 import os

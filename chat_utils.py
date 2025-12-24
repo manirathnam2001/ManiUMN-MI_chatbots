@@ -546,7 +546,8 @@ def should_enable_feedback_button():
         return False
     
     # 2. There's a conversation history with at least a few exchanges (minimal sanity check)
-    if len(st.session_state.chat_history) < 4:  # Minimum 2 exchanges
+    # Note: 4 messages = 2 full exchanges (2 user + 2 assistant messages)
+    if len(st.session_state.chat_history) < 4:
         return False
     
     # 3. Enable if conversation state is ENDED
