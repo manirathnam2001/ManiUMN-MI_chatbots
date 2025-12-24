@@ -49,10 +49,10 @@ Modified `handle_chat_input()` to:
 
 #### Feedback Button Logic
 Updated `should_enable_feedback_button()`:
-- **Removed**: Turn-based gating (previously required MIN_TURN_THRESHOLD turns)
-- **Reduced**: Minimum exchanges from 8 to 4 (minimal sanity check)
-- **Added**: Enable button when mutual intent flags are both set
-- **Kept**: Enable button when conversation_state=="ended"
+- **Changed**: Button is now **always enabled** when persona selected + conversation exists
+- **Removed**: All gating based on turn count, mutual intent, or ended state
+- **Kept**: Minimal validation (persona selected + at least 1 exchange)
+- **Rationale**: Students can request feedback whenever they want
 
 #### Flag Reset
 Updated `handle_new_conversation_button()`:
@@ -113,6 +113,11 @@ Updated `handle_new_conversation_button()`:
   - MI coverage complete
   - Doctor closure + patient satisfaction detected
   - Confirmation flow completes
+  
+- **Feedback button is always enabled** (clickable at any time)
+  - Only requires: persona selected + at least 1 exchange
+  - No turn count or end condition requirements
+  - Students can request feedback whenever they want
   
 - Feedback button enables when:
   1. conversation_state=="ended", OR

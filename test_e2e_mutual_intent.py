@@ -79,24 +79,19 @@ def test_feedback_button_logic():
     # Simulate the logic from should_enable_feedback_button
     st = MockSessionState()
     
-    # Check conditions
+    # Check conditions (NEW: always enabled with basic checks)
     has_persona = st.selected_persona is not None
-    min_exchanges = len(st.chat_history) >= 4
-    is_ended = st.get('conversation_state') == "ended"
-    has_mutual_intent = st.get('user_end_intent', False) and st.get('bot_end_ack', False)
+    has_conversation = len(st.chat_history) >= 2  # At least 1 exchange
     
-    should_enable = has_persona and min_exchanges and (is_ended or has_mutual_intent)
+    should_enable = has_persona and has_conversation
     
     print(f"Has persona: {has_persona}")
-    print(f"Min exchanges: {min_exchanges} (history length: {len(st.chat_history)})")
-    print(f"Is ended: {is_ended}")
-    print(f"Has mutual intent: {has_mutual_intent}")
-    print(f"  - User end intent: {st.get('user_end_intent', False)}")
-    print(f"  - Bot end ack: {st.get('bot_end_ack', False)}")
+    print(f"Has conversation: {has_conversation} (history length: {len(st.chat_history)})")
     print(f"\nShould enable button: {should_enable}")
+    print(f"Note: Button is now always enabled when persona is selected and conversation exists")
     
     if should_enable:
-        print("\n✅ SUCCESS: Feedback button would be enabled with mutual intent")
+        print("\n✅ SUCCESS: Feedback button would be enabled")
         return True
     else:
         print("\n❌ FAIL: Feedback button would not be enabled")

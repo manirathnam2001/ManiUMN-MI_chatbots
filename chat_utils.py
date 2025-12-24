@@ -533,35 +533,22 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
-    Enables when:
-    1. Conversation state is "ended" (via mutual confirmation in middleware)
-    2. OR both mutual intent flags are set (user_end_intent AND bot_end_ack)
+    Per requirement: Button must always be enabled to work on click.
+    Only basic validation to ensure there's a conversation to provide feedback on.
     
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
-    # Only enable feedback if:
+    # Only basic checks to ensure there's something to provide feedback on:
     # 1. A persona is selected
     if st.session_state.selected_persona is None:
         return False
     
-    # 2. There's a conversation history with at least a few exchanges (minimal sanity check)
-    # Note: 4 messages = 2 full exchanges (2 user + 2 assistant messages)
-    if len(st.session_state.chat_history) < 4:
+    # 2. There's at least some conversation history
+    if len(st.session_state.chat_history) < 2:  # At least 1 exchange
         return False
     
-    # 3. Enable if conversation state is ENDED
-    if st.session_state.get('conversation_state') == "ended":
-        return True
-    
-    # 4. OR enable if mutual intent flags are both set
-    user_end_intent = st.session_state.get('user_end_intent', False)
-    bot_end_ack = st.session_state.get('bot_end_ack', False)
-    if user_end_intent and bot_end_ack:
-        return True
-    
-    # DO NOT enable based on turn count alone
-    # The old code had: if st.session_state.turn_count >= MIN_TURN_THRESHOLD: return True
-    # This is REMOVED to prevent premature ending
+    # Button is always enabled if basic conditions are met
+    return True
     
     return False
