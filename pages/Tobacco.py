@@ -349,7 +349,7 @@ if st.session_state.feedback is not None:
             from config_loader import ConfigLoader
             
             config = ConfigLoader()
-            email_config = config.get_email_config()
+            email_config = config.config.get('email_config', {})
             
             # Get Tobacco Box email (fallback to ohi if not configured)
             box_email = email_config.get('tobacco_box_email') or email_config.get('ohi_box_email')
