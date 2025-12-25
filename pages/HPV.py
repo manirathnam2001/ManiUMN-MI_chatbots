@@ -364,7 +364,7 @@ if st.session_state.selected_persona is not None:
                 from config_loader import ConfigLoader
                 
                 config = ConfigLoader()
-                email_config = config.get_email_config()
+                email_config = config.config.get('email_config', {})
                 
                 # Get HPV Box email
                 box_email = email_config.get('hpv_box_email')
