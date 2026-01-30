@@ -7,7 +7,7 @@ error handling, and logging.
 
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def log_speech_event(event_type: str, details: Optional[Dict[str, Any]] = None) 
     if not SpeechConfig.LOG_SPEECH_EVENTS:
         return
     
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     log_message = f"[Speech Event] {event_type} at {timestamp}"
     
     if details:
@@ -110,14 +110,14 @@ def sanitize_text_for_speech(text: str) -> str:
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     
-    # Remove markdown headers
-    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    # Remove markdown headers - just remove the # symbols
+    text = re.sub(r'#+\s+', '', text)
     
     # Remove URLs but keep the domain name
     text = re.sub(r'https?://([^\s]+)', r'\1', text)
     
-    # Remove special tokens/markers
-    text = re.sub(r'[END_CONVERSATION]', '', text)
+    # Remove special tokens/markers (escape square brackets)
+    text = re.sub(r'\[END_CONVERSATION\]', '', text)
     
     # Clean up extra whitespace
     text = ' '.join(text.split())
