@@ -24,3 +24,6 @@ google-auth-oauthlib
 
 # Deep learning backend (required by sentence-transformers)
 torch>=2.5.1
+
+# Speech features (Text-to-Speech fallback)
+gTTS>=2.3.0
