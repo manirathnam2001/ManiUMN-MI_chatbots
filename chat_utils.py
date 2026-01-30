@@ -550,5 +550,273 @@ def should_enable_feedback_button():
     
     # Button is always enabled if basic conditions are met
     return True
+
+
+def handle_chat_input_with_voice(personas_dict, client, domain_name=None, domain_keywords=None):
+    """
+    Voice-aware wrapper for handle_chat_input.
+    
+    If voice mode is enabled in session state, this function:
+    1. Uses STT for input (instead of st.chat_input)
+    2. Uses TTS for bot responses
+    3. Otherwise, delegates to standard handle_chat_input
+    
+    Args:
+        personas_dict: Dictionary of persona definitions
+        client: Groq API client
+        domain_name: Name of the domain for guardrails
+        domain_keywords: Keywords for guardrails
+    """
+    voice_enabled = st.session_state.get('voice_mode_enabled', False)
+    
+    if not voice_enabled:
+        # Standard text-only mode
+        return handle_chat_input(personas_dict, client, domain_name, domain_keywords)
+    
+    # Voice mode is enabled
+    # Import speech components
+    try:
+        from speech_text import render_stt_input, render_tts_playback
+        import streamlit.components.v1 as components
+        from speech_text.tts_handler import TTSHandler
+        from speech_text.stt_handler import STTHandler
+    except ImportError:
+        st.error("Speech module not available. Falling back to text mode.")
+        return handle_chat_input(personas_dict, client, domain_name, domain_keywords)
+    
+    # Check conversation state
+    if st.session_state.selected_persona is None:
+        return
+        
+    if st.session_state.conversation_state == "ended":
+        st.info("💬 This conversation has ended. Please click 'Finish Session & Get Feedback' to receive your evaluation, or start a new conversation.")
+        return
+    
+    # Use STT for input
+    st.markdown("### 🎤 Your Turn")
+    st.markdown("Click **Start Recording**, speak your response, then click **Stop Recording**.")
+    
+    stt_handler = STTHandler()
+    
+    # Create unique key for this turn
+    turn_key = f"voice_input_turn_{st.session_state.turn_count}"
+    
+    # Initialize transcript state
+    if f"{turn_key}_transcript" not in st.session_state:
+        st.session_state[f"{turn_key}_transcript"] = ""
+    if f"{turn_key}_confirmed" not in st.session_state:
+        st.session_state[f"{turn_key}_confirmed"] = False
+    
+    # Render STT interface
+    stt_html = stt_handler.generate_browser_stt_html(session_key=turn_key)
+    components.html(stt_html, height=250)
+    
+    # Manual input area for transcript (user can also type)
+    user_prompt = st.text_area(
+        "Your transcript (edit if needed):",
+        value=st.session_state.get(f"{turn_key}_transcript", ""),
+        key=f"{turn_key}_text_area",
+        help="You can edit the transcribed text or type directly here."
+    )
+    
+    # Update transcript in session state
+    if user_prompt:
+        st.session_state[f"{turn_key}_transcript"] = user_prompt
+    
+    # Confirm button
+    if st.button("✅ Send Response", key=f"{turn_key}_send", type="primary"):
+        if not user_prompt or not user_prompt.strip():
+            st.warning("Please provide a response before sending.")
+            return
+        
+        # Mark as confirmed
+        st.session_state[f"{turn_key}_confirmed"] = True
+        
+        # Process the input using the same logic as handle_chat_input
+        # Block feedback requests during conversation
+        feedback_request_phrases = [
+            'feedback', 'evaluate', 'how did i do', 'rate my performance',
+            'score', 'assessment',
+        ]
+        
+        if any(phrase in user_prompt.lower() for phrase in feedback_request_phrases):
+            st.warning("⏸️ Feedback will be provided after the conversation ends. Please continue the conversation naturally.")
+            return
+        
+        # Apply persona guardrails if domain metadata is provided
+        guard_message = None
+        if domain_name and domain_keywords:
+            from persona_guard import apply_guardrails
+            needs_intervention, guard_message = apply_guardrails(
+                user_prompt, domain_name, domain_keywords
+            )
+            
+            if needs_intervention:
+                logger.warning(f"Guardrail intervention triggered for user message: '{user_prompt[:50]}'")
+        
+        # Prevent premature ending from ambiguous phrases
+        if prevent_ambiguous_ending(user_prompt):
+            logger.info(f"Ambiguous phrase detected from user: '{user_prompt}' - continuing conversation")
+        
+        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+        st.chat_message("user").markdown(user_prompt)
+        
+        # Increment turn count
+        st.session_state.turn_count += 1
+        
+        # Enhanced turn instruction
+        turn_instruction = {
+            "role": "system",
+            "content": f"""Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
+
+CRITICAL INSTRUCTIONS:
+- Keep your responses CONCISE (2-3 sentences maximum)
+- Stay in character as the PATIENT throughout the entire conversation
+- DO NOT provide feedback, evaluation, or scores during the conversation
+- DO NOT switch to evaluator role until explicitly asked at the end
+- Respond naturally as the patient would, showing emotions and reactions
+- When you are ready to naturally end the conversation after a full MI session, include the end token: {END_TOKEN}
+- Only use the end token when the conversation has covered all MI components and feels complete"""
+        }
+        
+        # Build messages array
+        messages = [
+            {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
+            turn_instruction,
+        ]
+        
+        if guard_message:
+            messages.append(guard_message)
+        
+        messages.extend(st.session_state.chat_history)
+        
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=messages,
+                max_tokens=150,
+                temperature=0.7
+            )
+            assistant_response = response.choices[0].message.content
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+                st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+                st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
+                return
+            else:
+                raise
+        
+        # Check response guardrails
+        if domain_name:
+            from persona_guard import check_response_guardrails
+            needs_correction, correction_message = check_response_guardrails(
+                assistant_response, domain_name
+            )
+            
+            if needs_correction:
+                logger.warning(f"Response guardrail triggered, re-generating response")
+                correction_messages = messages + [
+                    {"role": "assistant", "content": assistant_response},
+                    correction_message
+                ]
+                
+                try:
+                    correction_response = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=correction_messages,
+                        max_tokens=150,
+                        temperature=0.7
+                    )
+                    assistant_response = correction_response.choices[0].message.content
+                    logger.info(f"Corrected response generated")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+                        st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+                        st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
+                        return
+                    else:
+                        raise
+        
+        # Validate role consistency
+        is_valid_role, cleaned_response = validate_response_role(assistant_response)
+        
+        if not is_valid_role:
+            assistant_response = "I appreciate you taking the time to talk with me. Is there anything else you'd like to discuss?"
+            logger.warning("Bot broke role - forcing generic response")
+        
+        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+        
+        # Show bot response with TTS
+        with st.chat_message("assistant"):
+            st.markdown(assistant_response)
+            
+            # Add TTS playback
+            tts_handler = TTSHandler()
+            tts_html = tts_handler.generate_browser_tts_html(assistant_response, auto_play=True)
+            components.html(tts_html, height=0)
+            
+            # Add repeat button
+            if st.button("🔊 Repeat", key=f"repeat_turn_{st.session_state.turn_count}"):
+                tts_html = tts_handler.generate_browser_tts_html(assistant_response, auto_play=True)
+                components.html(tts_html, height=0)
+        
+        # End control middleware logic (same as standard flow)
+        from end_control_middleware import should_continue_v4, log_termination_metrics
+        from config_loader import ConfigLoader
+        
+        config = ConfigLoader()
+        flags = config.get_feature_flags()
+        
+        conversation_context = {
+            'chat_history': st.session_state.chat_history,
+            'turn_count': st.session_state.turn_count,
+            'end_control_state': st.session_state.get('end_control_state', 'ACTIVE'),
+            'confirmation_flag': st.session_state.get('confirmation_flag', False),
+            'termination_trigger': st.session_state.get('termination_trigger', 'unknown'),
+            'user_end_intent': st.session_state.get('user_end_intent', False),
+            'bot_end_ack': st.session_state.get('bot_end_ack', False)
+        }
+        
+        if flags.get('require_end_confirmation', True):
+            decision = should_continue_v4(
+                conversation_context,
+                assistant_response,
+                user_prompt
+            )
+            
+            log_termination_metrics(decision.get('metrics', {}))
+            
+            st.session_state.end_control_state = decision['state']
+            st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
+            st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
+            st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
+            
+            if decision.get('requires_confirmation') and decision.get('confirmation_prompt'):
+                confirmation_msg = decision['confirmation_prompt']
+                st.session_state.chat_history.append({"role": "assistant", "content": confirmation_msg})
+                with st.chat_message("assistant"):
+                    st.markdown(confirmation_msg)
+                    # TTS for confirmation too
+                    tts_html = tts_handler.generate_browser_tts_html(confirmation_msg, auto_play=True)
+                    components.html(tts_html, height=0)
+                logger.info(f"Showing confirmation prompt: {confirmation_msg}")
+            
+            if not decision['continue']:
+                st.session_state.conversation_state = "ended"
+                st.info("💬 The conversation has concluded with mutual confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
+                logger.info(f"Conversation ended: {decision['reason']}")
+            elif decision['state'] == 'PARKED':
+                st.warning("💬 Session paused. Reconnect to continue the conversation.")
+                logger.info(f"Session parked: {decision['reason']}")
+        
+        # Clear transcript for next turn
+        st.session_state[f"{turn_key}_transcript"] = ""
+        st.session_state[f"{turn_key}_confirmed"] = False
+        
+        # Rerun to show updated chat
+        st.rerun()
+
     
     return False

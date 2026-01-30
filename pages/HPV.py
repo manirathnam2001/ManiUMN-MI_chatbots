@@ -201,8 +201,30 @@ if st.session_state.selected_persona is None:
         key="persona_selector"
     )
     
+    # Voice mode toggle (optional feature)
+    st.markdown("---")
+    try:
+        from speech_text import render_voice_toggle, run_audio_test
+        
+        voice_enabled = render_voice_toggle(key="voice_mode_enabled")
+        
+        # If voice enabled, run audio test before starting conversation
+        if voice_enabled:
+            st.markdown("---")
+            test_result = run_audio_test(key_prefix="hpv_audio_test")
+            
+            # Only allow starting conversation after audio test passes
+            if not test_result.get('ready_to_start', False):
+                st.info("ℹ️ Complete the audio test to start voice mode, or disable voice mode to continue with text.")
+                st.stop()
+        
+    except ImportError:
+        # Speech module not available - continue without voice features
+        logger.info("Speech module not available - voice mode disabled")
+        voice_enabled = False
+    
     # Move "Start Conversation" button inside persona selection block
-    if st.button("Start Conversation"):
+    if st.button("Start Conversation", type="primary"):
         st.session_state.selected_persona = selected
         st.session_state.chat_history = []
         st.session_state.conversation_state = "active"
@@ -438,19 +460,19 @@ if st.session_state.selected_persona is not None:
             st.error(f"Unexpected error: {e}")
             st.info("There was an issue generating the PDF. Please try again.")
         
-    # --- User Input (Using improved chat_utils with persona guards) ---
-    from chat_utils import handle_chat_input
+    # --- User Input (Using improved chat_utils with persona guards and voice support) ---
+    from chat_utils import handle_chat_input_with_voice
     
     # Try to call with domain parameters for backward compatibility
     try:
-        handle_chat_input(PERSONAS, client, 
+        handle_chat_input_with_voice(PERSONAS, client, 
                          domain_name=HPV_DOMAIN_NAME, 
                          domain_keywords=HPV_DOMAIN_KEYWORDS)
     except TypeError as e:
         # Fall back to older signature without domain parameters
         if "domain_name" in str(e) or "domain_keywords" in str(e):
             logger.warning("Using older chat_utils signature without domain parameters")
-            handle_chat_input(PERSONAS, client)
+            handle_chat_input_with_voice(PERSONAS, client)
         else:
             # Re-raise if it's a different TypeError
             raise
