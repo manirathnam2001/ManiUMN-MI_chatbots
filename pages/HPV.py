@@ -224,7 +224,7 @@ if st.session_state.selected_persona is None:
         voice_enabled = False
     
     # Move "Start Conversation" button inside persona selection block
-    if st.button("Start Conversation", type="primary"):
+    if st.button("Start Conversation"):
         st.session_state.selected_persona = selected
         st.session_state.chat_history = []
         st.session_state.conversation_state = "active"

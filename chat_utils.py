@@ -598,8 +598,9 @@ def handle_chat_input_with_voice(personas_dict, client, domain_name=None, domain
     
     stt_handler = STTHandler()
     
-    # Create unique key for this turn
-    turn_key = f"voice_input_turn_{st.session_state.turn_count}"
+    # Create unique key for this turn - ensure turn_count is initialized
+    turn_count = st.session_state.get('turn_count', 0)
+    turn_key = f"voice_input_turn_{turn_count}"
     
     # Initialize transcript state
     if f"{turn_key}_transcript" not in st.session_state:
@@ -817,6 +818,3 @@ CRITICAL INSTRUCTIONS:
         
         # Rerun to show updated chat
         st.rerun()
-
-    
-    return False

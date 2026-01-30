@@ -53,8 +53,10 @@ class TTSHandler:
         # Sanitize text for speech
         clean_text = sanitize_text_for_speech(text)
         
-        # Escape text for JavaScript
-        escaped_text = clean_text.replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+        # Escape text for JavaScript using JSON encoding for safety
+        import json
+        # JSON.stringify will properly escape all special characters
+        escaped_text = json.dumps(clean_text)[1:-1]  # Remove surrounding quotes added by dumps
         
         auto_play_code = "speakText();" if auto_play else ""
         
