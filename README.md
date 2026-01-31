@@ -45,9 +45,15 @@ The chatbots now use a comprehensive **40-point rubric with granular assessment*
     ├── ohi_rubrics/           # Oral Hygiene MI transcripts + rubric feedback (.txt format)
     ├── tobacco_rubrics/       # Tobacco Cessation MI transcripts + rubric feedback (.txt format) ✨ NEW
     ├── perio_rubrics/         # Periodontitis MI transcripts + rubric feedback (.txt format) ✨ NEW
+    ├── speech_text/           # Voice interaction module (TTS/STT) ✨ NEW
+    │   ├── tts_handler.py     # Text-to-Speech logic
+    │   ├── stt_handler.py     # Speech-to-Text logic
+    │   ├── audio_test_ui.py   # Pre-session audio device testing
+    │   ├── speech_components.py  # Streamlit UI components for voice
+    │   └── README.md          # Voice module documentation
     ├── pages/                 # Streamlit multipage app pages (internal navigation)
     │   ├── OHI.py             # Oral Health MI chatbot (access via portal)
-    │   ├── HPV.py             # HPV vaccine MI chatbot (access via portal)
+    │   ├── HPV.py             # HPV vaccine MI chatbot (access via portal) ✨ Voice-enabled
     │   ├── Tobacco.py         # Tobacco Cessation MI chatbot (access via portal) ✨ NEW
     │   └── Perio.py           # Periodontitis MI chatbot (access via portal) ✨ NEW
     ├── rubric/                # MI rubric system with granular scoring
@@ -55,7 +61,7 @@ The chatbots now use a comprehensive **40-point rubric with granular assessment*
     ├── services/              # Service layer for evaluation
     │   └── evaluation_service.py  # Updated to support granular scoring and all bot contexts
     ├── secret_code_portal.py  # Main entry point - Secret code access portal
-    ├── chat_utils.py          # Shared chat handling utilities
+    ├── chat_utils.py          # Shared chat handling utilities (with voice support)
     ├── pdf_utils.py           # PDF report generation utilities (with conversation quotes)
     ├── feedback_template.py   # Standardized feedback formatting (updated for granular scoring)
     ├── scoring_utils.py       # MI component scoring and validation
@@ -66,11 +72,52 @@ The chatbots now use a comprehensive **40-point rubric with granular assessment*
     ├── email_utils.py         # Email sending utilities (Box integration for all bots)
     ├── umnsod-mibot-ea3154b145f1.json  # Service account credentials for Google Sheets
     ├── README.md              # This file - setup and usage instructions
-    ├── requirements.txt       # Python dependencies (optimized)
+    ├── requirements.txt       # Python dependencies (optimized, includes gTTS)
     ├── runtime.txt            # Python version for deployment environments
     └── .env.example           # Example environment variables file
 
 > You can add more `.txt` transcripts with MI feedback in the `hpv_rubrics/`, `ohi_rubrics/`, `tobacco_rubrics/`, or `perio_rubrics/` folders to improve the RAG-based evaluation.
+
+---
+
+## 🎙️ Voice Mode (Speech-to-Text & Text-to-Speech)
+
+**NEW**: Practice MI conversations using natural voice interaction!
+
+The chatbots now support **optional voice mode** that enables students to practice speaking with patient personas using their voice instead of typing. This feature:
+
+- **Text-to-Speech (TTS)**: Hear bot responses spoken aloud in a natural voice
+- **Speech-to-Text (STT)**: Speak your responses instead of typing
+- **Audio Device Testing**: Pre-session test to verify your microphone and speakers work
+- **Graceful Fallback**: Works in any browser, with automatic fallback for unsupported features
+
+### How to Use Voice Mode
+
+1. **Enable Voice Mode**: When selecting a patient persona, toggle "Enable Voice Mode" ON
+2. **Test Your Audio**: Complete the speaker and microphone tests (similar to Zoom)
+3. **Start Conversation**: Once tests pass, begin your voice-enabled practice session
+4. **Speak & Listen**: 
+   - The bot will speak responses aloud (with a 🔊 Repeat button)
+   - You can speak your responses (shown as text for review)
+   - Edit transcripts before sending if needed
+
+### Browser Compatibility
+
+| Feature | Chrome | Edge | Safari | Firefox |
+|---------|--------|------|--------|---------|
+| Text-to-Speech | ✅ | ✅ | ✅ | ⚠️ Limited |
+| Speech-to-Text | ✅ | ✅ | ⚠️ iOS 14.5+ | ❌ |
+
+**Recommended**: Google Chrome or Microsoft Edge for the best experience.
+
+### Technical Details
+
+- **Zero Server Compute**: All speech processing happens in your browser using Web Speech API
+- **Privacy-Preserving**: Audio never leaves your device
+- **Lightweight**: Uses gTTS library only as fallback
+- **Non-Breaking**: Text mode works exactly as before when voice is disabled (default)
+
+📖 **See [speech_text/README.md](speech_text/README.md) for complete voice mode documentation.**
 
 ---
 
