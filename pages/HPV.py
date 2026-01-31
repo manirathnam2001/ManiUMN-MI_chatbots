@@ -235,23 +235,7 @@ if st.session_state.selected_persona is None:
     # Stop here if persona not selected yet
     st.stop()
 
-# Continue with the rest of your existing code...
-# --- Step 1: Load Knowledge Document (MI Rubric) ---
-rubrics_dir = os.path.join(working_dir, "hpv_rubrics")
-knowledge_texts = []
-
-for filename in os.listdir(rubrics_dir):
-    if filename.endswith(".txt"):
-        with open(os.path.join(rubrics_dir, filename), "r", encoding="utf-8", errors="ignore") as f:
-            knowledge_texts.append(f.read())
-
-# Combine all documents into a single knowledge base
-knowledge_text = "\n\n".join(knowledge_texts)
-
-# --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-# Device already set above, reuse the same embedding model configuration
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
-
+# Continue with RAG setup and conversation functionality
 def split_text(text, max_length=200):
     words = text.split()
     chunks, current_chunk = [], []
