@@ -45,6 +45,24 @@ except ImportError:
 from feedback_template import FeedbackValidator, FeedbackFormatter
 
 
+EVALUATION_LEAK_PATTERNS = [
+    r'(?i)rubric',
+    r'(?i)total score',
+    r'(?i)overall score',
+    r'(?i)assessment',
+    r'(?i)recommendations?',
+    r'(?i)areas? for improvement',
+    r'(?i)performance band',
+]
+
+
+def _looks_like_evaluation_leak(text: str) -> bool:
+    """Detect evaluator/report text that should never appear in transcript section."""
+    if not text:
+        return False
+    return any(re.search(pattern, text) for pattern in EVALUATION_LEAK_PATTERNS)
+
+
 def construct_feedback_filename(student_name: str, bot_name: str, persona_name: str = None) -> str:
     """
     Construct standardized feedback filename following the convention:
@@ -274,7 +292,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     flags = config.get_feature_flags()
     
     if flags.get('pdf_score_binding_fix', True):
-        pdf_validation = FeedbackValidator.validate_pdf_payload(clean_feedback, session_type)
+        pdf_validation = FeedbackValidator.validate_pdf_payload(clean_feedback, session_type, chat_history=chat_history)
         
         # Log validation results
         if not pdf_validation['is_valid']:
@@ -293,7 +311,10 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         validation = FeedbackValidator.validate_feedback_completeness(clean_feedback)
         if not validation['is_valid']:
             logger.warning(f"Feedback may be incomplete - missing: {validation['missing_components']}")
-        pdf_validation = {'partial_report': False}
+        pdf_validation = {'partial_report': False, 'evaluation_status': {'pdf_export_allowed': True}}
+
+    evaluation_status = pdf_validation.get('evaluation_status', {})
+    diagnostic_only = pdf_validation.get('partial_report', False) or (not evaluation_status.get('pdf_export_allowed', True))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -334,7 +355,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
 
     # Header with improved styling
     report_title = f"MI Performance Report - {session_type}"
-    if pdf_validation.get('partial_report'):
+    if diagnostic_only:
         report_title += " (PARTIAL)"
     elements.append(Paragraph(report_title, title_style))
     elements.append(Spacer(1, 20))
@@ -367,7 +388,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
             spaceAfter=6,
             fontName='Helvetica-Bold'
         )
-        elements.append(Paragraph("<b>⚠️ PARTIAL REPORT:</b> Some feedback elements may be incomplete", warning_style))
+        elements.append(Paragraph("<b>⚠️ MANUAL REVIEW REQUIRED:</b> Evaluation incomplete. This diagnostic report contains no final numeric grading.", warning_style))
 
     # Add horizontal line with better styling
     line_style = ParagraphStyle('Line', parent=styles['Normal'], spaceBefore=10, spaceAfter=10)
@@ -376,15 +397,18 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
     # --- New: Check if chat_history contains any user responses ---
     has_user_turns = any(msg.get("role", "").lower() == "user" for msg in chat_history)
 
+    normalized_result = None
+
     # Score Summary Section
     elements.append(Paragraph("Score Summary", section_style))
 
-    # --- Only try to parse scores if there was a real user response ---
-    if has_user_turns:
+    # --- Only render scored output for fully validated evaluations ---
+    if has_user_turns and not diagnostic_only:
         try:
             # Try new rubric first
             if NEW_RUBRIC_AVAILABLE:
-                evaluation_result = EvaluationService.evaluate_session(clean_feedback, session_type)
+                evaluation_result = EvaluationService.build_normalized_result(clean_feedback, session_type)
+                normalized_result = evaluation_result
                 
                 # Table construction with new rubric data
                 headers = ['MI Category', 'Assessment', 'Score', 'Max Score', 'Notes']
@@ -447,7 +471,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                     total_label_para,
                     f"{percentage_int}%",
                     f"{total_score_int}",
-                    f"{evaluation_result['max_possible_score']}",
+                    f"{evaluation_result['max_score']}",
                     total_perf_para
                 ])
                 
@@ -601,7 +625,7 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         except Exception as e:
             elements.append(Paragraph(f"Score parsing unavailable: {e}. Raw feedback shown below.", styles['Normal']))
     else:
-        # No user input: show zeros and a clear no-evaluation message
+        # No user input OR diagnostic-only mode: render non-graded table
         # Create style for table cell paragraphs with word wrapping
         cell_style = ParagraphStyle(
             'TableCell',
@@ -629,13 +653,13 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
             
             zero_data = [
                 header_row,
-                [_make_para('Collaboration', cell_style), _make_para('Not Evaluated', cell_style), '0', '9', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('Acceptance', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('Compassion', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('Evocation', cell_style), _make_para('Not Evaluated', cell_style), '0', '6', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('Summary', cell_style), _make_para('Not Evaluated', cell_style), '0', '3', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('Response Factor', cell_style), _make_para('Not Evaluated', cell_style), '0', '10', _make_para('No feedback, no user response', cell_style)],
-                [_make_para('TOTAL SCORE', cell_style), '0.0%', '0', '40', _make_para('No evaluation performed (no user responses)', cell_style)]
+                [_make_para('Collaboration', cell_style), _make_para('Score Unavailable', cell_style), '—', '9', _make_para('Manual review required', cell_style)],
+                [_make_para('Acceptance', cell_style), _make_para('Score Unavailable', cell_style), '—', '6', _make_para('Manual review required', cell_style)],
+                [_make_para('Compassion', cell_style), _make_para('Score Unavailable', cell_style), '—', '6', _make_para('Manual review required', cell_style)],
+                [_make_para('Evocation', cell_style), _make_para('Score Unavailable', cell_style), '—', '6', _make_para('Manual review required', cell_style)],
+                [_make_para('Summary', cell_style), _make_para('Score Unavailable', cell_style), '—', '3', _make_para('Manual review required', cell_style)],
+                [_make_para('Response Factor', cell_style), _make_para('Score Unavailable', cell_style), '—', '10', _make_para('Manual review required', cell_style)],
+                [_make_para('TOTAL SCORE', cell_style), 'N/A', '—', '40', _make_para('Manual review required: evaluation incomplete', cell_style)]
             ]
         else:
             # Old 30-point rubric components
@@ -683,8 +707,8 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
 
     # Improvement Suggestions Section with enhanced formatting
     elements.append(Paragraph("Improvement Suggestions", section_style))
-    if has_user_turns:
-        suggestions = FeedbackFormatter.extract_suggestions_from_feedback(clean_feedback)
+    if has_user_turns and not diagnostic_only:
+        suggestions = normalized_result.get('recommendations', []) if normalized_result else []
         suggestion_style = ParagraphStyle(
             'Suggestion', parent=styles['Normal'],
             fontSize=11, leading=14, spaceAfter=8
@@ -700,20 +724,9 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
                 if formatted_suggestion:
                     elements.append(Paragraph(formatted_suggestion, suggestion_style))
         else:
-            # Fallback: show raw feedback content after component analysis
-            feedback_lines = clean_feedback.split('\n')
-            category_keywords = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
-            component_keywords = ['COLLABORATION', 'EVOCATION', 'ACCEPTANCE', 'COMPASSION']
-            all_keywords = category_keywords + component_keywords
-            
-            for line in feedback_lines:
-                line = line.strip()
-                if line and not any(kw in line for kw in all_keywords):
-                    if not line.startswith('Session Feedback') and not line.startswith('Evaluation Timestamp'):
-                        formatted_line = _format_markdown_to_html(line)
-                        elements.append(Paragraph(formatted_line, suggestion_style))
+            elements.append(Paragraph("No improvement recommendations. Performance met all scored criteria.", styles['Normal']))
     else:
-        elements.append(Paragraph("No suggestions available (no user responses were given, so no evaluation was performed).", styles['Normal']))
+        elements.append(Paragraph("Manual review required. Recommendations are withheld because evaluation is incomplete.", styles['Normal']))
 
     elements.append(Spacer(1, 20))
 
@@ -738,7 +751,15 @@ def generate_pdf_report(student_name, raw_feedback, chat_history, session_type="
         spaceAfter=4,
         fontName='Helvetica-Bold'
     )
-    for i, message in enumerate(chat_history):
+    safe_chat_history = []
+    for message in chat_history:
+        content = message.get("content", "")
+        if _looks_like_evaluation_leak(content):
+            logger.warning("Filtered evaluator leak from transcript output")
+            continue
+        safe_chat_history.append(message)
+
+    for i, message in enumerate(safe_chat_history):
         role = message.get("role", "user").title()
         content = message.get("content", "")
         clean_content = FeedbackValidator.sanitize_special_characters(content)

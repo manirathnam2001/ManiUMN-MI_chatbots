@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-End-to-end test for mutual-intent end condition.
+End-to-end test for conversation ending and feedback gating.
 
-This test simulates a complete conversation flow with mutual intent,
-demonstrating that:
-1. Conversations can end quickly with mutual intent (no turn minimum)
-2. Feedback button should enable when mutual intent is detected
-3. Flags are properly reset on new conversation
+This test simulates the production rules that:
+1. Mutual intent may end the conversation in middleware.
+2. Feedback/export must still wait for semantic closure state.
+3. Transcript/evaluation channels reset correctly for a new conversation.
 """
 
 from end_control_middleware import should_continue_v4, ConversationState
@@ -16,173 +15,136 @@ def test_minimal_conversation_with_mutual_intent():
     """Test that a minimal conversation can end with mutual intent."""
     print("🔍 Test: Minimal conversation with mutual intent")
     print("=" * 60)
-    
-    # Simulate a very short conversation
+
     conversation_context = {
         'chat_history': [
             {'role': 'assistant', 'content': 'Hello, how can I help you?'},
-            {'role': 'user', 'content': 'Just wanted to say thanks, bye!'},  # User end intent
-            {'role': 'assistant', 'content': "You're welcome! Goodbye!"},  # Bot end ack
+            {'role': 'user', 'content': 'Just wanted to say thanks, bye!'},
+            {'role': 'assistant', 'content': "You're welcome! Goodbye!"},
         ],
-        'turn_count': 1,  # Very low turn count
+        'turn_count': 1,
         'end_control_state': 'ACTIVE',
         'confirmation_flag': False,
         'user_end_intent': False,
         'bot_end_ack': False
     }
-    
+
     decision = should_continue_v4(
         conversation_context,
         "You're welcome! Goodbye!",
         'Just wanted to say thanks, bye!'
     )
-    
-    print(f"Turn count: {conversation_context['turn_count']}")
+
     print(f"Decision: {decision}")
-    print(f"Continue: {decision['continue']}")
-    print(f"State: {decision['state']}")
-    print(f"Reason: {decision['reason']}")
-    print(f"Mutual intent: {decision.get('mutual_intent', False)}")
-    print(f"User end intent: {conversation_context.get('user_end_intent', False)}")
-    print(f"Bot end ack: {conversation_context.get('bot_end_ack', False)}")
-    
     if not decision['continue'] and decision['state'] == ConversationState.ENDED.value:
-        print("\n✅ SUCCESS: Conversation ended with mutual intent despite low turn count")
+        print("\n✅ SUCCESS: Conversation ended with mutual intent")
         return True
-    else:
-        print("\n❌ FAIL: Conversation did not end as expected")
-        return False
+
+    print("\n❌ FAIL: Conversation did not end as expected")
+    return False
 
 
-def test_feedback_button_logic():
-    """Test should_enable_feedback_button logic with mutual intent."""
-    print("\n\n🔍 Test: Feedback button enablement with mutual intent")
+def test_feedback_button_logic_requires_ended_state():
+    """Test production feedback button gating requires semantic closure state."""
+    print("\n\n🔍 Test: Feedback button enablement requires ended state")
     print("=" * 60)
-    
-    # Mock session state
+
     class MockSessionState:
-        def __init__(self):
+        def __init__(self, end_state, conversation_state):
             self.selected_persona = "Test Persona"
             self.chat_history = [
                 {'role': 'assistant', 'content': 'Hello'},
                 {'role': 'user', 'content': 'Hi'},
-                {'role': 'assistant', 'content': 'How are you?'},
-                {'role': 'user', 'content': 'Thanks, bye!'},
             ]
-            self.conversation_state = "active"  # Not ended yet
-            self.user_end_intent = True  # User said bye
-            self.bot_end_ack = True  # Bot acknowledged
-        
+            self.end_control_state = end_state
+            self.conversation_state = conversation_state
+
         def get(self, key, default=None):
             return getattr(self, key, default)
-    
-    # Simulate the logic from should_enable_feedback_button
-    st = MockSessionState()
-    
-    # Check conditions (NEW: always enabled with basic checks)
-    has_persona = st.selected_persona is not None
-    has_conversation = len(st.chat_history) >= 2  # At least 1 exchange
-    
-    should_enable = has_persona and has_conversation
-    
-    print(f"Has persona: {has_persona}")
-    print(f"Has conversation: {has_conversation} (history length: {len(st.chat_history)})")
-    print(f"\nShould enable button: {should_enable}")
-    print(f"Note: Button is now always enabled when persona is selected and conversation exists")
-    
-    if should_enable:
-        print("\n✅ SUCCESS: Feedback button would be enabled")
+
+    active_state = MockSessionState("ACTIVE", "active")
+    ended_state = MockSessionState("ENDED", "ended")
+
+    active_enabled = (
+        active_state.selected_persona is not None
+        and len(active_state.chat_history) >= 2
+        and not (
+            active_state.get('end_control_state') != 'ENDED'
+            and active_state.get('conversation_state') != 'ended'
+        )
+    )
+    ended_enabled = (
+        ended_state.selected_persona is not None
+        and len(ended_state.chat_history) >= 2
+        and not (
+            ended_state.get('end_control_state') != 'ENDED'
+            and ended_state.get('conversation_state') != 'ended'
+        )
+    )
+
+    print(f"Active conversation enabled: {active_enabled}")
+    print(f"Ended conversation enabled: {ended_enabled}")
+
+    if not active_enabled and ended_enabled:
+        print("\n✅ SUCCESS: Feedback gating matches semantic closure rule")
         return True
-    else:
-        print("\n❌ FAIL: Feedback button would not be enabled")
-        return False
+
+    print("\n❌ FAIL: Feedback gating does not match semantic closure rule")
+    return False
 
 
 def test_flag_reset():
-    """Test that flags are properly initialized and reset."""
-    print("\n\n🔍 Test: Flag initialization and reset")
+    """Test that transcript/evaluation channels are properly reset."""
+    print("\n\n🔍 Test: Session reset clears locked transcript and evaluator history")
     print("=" * 60)
-    
-    # Simulate initialization (from initialize_session_state)
+
     session_state = {
-        'selected_persona': None,
-        'feedback': None,
-        'conversation_state': 'active',
-        'turn_count': 0,
-        'end_control_state': 'ACTIVE',
-        'confirmation_flag': False,
-        'termination_trigger': 'unknown',
-        'user_end_intent': False,  # Should initialize to False
-        'bot_end_ack': False,  # Should initialize to False
+        'selected_persona': 'Test Persona',
+        'feedback': {'content': 'Example'},
+        'conversation_state': 'ended',
+        'turn_count': 5,
+        'end_control_state': 'ENDED',
+        'confirmation_flag': True,
+        'termination_trigger': 'semantic_close',
+        'user_end_intent': True,
+        'bot_end_ack': True,
+        'locked_chat_history': [{'role': 'user', 'content': 'Locked transcript'}],
+        'evaluation_history': [{'role': 'evaluator', 'content': 'Eval'}],
+        'transcript_locked': True,
     }
-    
-    print("Initial state:")
-    print(f"  user_end_intent: {session_state['user_end_intent']}")
-    print(f"  bot_end_ack: {session_state['bot_end_ack']}")
-    
-    # Simulate some conversation that sets flags
-    session_state['user_end_intent'] = True
-    session_state['bot_end_ack'] = True
-    
-    print("\nAfter conversation:")
-    print(f"  user_end_intent: {session_state['user_end_intent']}")
-    print(f"  bot_end_ack: {session_state['bot_end_ack']}")
-    
-    # Simulate reset (from handle_new_conversation_button)
+
     session_state['selected_persona'] = None
+    session_state['feedback'] = None
     session_state['conversation_state'] = 'active'
     session_state['turn_count'] = 0
     session_state['end_control_state'] = 'ACTIVE'
     session_state['confirmation_flag'] = False
     session_state['termination_trigger'] = 'unknown'
-    session_state['user_end_intent'] = False  # Reset
-    session_state['bot_end_ack'] = False  # Reset
-    
-    print("\nAfter reset:")
-    print(f"  user_end_intent: {session_state['user_end_intent']}")
-    print(f"  bot_end_ack: {session_state['bot_end_ack']}")
-    
-    if not session_state['user_end_intent'] and not session_state['bot_end_ack']:
-        print("\n✅ SUCCESS: Flags properly reset")
+    session_state['user_end_intent'] = False
+    session_state['bot_end_ack'] = False
+    session_state['locked_chat_history'] = []
+    session_state['evaluation_history'] = []
+    session_state['transcript_locked'] = False
+
+    if (
+        not session_state['user_end_intent']
+        and not session_state['bot_end_ack']
+        and not session_state['locked_chat_history']
+        and not session_state['evaluation_history']
+        and session_state['transcript_locked'] is False
+    ):
+        print("\n✅ SUCCESS: Reset clears transcript/evaluation channels")
         return True
-    else:
-        print("\n❌ FAIL: Flags not properly reset")
-        return False
 
-
-def main():
-    """Run all end-to-end tests."""
-    print("\n" + "=" * 60)
-    print("🧪 End-to-End Mutual Intent Tests")
-    print("=" * 60 + "\n")
-    
-    tests = [
-        test_minimal_conversation_with_mutual_intent,
-        test_feedback_button_logic,
-        test_flag_reset,
-    ]
-    
-    results = []
-    for test in tests:
-        try:
-            results.append(test())
-        except Exception as e:
-            print(f"\n❌ ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-            results.append(False)
-    
-    print("\n" + "=" * 60)
-    print(f"📊 Results: {sum(results)}/{len(results)} tests passed")
-    print("=" * 60)
-    
-    if all(results):
-        print("🎉 All end-to-end tests passed!")
-        return 0
-    else:
-        print("❌ Some tests failed!")
-        return 1
+    print("\n❌ FAIL: Reset did not clear protected channels")
+    return False
 
 
 if __name__ == "__main__":
-    exit(main())
+    tests = [
+        test_minimal_conversation_with_mutual_intent,
+        test_feedback_button_logic_requires_ended_state,
+        test_flag_reset,
+    ]
+    results = [test() for test in tests]
+    raise SystemExit(0 if all(results) else 1)

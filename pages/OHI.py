@@ -207,6 +207,9 @@ if st.session_state.selected_persona is None:
     if st.button("Start Conversation"):
         st.session_state.selected_persona = selected
         st.session_state.chat_history = []
+        st.session_state.locked_chat_history = []
+        st.session_state.evaluation_history = []
+        st.session_state.transcript_locked = False
         st.session_state.conversation_state = "active"
         st.session_state.turn_count = 0
         st.session_state.chat_history.append({
@@ -260,15 +263,20 @@ feedback_enabled = should_enable_feedback_button()
 feedback_button_label = "Finish Session & Get Feedback"
 
 if not feedback_enabled:
-    if st.session_state.turn_count < MIN_TURN_THRESHOLD:
-        st.info(f"💬 Continue the conversation (Turn {st.session_state.turn_count}/{MIN_TURN_THRESHOLD} minimum). The feedback button will be enabled after sufficient interaction.")
+    st.info("💬 Continue until a natural semantic close is reached. The feedback button unlocks only after confirmed conversation closure.")
 
 if st.button(feedback_button_label, disabled=not feedback_enabled):
+    # Lock transcript before evaluation and keep evaluation output in separate history
+    if 'locked_chat_history' not in st.session_state or not st.session_state.get('locked_chat_history'):
+        st.session_state.locked_chat_history = list(st.session_state.chat_history)
+    st.session_state.transcript_locked = True
+    if 'evaluation_history' not in st.session_state:
+        st.session_state.evaluation_history = []
     # Define current_timestamp and bot name at the beginning of this block
     current_timestamp = get_formatted_utc_time()
     evaluator = "OHI Assessment Bot"
     
-    transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history])
+    transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.get('locked_chat_history', st.session_state.chat_history)])
     
     retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
     rag_context = "\n".join(retrieved_info)
@@ -304,6 +312,7 @@ if st.button(feedback_button_label, disabled=not feedback_enabled):
         'timestamp': current_timestamp,
         'evaluator': evaluator
     }
+    st.session_state.evaluation_history.append({'role': 'evaluator', 'content': feedback})
 
 # Show only PDF download section if feedback exists
 if st.session_state.feedback is not None:
@@ -325,7 +334,7 @@ if st.session_state.feedback is not None:
         pdf_buffer = generate_pdf_report(
             student_name=validated_name,
             raw_feedback=formatted_feedback,
-            chat_history=st.session_state.chat_history,
+            chat_history=st.session_state.get('locked_chat_history', st.session_state.chat_history),
             session_type="OHI"
         )
         
