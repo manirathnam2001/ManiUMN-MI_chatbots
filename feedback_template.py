@@ -406,7 +406,7 @@ class FeedbackValidator:
         return text
     
     @staticmethod
-    def validate_pdf_payload(feedback: str, session_type: str = "HPV") -> Dict[str, any]:
+    def validate_pdf_payload(feedback: str, session_type: str = "HPV", chat_history: List[Dict] = None) -> Dict[str, any]:
         """
         Validate feedback payload before PDF rendering with strict checks.
         
@@ -451,7 +451,13 @@ class FeedbackValidator:
             'warnings': [],
             'scores_present': True,
             'notes_present': True,
-            'partial_report': False
+            'partial_report': False,
+            'evaluation_status': {
+                'transcript_complete': True,
+                'evaluator_complete': True,
+                'score_validation_passed': True,
+                'pdf_export_allowed': True
+            }
         }
         
         try:
@@ -468,6 +474,15 @@ class FeedbackValidator:
             if NEW_RUBRIC_AVAILABLE:
                 try:
                     result = EvaluationService.evaluate_session(feedback, session_type)
+                    status = EvaluationService.get_evaluation_status(feedback, session_type, chat_history=chat_history)
+                    validation['evaluation_status'] = status
+
+                    if not status['pdf_export_allowed']:
+                        validation['partial_report'] = True
+                        validation['is_valid'] = False
+                        validation['errors'].append(
+                            "Evaluation incomplete: manual review required before scored PDF export"
+                        )
                     
                     # Check for zero scores
                     zero_score_categories = []
@@ -503,6 +518,19 @@ class FeedbackValidator:
                         validation['errors'].append("Overall score is null")
                         validation['is_valid'] = False
                         validation['scores_present'] = False
+
+                    # Contradiction check: strong narrative language + all-zero category scores
+                    narrative_positive = any(
+                        phrase in feedback.lower()
+                        for phrase in ['fully met', 'strengths', 'excellent', 'demonstrated', 'well done']
+                    )
+                    all_zero_scores = all(category_data.get('points') == 0 for category_data in result['categories'].values())
+                    if narrative_positive and all_zero_scores:
+                        validation['is_valid'] = False
+                        validation['partial_report'] = True
+                        validation['errors'].append(
+                            "Contradiction detected: positive narrative with all-zero structured scores"
+                        )
                     
                 except Exception as e:
                     validation['errors'].append(f"Failed to parse scores: {str(e)}")
