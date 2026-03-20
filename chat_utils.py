@@ -31,6 +31,34 @@ from end_control_middleware import (
 logger = logging.getLogger(__name__)
 
 
+def enforce_patient_only_response(client, base_messages, candidate_response, domain_name: str):
+    """Hard validator/regenerator for patient-only responses before rendering."""
+    from persona_guard import check_response_guardrails
+
+    response = candidate_response
+    for _ in range(2):
+        needs_correction, correction_message = check_response_guardrails(response, domain_name)
+        is_valid_role, _ = validate_response_role(response)
+        if not needs_correction and is_valid_role:
+            return response
+
+        correction_messages = base_messages + [
+            {"role": "assistant", "content": response},
+            correction_message,
+            {"role": "system", "content": "RESPONSE GATE: Return one short patient-only response. Do not provide clinical advice, evaluation, or provider-style closing language."},
+        ]
+        correction_response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=correction_messages,
+            max_tokens=120,
+            temperature=0.4
+        )
+        response = correction_response.choices[0].message.content
+
+    # Safe fallback if model repeatedly violates patient-only guard
+    return "Thanks for discussing this with me. I feel better informed and appreciate the conversation."
+
+
 def detect_conversation_ending(chat_history, turn_count):
     """
     DEPRECATED: This function should NOT be used to auto-end conversations.
@@ -104,6 +132,12 @@ def initialize_session_state():
         st.session_state.user_end_intent = False
     if "bot_end_ack" not in st.session_state:
         st.session_state.bot_end_ack = False
+    if "transcript_locked" not in st.session_state:
+        st.session_state.transcript_locked = False
+    if "locked_chat_history" not in st.session_state:
+        st.session_state.locked_chat_history = []
+    if "evaluation_history" not in st.session_state:
+        st.session_state.evaluation_history = []
 
 
 
@@ -384,48 +418,8 @@ CRITICAL INSTRUCTIONS:
                     # Re-raise other unexpected errors
                     raise
             
-            # Check response guardrails if domain metadata is provided
             if domain_name:
-                from persona_guard import check_response_guardrails
-                needs_correction, correction_message = check_response_guardrails(
-                    assistant_response, domain_name
-                )
-                
-                if needs_correction:
-                    logger.warning(f"Response guardrail triggered, re-generating response")
-                    # Re-generate response with correction message
-                    correction_messages = messages + [
-                        {"role": "assistant", "content": assistant_response},
-                        correction_message
-                    ]
-                    
-                    try:
-                        correction_response = client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=correction_messages,
-                            max_tokens=150,
-                            temperature=0.7
-                        )
-                        assistant_response = correction_response.choices[0].message.content
-                        logger.info(f"Corrected response generated")
-                    except Exception as e:
-                        # Handle authentication errors gracefully
-                        error_msg = str(e).lower()
-                        if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
-                            st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
-                            st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
-                            return
-                        else:
-                            # Re-raise other unexpected errors
-                            raise
-            
-            # Validate role consistency (legacy check, now supplemented by persona_guard)
-            is_valid_role, cleaned_response = validate_response_role(assistant_response)
-            
-            if not is_valid_role:
-                # If bot breaks role, provide a generic patient response instead
-                assistant_response = "I appreciate you taking the time to talk with me. Is there anything else you'd like to discuss?"
-                logger.warning("Bot broke role - forcing generic response")
+                assistant_response = enforce_patient_only_response(client, messages, assistant_response, domain_name)
             
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             with st.chat_message("assistant"):
@@ -533,8 +527,7 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
-    Per requirement: Button must always be enabled to work on click.
-    Only basic validation to ensure there's a conversation to provide feedback on.
+    Production rule: feedback/export is allowed only after semantic end is confirmed.
     
     Returns:
         bool: True if feedback can be requested, False otherwise
@@ -548,7 +541,10 @@ def should_enable_feedback_button():
     if len(st.session_state.chat_history) < 2:  # At least 1 exchange
         return False
     
-    # Button is always enabled if basic conditions are met
+    # 3. Semantic closure must be confirmed
+    if st.session_state.get('end_control_state') != 'ENDED' and st.session_state.get('conversation_state') != 'ended':
+        return False
+
     return True
 
 
@@ -708,44 +704,8 @@ CRITICAL INSTRUCTIONS:
             else:
                 raise
         
-        # Check response guardrails
         if domain_name:
-            from persona_guard import check_response_guardrails
-            needs_correction, correction_message = check_response_guardrails(
-                assistant_response, domain_name
-            )
-            
-            if needs_correction:
-                logger.warning(f"Response guardrail triggered, re-generating response")
-                correction_messages = messages + [
-                    {"role": "assistant", "content": assistant_response},
-                    correction_message
-                ]
-                
-                try:
-                    correction_response = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=correction_messages,
-                        max_tokens=150,
-                        temperature=0.7
-                    )
-                    assistant_response = correction_response.choices[0].message.content
-                    logger.info(f"Corrected response generated")
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
-                        st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
-                        st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and reload the page.")
-                        return
-                    else:
-                        raise
-        
-        # Validate role consistency
-        is_valid_role, cleaned_response = validate_response_role(assistant_response)
-        
-        if not is_valid_role:
-            assistant_response = "I appreciate you taking the time to talk with me. Is there anything else you'd like to discuss?"
-            logger.warning("Bot broke role - forcing generic response")
+            assistant_response = enforce_patient_only_response(client, messages, assistant_response, domain_name)
         
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         

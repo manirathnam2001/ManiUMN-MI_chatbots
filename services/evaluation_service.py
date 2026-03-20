@@ -18,6 +18,7 @@ class EvaluationService:
     
     # Default Response Factor threshold (configurable via env var)
     DEFAULT_RESPONSE_FACTOR_THRESHOLD = 2.5
+    REQUIRED_CATEGORIES = ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
     
     @classmethod
     def get_response_factor_threshold(cls) -> float:
@@ -258,6 +259,98 @@ class EvaluationService:
         )
         
         return result
+
+    @classmethod
+    def get_evaluation_status(
+        cls,
+        feedback_text: str,
+        session_type: str = "HPV",
+        chat_history: Optional[List[Dict]] = None
+    ) -> Dict[str, bool]:
+        """
+        Build canonical evaluation status gates for safe PDF export.
+
+        Returns a status object with:
+            - transcript_complete
+            - evaluator_complete
+            - score_validation_passed
+            - pdf_export_allowed
+        """
+        assessments = cls.parse_llm_feedback(feedback_text)
+        notes = cls.extract_evaluator_notes(feedback_text)
+
+        evaluator_complete = all(category in assessments for category in cls.REQUIRED_CATEGORIES)
+        notes_present = all(bool(notes.get(category, '').strip()) for category in cls.REQUIRED_CATEGORIES)
+
+        transcript_complete = True
+        if chat_history is not None:
+            has_user_turn = any(msg.get('role', '').lower() == 'user' and msg.get('content', '').strip() for msg in chat_history)
+            has_assistant_turn = any(msg.get('role', '').lower() == 'assistant' and msg.get('content', '').strip() for msg in chat_history)
+            transcript_complete = has_user_turn and has_assistant_turn and len(chat_history) >= 2
+
+        score_validation_passed = False
+        if evaluator_complete:
+            try:
+                result = cls.evaluate_session(feedback_text, session_type)
+                category_sum = sum(category_data['points'] for category_data in result['categories'].values())
+                score_validation_passed = abs(category_sum - result['total_score']) < 1e-6 and bool(notes_present)
+            except Exception:
+                score_validation_passed = False
+
+        pdf_export_allowed = transcript_complete and evaluator_complete and score_validation_passed
+        return {
+            'transcript_complete': transcript_complete,
+            'evaluator_complete': evaluator_complete,
+            'score_validation_passed': score_validation_passed,
+            'pdf_export_allowed': pdf_export_allowed
+        }
+
+    @classmethod
+    def build_normalized_result(
+        cls,
+        feedback_text: str,
+        session_type: str = "HPV",
+        response_latency: Optional[float] = None,
+        response_threshold: Optional[float] = None
+    ) -> Dict:
+        """
+        Build canonical EvaluationResult used by all report sections.
+        """
+        result = cls.evaluate_session(
+            feedback_text=feedback_text,
+            session_type=session_type,
+            response_latency=response_latency,
+            response_threshold=response_threshold
+        )
+
+        category_scores = {}
+        category_notes = {}
+        for category_name, category_data in result['categories'].items():
+            category_scores[category_name] = category_data['points']
+            category_notes[category_name] = category_data.get('notes', '')
+
+        total_score = result['total_score']
+        if abs(sum(category_scores.values()) - total_score) > 1e-6:
+            raise ValueError("Score validation failed: category sum does not match total score")
+
+        recommendations = []
+        for category_name, category_data in result['categories'].items():
+            if category_data['points'] < category_data['max_points']:
+                note = category_data.get('notes', '').strip()
+                if note:
+                    recommendations.append(f"{category_name}: {note}")
+
+        return {
+            'category_scores': category_scores,
+            'total_score': total_score,
+            'max_score': result['max_possible_score'],
+            'category_notes': category_notes,
+            'category_assessments': {k: v['assessment'] for k, v in result['categories'].items()},
+            'performance_band': result['performance_band'],
+            'percentage': result['percentage'],
+            'recommendations': recommendations,
+            'categories': result['categories']
+        }
     
     @staticmethod
     def format_evaluation_summary(evaluation_result: Dict) -> str:

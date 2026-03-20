@@ -67,6 +67,11 @@ EVALUATOR_MODE_PATTERNS = [
     r'(?i)you (did|demonstrated|showed) (well|good|poorly)',
     r'(?i)next time (try|consider|you could)',
     r'(?i)(excellent|good|poor) use of',
+    r'(?i)anything else i can help with',
+    r'(?i)as your (provider|hygienist|clinician)',
+    r'(?i)i (recommend|advise) (that )?you',
+    r'(?i)from a clinical perspective',
+    r'(?i)as an evaluator',
 ]
 
 
