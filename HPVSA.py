@@ -250,65 +250,65 @@ if st.session_state.selected_persona is not None:
         st.session_state.feedback = None
 
     # --- Finish Session Button (Feedback with RAG) ---
-    # Only enable feedback button based on conversation state
-    from chat_utils import should_enable_feedback_button
-    from end_control_middleware import MIN_TURN_THRESHOLD
-    
-    feedback_enabled = should_enable_feedback_button()
+    # Feedback button is always enabled; user must confirm before feedback is generated
     feedback_button_label = "Finish Session & Get Feedback"
     
-    if not feedback_enabled:
-        st.info("💬 Continue until a natural semantic close is reached. The feedback button unlocks only after confirmed conversation closure.")
-        
-    if st.button(feedback_button_label, disabled=not feedback_enabled):
-        # Lock transcript before evaluation and keep evaluation output in separate history
-        if 'locked_chat_history' not in st.session_state or not st.session_state.get('locked_chat_history'):
-            st.session_state.locked_chat_history = list(st.session_state.chat_history)
-        st.session_state.transcript_locked = True
-        if 'evaluation_history' not in st.session_state:
-            st.session_state.evaluation_history = []
-        # Get current timestamp and bot name
-        current_timestamp = get_formatted_utc_time()
-        evaluator = "HPV Assessment Bot"
-        
-        transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.get('locked_chat_history', st.session_state.chat_history)])
+    feedback_confirmed = st.checkbox(
+        "✅ I am ready to finish this session and receive feedback.",
+        key="feedback_confirm"
+    )
+    if st.button(feedback_button_label):
+        if not feedback_confirmed:
+            st.warning("⚠️ Please check the confirmation box above before finishing the session.")
+        else:
+            # Lock transcript before evaluation and keep evaluation output in separate history
+            if 'locked_chat_history' not in st.session_state or not st.session_state.get('locked_chat_history'):
+                st.session_state.locked_chat_history = list(st.session_state.chat_history)
+            st.session_state.transcript_locked = True
+            if 'evaluation_history' not in st.session_state:
+                st.session_state.evaluation_history = []
+            # Get current timestamp and bot name
+            current_timestamp = get_formatted_utc_time()
+            evaluator = "HPV Assessment Bot"
+            
+            transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.get('locked_chat_history', st.session_state.chat_history)])
 
-        # Retrieve relevant rubric content
-        retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
-        rag_context = "\n".join(retrieved_info)
+            # Retrieve relevant rubric content
+            retrieved_info = retrieve_knowledge("motivational interviewing feedback rubric")
+            rag_context = "\n".join(retrieved_info)
 
-        # Use standardized evaluation prompt
-        review_prompt = FeedbackFormatter.format_evaluation_prompt(
-            "HPV vaccine", transcript, rag_context
-        )
-
-        try:
-            feedback_response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
-                    {"role": "user", "content": review_prompt}
-                ]
+            # Use standardized evaluation prompt
+            review_prompt = FeedbackFormatter.format_evaluation_prompt(
+                "HPV vaccine", transcript, rag_context
             )
-            feedback = feedback_response.choices[0].message.content
-        except Exception as e:
-            # Handle authentication errors gracefully
-            error_msg = str(e).lower()
-            if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
-                st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
-                st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and restart the conversation.")
-                st.stop()
-            else:
-                # Re-raise other unexpected errors
-                raise
-        
-        # Store feedback in session state to prevent disappearing
-        st.session_state.feedback = {
-            'content': feedback,
-            'timestamp': current_timestamp,
-            'evaluator': evaluator
-        }
-        st.session_state.evaluation_history.append({'role': 'evaluator', 'content': feedback})
+
+            try:
+                feedback_response = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
+                        {"role": "user", "content": review_prompt}
+                    ]
+                )
+                feedback = feedback_response.choices[0].message.content
+            except Exception as e:
+                # Handle authentication errors gracefully
+                error_msg = str(e).lower()
+                if "401" in error_msg or "invalid api key" in error_msg or "authentication" in error_msg:
+                    st.error("❌ Invalid API Key detected. Please check your Groq API key and try again.")
+                    st.info("💡 To fix this: Enter a valid Groq API key in the field at the top of the page and restart the conversation.")
+                    st.stop()
+                else:
+                    # Re-raise other unexpected errors
+                    raise
+            
+            # Store feedback in session state to prevent disappearing
+            st.session_state.feedback = {
+                'content': feedback,
+                'timestamp': current_timestamp,
+                'evaluator': evaluator
+            }
+            st.session_state.evaluation_history.append({'role': 'evaluator', 'content': feedback})
 
     # PDF Generation section - only show PDF download
     if st.session_state.feedback is not None:
