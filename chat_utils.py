@@ -20,11 +20,8 @@ from feedback_template import FeedbackFormatter
 from scoring_utils import validate_student_name
 from pdf_utils import generate_pdf_report
 from end_control_middleware import (
-    should_continue_v4,  # Use v4 with semantic-based ending
     prevent_ambiguous_ending,
     log_conversation_trace,
-    MIN_TURN_THRESHOLD,
-    END_TOKEN,
 )
 
 # Configure logging for chat utilities
@@ -329,11 +326,6 @@ def handle_chat_input(personas_dict, client, domain_name=None, domain_keywords=N
         domain_keywords: List of domain-relevant keywords for off-topic detection
     """
     if st.session_state.selected_persona is not None:
-        # Check conversation state
-        if st.session_state.conversation_state == "ended":
-            st.info("💬 This conversation has ended. Please click 'Finish Session & Get Feedback' to receive your evaluation, or start a new conversation.")
-            return
-            
         user_prompt = st.chat_input("Your response...")
 
         if user_prompt:
@@ -372,7 +364,7 @@ def handle_chat_input(personas_dict, client, domain_name=None, domain_keywords=N
             # Increment turn count
             st.session_state.turn_count += 1
 
-            # Enhanced turn instruction with conciseness, role consistency, and end token
+            # Enhanced turn instruction with conciseness and role consistency
             turn_instruction = {
                 "role": "system",
                 "content": f"""Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
@@ -382,9 +374,7 @@ CRITICAL INSTRUCTIONS:
 - Stay in character as the PATIENT throughout the entire conversation
 - DO NOT provide feedback, evaluation, or scores during the conversation
 - DO NOT switch to evaluator role until explicitly asked at the end
-- Respond naturally as the patient would, showing emotions and reactions
-- When you are ready to naturally end the conversation after a full MI session, include the end token: {END_TOKEN}
-- Only use the end token when the conversation has covered all MI components and feels complete"""
+- Respond naturally as the patient would, showing emotions and reactions"""
             }
             
             # Build messages array with guard message if intervention needed
@@ -424,85 +414,6 @@ CRITICAL INSTRUCTIONS:
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
-            
-            # Use end-control middleware v4 for semantic-based ending
-            from end_control_middleware import should_continue_v4, log_termination_metrics
-            from config_loader import ConfigLoader
-            
-            config = ConfigLoader()
-            flags = config.get_feature_flags()
-            
-            # Build conversation context with all required fields
-            conversation_context = {
-                'chat_history': st.session_state.chat_history,
-                'turn_count': st.session_state.turn_count,
-                'end_control_state': st.session_state.get('end_control_state', 'ACTIVE'),
-                'confirmation_flag': st.session_state.get('confirmation_flag', False),
-                'termination_trigger': st.session_state.get('termination_trigger', 'unknown'),
-                'user_end_intent': st.session_state.get('user_end_intent', False),
-                'bot_end_ack': st.session_state.get('bot_end_ack', False)
-            }
-            
-            # Use v4 with semantic-based ending
-            if flags.get('require_end_confirmation', True):
-                decision = should_continue_v4(
-                    conversation_context,
-                    assistant_response,
-                    user_prompt
-                )
-                
-                # Log metrics for monitoring
-                log_termination_metrics(decision.get('metrics', {}))
-                
-                # Update session state with new conversation state and flags
-                st.session_state.end_control_state = decision['state']
-                st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
-                st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
-                st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
-                
-                # Handle confirmation prompt if needed
-                if decision.get('requires_confirmation') and decision.get('confirmation_prompt'):
-                    # Add confirmation prompt as system message (patient voice)
-                    confirmation_msg = decision['confirmation_prompt']
-                    st.session_state.chat_history.append({"role": "assistant", "content": confirmation_msg})
-                    with st.chat_message("assistant"):
-                        st.markdown(confirmation_msg)
-                    logger.info(f"Showing confirmation prompt: {confirmation_msg}")
-                
-                # Only end if decision says so
-                if not decision['continue']:
-                    st.session_state.conversation_state = "ended"
-                    st.info("💬 The conversation has concluded with mutual confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                    logger.info(f"Conversation ended: {decision['reason']}")
-                elif decision['state'] == 'PARKED':
-                    st.warning("💬 Session paused. Reconnect to continue the conversation.")
-                    logger.info(f"Session parked: {decision['reason']}")
-            else:
-                # Fallback: Use semantic-based v4 even if confirmation flag is disabled
-                # This ensures consistent behavior
-                decision = should_continue_v4(
-                    conversation_context,
-                    assistant_response,
-                    user_prompt
-                )
-                
-                # Log the decision for diagnostics
-                log_conversation_trace(conversation_context, decision, {
-                    'last_user_message': user_prompt,
-                    'last_assistant_message': assistant_response,
-                })
-                
-                # Update session state
-                st.session_state.end_control_state = decision['state']
-                st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
-                st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
-                st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
-                
-                # Only end if decision says not to continue
-                if not decision['continue']:
-                    st.session_state.conversation_state = "ended"
-                    st.info("💬 The conversation has concluded. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                    logger.info(f"Conversation ended: {decision['reason']}")
 
 
 def handle_new_conversation_button():
@@ -527,22 +438,18 @@ def should_enable_feedback_button():
     """
     Determine if the feedback button should be enabled.
     
-    Production rule: feedback/export is allowed only after semantic end is confirmed.
+    The button is always enabled once a persona is selected and there is at least
+    one exchange in the conversation.
     
     Returns:
         bool: True if feedback can be requested, False otherwise
     """
-    # Only basic checks to ensure there's something to provide feedback on:
-    # 1. A persona is selected
+    # A persona must be selected
     if st.session_state.selected_persona is None:
         return False
     
-    # 2. There's at least some conversation history
-    if len(st.session_state.chat_history) < 2:  # At least 1 exchange
-        return False
-    
-    # 3. Semantic closure must be confirmed
-    if st.session_state.get('end_control_state') != 'ENDED' and st.session_state.get('conversation_state') != 'ended':
+    # There must be at least some conversation history (at least 1 exchange)
+    if len(st.session_state.chat_history) < 2:
         return False
 
     return True
@@ -582,10 +489,6 @@ def handle_chat_input_with_voice(personas_dict, client, domain_name=None, domain
     
     # Check conversation state
     if st.session_state.selected_persona is None:
-        return
-        
-    if st.session_state.conversation_state == "ended":
-        st.info("💬 This conversation has ended. Please click 'Finish Session & Get Feedback' to receive your evaluation, or start a new conversation.")
         return
     
     # Use STT for input
@@ -671,9 +574,7 @@ CRITICAL INSTRUCTIONS:
 - Stay in character as the PATIENT throughout the entire conversation
 - DO NOT provide feedback, evaluation, or scores during the conversation
 - DO NOT switch to evaluator role until explicitly asked at the end
-- Respond naturally as the patient would, showing emotions and reactions
-- When you are ready to naturally end the conversation after a full MI session, include the end token: {END_TOKEN}
-- Only use the end token when the conversation has covered all MI components and feels complete"""
+- Respond naturally as the patient would, showing emotions and reactions"""
         }
         
         # Build messages array
@@ -722,55 +623,6 @@ CRITICAL INSTRUCTIONS:
             if st.button("🔊 Repeat", key=f"repeat_turn_{st.session_state.turn_count}"):
                 tts_html = tts_handler.generate_browser_tts_html(assistant_response, auto_play=True)
                 components.html(tts_html, height=0)
-        
-        # End control middleware logic (same as standard flow)
-        from end_control_middleware import should_continue_v4, log_termination_metrics
-        from config_loader import ConfigLoader
-        
-        config = ConfigLoader()
-        flags = config.get_feature_flags()
-        
-        conversation_context = {
-            'chat_history': st.session_state.chat_history,
-            'turn_count': st.session_state.turn_count,
-            'end_control_state': st.session_state.get('end_control_state', 'ACTIVE'),
-            'confirmation_flag': st.session_state.get('confirmation_flag', False),
-            'termination_trigger': st.session_state.get('termination_trigger', 'unknown'),
-            'user_end_intent': st.session_state.get('user_end_intent', False),
-            'bot_end_ack': st.session_state.get('bot_end_ack', False)
-        }
-        
-        if flags.get('require_end_confirmation', True):
-            decision = should_continue_v4(
-                conversation_context,
-                assistant_response,
-                user_prompt
-            )
-            
-            log_termination_metrics(decision.get('metrics', {}))
-            
-            st.session_state.end_control_state = decision['state']
-            st.session_state.confirmation_flag = conversation_context.get('confirmation_flag', False)
-            st.session_state.user_end_intent = conversation_context.get('user_end_intent', False)
-            st.session_state.bot_end_ack = conversation_context.get('bot_end_ack', False)
-            
-            if decision.get('requires_confirmation') and decision.get('confirmation_prompt'):
-                confirmation_msg = decision['confirmation_prompt']
-                st.session_state.chat_history.append({"role": "assistant", "content": confirmation_msg})
-                with st.chat_message("assistant"):
-                    st.markdown(confirmation_msg)
-                    # TTS for confirmation too
-                    tts_html = tts_handler.generate_browser_tts_html(confirmation_msg, auto_play=True)
-                    components.html(tts_html, height=0)
-                logger.info(f"Showing confirmation prompt: {confirmation_msg}")
-            
-            if not decision['continue']:
-                st.session_state.conversation_state = "ended"
-                st.info("💬 The conversation has concluded with mutual confirmation. Click 'Finish Session & Get Feedback' to receive your evaluation.")
-                logger.info(f"Conversation ended: {decision['reason']}")
-            elif decision['state'] == 'PARKED':
-                st.warning("💬 Session paused. Reconnect to continue the conversation.")
-                logger.info(f"Session parked: {decision['reason']}")
         
         # Clear transcript for next turn
         st.session_state[f"{turn_key}_transcript"] = ""
