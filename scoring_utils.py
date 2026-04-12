@@ -17,7 +17,10 @@ adjustments based on student effort and engagement (disabled by default).
 """
 
 import re
+import logging
 from typing import Dict, List, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class MIComponentScore:
@@ -231,7 +234,7 @@ class MIScorer:
         
         # Debug logging to help diagnose parsing issues
         if debug:
-            print(f"DEBUG: Parsing line: {repr(line)}")
+            logger.debug("Parsing line: %r", line)
         
         # Enhanced regex patterns to handle multiple formats including bold markdown:
         # Format 1: "1. COMPONENT: [Status] - feedback"
@@ -265,7 +268,7 @@ class MIScorer:
                 feedback = match.group(3).strip()
                 
                 if debug:
-                    print(f"DEBUG: Pattern {i} matched - Component: {component}, Status: {status}")
+                    logger.debug("Pattern %d matched - Component: %s, Status: %s", i, component, status)
                 
                 # Clean up any remaining markdown from status
                 status = status.replace('*', '').strip()
@@ -274,16 +277,16 @@ class MIScorer:
                 try:
                     score = cls.calculate_component_score(component, status)
                     if debug:
-                        print(f"DEBUG: Score calculated: {score} for {component} with status {status}")
+                        logger.debug("Score calculated: %s for %s with status %s", score, component, status)
                     return MIComponentScore(component, status, score, feedback)
                 except ValueError as e:
                     if debug:
-                        print(f"DEBUG: Score calculation failed for {component} with status '{status}': {e}")
+                        logger.debug("Score calculation failed for %s with status '%s': %s", component, status, e)
                     # If status is invalid, default to 0 score
                     return MIComponentScore(component, status, 0.0, feedback)
         
         if debug:
-            print(f"DEBUG: No pattern matched for line: {repr(line)}")
+            logger.debug("No pattern matched for line: %r", line)
         return None
     
     @classmethod
@@ -293,7 +296,7 @@ class MIScorer:
         lines = feedback_text.split('\n')
         
         if debug:
-            print(f"DEBUG: Parsing {len(lines)} lines of feedback")
+            logger.debug("Parsing %d lines of feedback", len(lines))
         
         for line in lines:
             component_score = cls.parse_component_line(line, debug=debug)
@@ -301,7 +304,7 @@ class MIScorer:
                 scores.append(component_score)
         
         if debug:
-            print(f"DEBUG: Found {len(scores)} component scores")
+            logger.debug("Found %d component scores", len(scores))
         
         return scores
     
@@ -330,7 +333,7 @@ class MIScorer:
             Dict with score breakdown including total_score, components, etc.
         """
         if debug:
-            print(f"DEBUG: Starting score breakdown for feedback of length {len(feedback_text)}")
+            logger.debug("Starting score breakdown for feedback of length %d", len(feedback_text))
         
         # Determine if internal adjustments should be enabled
         use_internal_tracking = enable_internal_adjustments if enable_internal_adjustments is not None else cls._INTERNAL_TRACKING_ENABLED
@@ -338,9 +341,9 @@ class MIScorer:
         component_scores = cls.parse_feedback_scores(feedback_text, debug=debug)
         
         if debug:
-            print(f"DEBUG: Parsed {len(component_scores)} components:")
+            logger.debug("Parsed %d components:", len(component_scores))
             for score in component_scores:
-                print(f"  - {score.component}: {score.status} = {score.score} pts")
+                logger.debug("  - %s: %s = %s pts", score.component, score.status, score.score)
         
         # Ensure all required components are present with 0 scores if missing
         # AND handle duplicates by taking the LAST occurrence of each component
@@ -354,7 +357,7 @@ class MIScorer:
                 found_score = matching_scores[-1]
                 
                 if debug and len(matching_scores) > 1:
-                    print(f"DEBUG: Component {component} has {len(matching_scores)} occurrences, using last one")
+                    logger.debug("Component %s has %d occurrences, using last one", component, len(matching_scores))
                 
                 all_components[component] = {
                     'status': found_score.status,
@@ -365,7 +368,7 @@ class MIScorer:
             else:
                 # Component missing - set to 0
                 if debug:
-                    print(f"DEBUG: Component {component} missing, setting to 0")
+                    logger.debug("Component %s missing, setting to 0", component)
                 all_components[component] = {
                     'status': 'Not Found',
                     'score': 0.0,
@@ -384,10 +387,10 @@ class MIScorer:
             time_factor = cls._calculate_internal_time_factor(feedback_text, enabled=True)
             
             if debug:
-                print(f"DEBUG: Internal tracking enabled")
-                print(f"DEBUG: Base score before adjustments: {base_total_score}")
-                print(f"DEBUG: Internal effort bonus: {effort_bonus} points")
-                print(f"DEBUG: Internal time factor: {time_factor}x")
+                logger.debug("Internal tracking enabled")
+                logger.debug("Base score before adjustments: %s", base_total_score)
+                logger.debug("Internal effort bonus: %s points", effort_bonus)
+                logger.debug("Internal time factor: %sx", time_factor)
         
         # Apply internal adjustments to get final score (only if enabled)
         if use_internal_tracking:
@@ -403,7 +406,7 @@ class MIScorer:
             raise ValueError(f"Total score {total_score} is outside valid range (0-{cls.TOTAL_POSSIBLE_SCORE})")
         
         if debug:
-            print(f"DEBUG: Final total score: {total_score}")
+            logger.debug("Final total score: %s", total_score)
         
         breakdown = {
             'components': all_components,
@@ -430,8 +433,8 @@ class MIScorer:
             )
         
         if debug:
-            print(f"DEBUG: Final breakdown - Total: {breakdown['total_score']}/{breakdown['total_possible']} ({breakdown['percentage']:.1f}%)")
-            print(f"DEBUG: Validation passed - score within valid range")
+            logger.debug("Final breakdown - Total: %s/%s (%.1f%%)", breakdown['total_score'], breakdown['total_possible'], breakdown['percentage'])
+            logger.debug("Validation passed - score within valid range")
         
         return breakdown
 

@@ -29,8 +29,4 @@ jobs:
         run: python3 config_loader.py
       - name: Run secret_code_portal.py
         run: python3 secret_code_portal.py
-      - name: Run HPVSA.py
-        run: python3 HPVSA.py
-      - name: Run OHISA.py
-        run: python3 OHISA.py
     

@@ -44,7 +44,7 @@ from persona_texts import (
     PERIO_DOMAIN_NAME,
     PERIO_DOMAIN_KEYWORDS
 )
-from logger_config import get_logger, log_action, log_error_with_context
+from logger_config import get_logger
 
 # Configure logging
 logger = get_logger(__name__)
@@ -174,10 +174,14 @@ except Exception as e:
 knowledge_text = "\n\n".join(knowledge_texts)
 
 # --- Step 2: Initialize RAG (Embeddings + FAISS) ---
-# Use CPU device explicitly to avoid Meta tensor initialization errors
-import torch
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+@st.cache_resource
+def load_embedding_model():
+    """Cache the SentenceTransformer model to avoid reloading on every rerun."""
+    import torch
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    return SentenceTransformer('all-MiniLM-L6-v2', device=device)
+
+embedding_model = load_embedding_model()
 
 # --- Initialize session state for persona selection ---
 if "selected_persona" not in st.session_state:
@@ -231,21 +235,28 @@ if st.session_state.selected_persona is None:
       
 def split_text(text, max_length=200):
     words = text.split()
-    chunks, current_chunk = [], []
+    chunks, current_chunk, current_length = [], [], 0
     for word in words:
-        if len(" ".join(current_chunk + [word])) > max_length:
+        word_len = len(word)
+        if current_length + word_len + (1 if current_chunk else 0) > max_length:
             chunks.append(" ".join(current_chunk))
-            current_chunk = []
+            current_chunk, current_length = [], 0
         current_chunk.append(word)
+        current_length += word_len + (1 if len(current_chunk) > 1 else 0)
     if current_chunk:
         chunks.append(" ".join(current_chunk))
     return chunks
 
-knowledge_chunks = split_text(knowledge_text)
-dimension = 384  # for all-MiniLM-L6-v2
-faiss_index = faiss.IndexFlatL2(dimension)
-embeddings = embedding_model.encode(knowledge_chunks)
-faiss_index.add(np.array(embeddings))
+@st.cache_resource
+def build_faiss_index(knowledge_text, _embedding_model):
+    """Cache FAISS index to avoid rebuilding on every rerun."""
+    chunks = split_text(knowledge_text)
+    embeddings = _embedding_model.encode(chunks)
+    index = faiss.IndexFlatL2(384)
+    index.add(np.array(embeddings))
+    return index, chunks
+
+faiss_index, knowledge_chunks = build_faiss_index(knowledge_text, embedding_model)
 
 def retrieve_knowledge(query, top_k=2):
     query_embedding = embedding_model.encode([query])
