@@ -33,9 +33,31 @@ except ImportError:
     OLD_SCORER_AVAILABLE = False
 
 
+# Dedicated evaluator system prompt — used for the evaluation LLM call only.
+# This replaces the patient persona that was previously (incorrectly) used as
+# the system prompt during evaluation, which caused conflicting instructions.
+EVALUATOR_SYSTEM_PROMPT = """You are an expert Motivational Interviewing (MI) evaluator for dental and healthcare education. Your ONLY role is to assess student MI skills using the provided rubric.
+
+CRITICAL FORMAT RULES:
+- You MUST output EXACTLY 6 category assessment lines.
+- Each line MUST start with ** and follow this EXACT format:
+  **Category Name (X pts): [Assessment Level] - [Your specific feedback with direct conversation quotes]**
+- The 6 categories are: Collaboration, Acceptance, Compassion, Evocation, Summary, Response Factor.
+- Assessment levels MUST be one of: Fully Met, Partially Met, Minimally Met, Not Met
+- You MUST include direct conversation quotes from the student to justify each assessment.
+- Do NOT skip any category. Do NOT add commentary before the first category line.
+- After all 6 categories, provide overall recommendations and a total score.
+
+IMPORTANT GRADING PRINCIPLES:
+- Evaluate MI TECHNIQUE only. Do NOT penalize spelling, grammar, or English proficiency.
+- Focus on whether the student demonstrates MI skills (open questions, reflections, empathy, collaboration) regardless of how the text is written.
+- Spelling errors, grammatical mistakes, and informal language should NOT affect any category scores.
+- Be fair and constructive. Highlight strengths before areas for improvement."""
+
+
 class FeedbackFormatter:
     """Handles standardized feedback formatting for MI assessments."""
-    
+
     @staticmethod
     def format_evaluation_prompt(session_type: str, transcript: str, rag_context: str) -> str:
         """Generate standardized evaluation prompt for both HPV and OHI assessments using updated 40-point rubric with granular scoring."""
@@ -124,6 +146,7 @@ class FeedbackFormatter:
         - Include overall recommendations for continued learning and skill development
         - Maintain a supportive and educational tone throughout your feedback
         - Use granular scoring levels: Fully Met, Partially Met, Minimally Met, or Not Met
+        - **IMPORTANT**: Evaluate MI TECHNIQUE, not language proficiency. Spelling errors, grammatical mistakes, and informal language should NOT affect any category scores. Focus exclusively on MI skills.
 
         Remember: Your feedback should help the student understand both what they did well and how they can improve their MI skills in future conversations. Total possible score is 40 points. **Always include conversation quotes to support your assessment.**
         """

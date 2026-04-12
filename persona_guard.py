@@ -56,6 +56,7 @@ INJECTION_PATTERNS = [
 
 # Evaluator/feedback mode indicators (persona drift detection)
 EVALUATOR_MODE_PATTERNS = [
+    # Academic/evaluator language
     r'(?i)(feedback|evaluation) report',
     r'(?i)score:?\s*\d+',
     r'(?i)rubric category',
@@ -67,11 +68,21 @@ EVALUATOR_MODE_PATTERNS = [
     r'(?i)you (did|demonstrated|showed) (well|good|poorly)',
     r'(?i)next time (try|consider|you could)',
     r'(?i)(excellent|good|poor) use of',
-    r'(?i)anything else i can help with',
+    r'(?i)as an evaluator',
+    # Provider-voice drift (bot acting as clinician instead of patient)
+    r"(?i)anything else i can (do|help).{0,15}(with|for you)",
     r'(?i)as your (provider|hygienist|clinician)',
     r'(?i)i (recommend|advise) (that )?you',
     r'(?i)from a clinical perspective',
-    r'(?i)as an evaluator',
+    r"(?i)you'?re welcome.{0,20}(pleasure|glad)",
+    r"(?i)i('m| am) (glad|happy) i could help",
+    r"(?i)is there anything else i can (do|help)",
+    r"(?i)before (we|you) (wrap|go|leave|finish)",
+    r"(?i)it was (a |my )?pleasure (helping|talking|discussing)",
+    r"(?i)don'?t hesitate to (ask|reach|come back|contact)",
+    r"(?i)take care of (yourself|yourselves)",
+    r"(?i)have a (good|great|nice) (day|rest of)",
+    r"(?i)getting the vaccine.{0,20}(great|good|smart|wise) (decision|choice)",
 ]
 
 
@@ -96,50 +107,76 @@ def detect_prompt_injection(user_message: str) -> Tuple[bool, Optional[str]]:
     return False, None
 
 
-def detect_off_topic(user_message: str, domain_keywords: List[str], threshold: int = 3) -> bool:
+# Greeting/introduction patterns that should NEVER be flagged as off-topic.
+# Introductions and rapport-building are essential MI skills.
+GREETING_PATTERNS = [
+    r"(?i)\b(hello|hi|hey|good morning|good afternoon|good evening)\b",
+    r"(?i)my name is",
+    r"(?i)nice to meet you",
+    r"(?i)i('m| am| will be) your.{0,20}(hygienist|provider|clinician|dentist|assistant)",
+    r"(?i)how are you",
+    r"(?i)welcome to",
+    r"(?i)thank you for coming",
+    r"(?i)i('ll| will) be (working|helping|seeing|talking)",
+    r"(?i)thanks for (coming|being|meeting|joining)",
+    r"(?i)pleasure to meet",
+]
+
+
+def detect_off_topic(user_message: str, domain_keywords: List[str], threshold: int = 3, turn_count: int = None) -> bool:
     """
     Detect if user message is off-topic (not related to domain).
-    
+
     This uses keyword matching to determine if the message is about the domain topic.
     If the message is short (< 5 words) and contains no domain keywords, it's considered off-topic.
-    
+
     Args:
         user_message: The user's input message
         domain_keywords: List of keywords relevant to the domain
         threshold: Minimum message length (words) to check for off-topic
-        
+        turn_count: Current conversation turn count (first few turns are introductory)
+
     Returns:
         bool: True if message is off-topic
     """
     message_lower = user_message.lower()
     words = message_lower.split()
-    
+
     # Very short messages (greetings, acknowledgments) are not off-topic
     if len(words) < threshold:
         return False
-    
+
+    # Never flag greetings/introductions as off-topic — these are essential MI skills
+    for pattern in GREETING_PATTERNS:
+        if re.search(pattern, message_lower):
+            return False
+
+    # First 3 turns are introductory — skip off-topic check entirely
+    if turn_count is not None and turn_count <= 3:
+        return False
+
     # Check if message contains any domain keywords
     for keyword in domain_keywords:
         if keyword.lower() in message_lower:
             return False
-    
+
     # Check if message is asking about unrelated common topics
     unrelated_topics = [
         'weather', 'politics', 'sports', 'movie', 'music', 'food', 'recipe',
         'travel', 'vacation', 'hobby', 'job', 'work', 'school', 'homework',
         'news', 'celebrity', 'game', 'shopping', 'fashion', 'car', 'house'
     ]
-    
+
     for topic in unrelated_topics:
         if topic in message_lower:
             logger.info(f"Off-topic detected: unrelated topic '{topic}' in message")
             return True
-    
+
     # If message is long but contains no domain keywords, might be off-topic
     # But we're lenient here to avoid false positives
     if len(words) > 10:
         logger.debug(f"Long message without domain keywords, but allowing: '{user_message[:100]}'")
-    
+
     return False
 
 
@@ -274,16 +311,18 @@ REGENERATE your last response in 2-3 sentences or less."""
 def apply_guardrails(
     user_message: str,
     domain_name: str,
-    domain_keywords: List[str]
+    domain_keywords: List[str],
+    turn_count: int = None
 ) -> Tuple[bool, Optional[Dict]]:
     """
     Apply all guardrails to user input and determine if intervention is needed.
-    
+
     Args:
         user_message: The user's input message
         domain_name: Name of the domain (e.g., "HPV vaccination")
         domain_keywords: List of domain-relevant keywords
-        
+        turn_count: Current conversation turn count (passed to off-topic detection)
+
     Returns:
         Tuple of (needs_intervention, guard_message):
             - needs_intervention: True if guardrail triggered
@@ -293,12 +332,12 @@ def apply_guardrails(
     is_injection, _ = detect_prompt_injection(user_message)
     if is_injection:
         return True, create_injection_guard_message(domain_name)
-    
-    # Check for off-topic queries
-    is_off_topic = detect_off_topic(user_message, domain_keywords)
+
+    # Check for off-topic queries (with turn-count awareness)
+    is_off_topic = detect_off_topic(user_message, domain_keywords, turn_count=turn_count)
     if is_off_topic:
         return True, create_off_topic_guard_message(domain_name)
-    
+
     # No intervention needed
     return False, None
 

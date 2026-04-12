@@ -7,8 +7,11 @@ Handles parsing of LLM feedback, context determination, and score calculation.
 
 import os
 import re
+import logging
 from typing import Dict, List, Optional, Tuple
 from rubric.mi_rubric import MIRubric, MIEvaluator, CategoryAssessment, RubricContext
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationService:
@@ -56,7 +59,7 @@ class EvaluationService:
         assessments = {}
         lines = feedback_text.split('\n')
         
-        # Regex patterns to match category lines
+        # Regex patterns to match category lines (ordered most-specific to broadest)
         patterns = [
             # Pattern with dash: "Collaboration: Fully Met - ..." or with bold markdown
             r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*\([\d/]+\))?(?:\*{0,2})?\s*[-–—]',
@@ -64,6 +67,8 @@ class EvaluationService:
             r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*(?:\*{0,2})?\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*\([\d/]+\))?(?:\*{0,2})?\s*$',
             # Pattern with brackets: "Collaboration: [Fully Met] - ..."
             r'^\*{0,2}(?:\d+\.\s*)?(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)(?:\s*\([\d.]+\s*pts?\))?\s*:?\s*\[\s*(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)(?:\s*[\d/]+)?\s*\]',
+            # Fallback: loose match — category name anywhere on line + assessment level
+            r'(?:\*{0,2})?(Collaboration|Acceptance|Compassion|Evocation|Summary|Response Factor)\b.*?\b(Fully Met|Partially Met|Minimally Met|Not Met|Meets Criteria|Needs Improvement)\b',
         ]
         
         for line in lines:
@@ -97,8 +102,40 @@ class EvaluationService:
                     assessments[category_normalized] = assessment
                     break
         
+        if len(assessments) < 6:
+            logger.warning(
+                "Incomplete parse: found %d/6 categories. Missing: %s",
+                len(assessments),
+                [c for c in ['Collaboration', 'Acceptance', 'Compassion', 'Evocation', 'Summary', 'Response Factor']
+                 if c.title() not in assessments and c not in assessments]
+            )
+
         return assessments
-    
+
+    @staticmethod
+    def extract_narrative_score(feedback_text: str) -> Optional[float]:
+        """
+        Fallback: extract a total score from narrative text when structured parsing fails.
+        Looks for patterns like 'Total score: 33/40', 'Score: 26/40', '33 out of 40', etc.
+
+        Returns:
+            The extracted score as a float, or None if not found.
+        """
+        patterns = [
+            r'(?i)total\s*(?:score|points?)\s*:?\s*(\d+(?:\.\d+)?)\s*/\s*40',
+            r'(?i)score\s*(?:of\s*)?:?\s*(\d+(?:\.\d+)?)\s*/\s*40',
+            r'(?i)(\d+(?:\.\d+)?)\s*(?:out of|/)\s*40\s*(?:points?|pts?)',
+            r'(?i)(\d+(?:\.\d+)?)\s*/\s*40',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, feedback_text)
+            if match:
+                score = float(match.group(1))
+                if 0 <= score <= 40:
+                    logger.info("Extracted narrative score: %.1f/40", score)
+                    return score
+        return None
+
     @staticmethod
     def determine_context(session_type: str) -> RubricContext:
         """
@@ -177,18 +214,25 @@ class EvaluationService:
     def generate_default_notes(category: str, assessment: CategoryAssessment, context: RubricContext) -> str:
         """
         Generate constructive default notes when LLM feedback lacks specific details.
-        
+
         Args:
             category: Category name
-            assessment: CategoryAssessment (MEETS_CRITERIA or NEEDS_IMPROVEMENT)
-            context: RubricContext (HPV or OHI)
-            
+            assessment: CategoryAssessment enum value
+            context: RubricContext (HPV, OHI, TOBACCO, PERIO)
+
         Returns:
             Constructive feedback note
         """
-        context_text = "HPV vaccination" if context == RubricContext.HPV else "oral health"
-        
-        if assessment == CategoryAssessment.MEETS_CRITERIA:
+        context_map = {
+            RubricContext.HPV: "HPV vaccination",
+            RubricContext.OHI: "oral health",
+            RubricContext.TOBACCO: "tobacco cessation",
+            RubricContext.PERIO: "periodontitis and gum health",
+        }
+        context_text = context_map.get(context, "the health topic")
+
+        # Positive notes for FULLY MET and legacy MEETS_CRITERIA
+        if assessment in [CategoryAssessment.MEETS_CRITERIA, CategoryAssessment.FULLY_MET]:
             # Positive constructive feedback for meeting criteria
             positive_notes = {
                 'Collaboration': f'Demonstrated effective partnership and collaboration skills in discussing {context_text}.',
@@ -245,6 +289,15 @@ class EvaluationService:
             if category_name in assessments and (category_name not in notes or not notes[category_name]):
                 assessment = assessments[category_name]
                 notes[category_name] = cls.generate_default_notes(category_name, assessment, context)
+
+        # Fix Bug 7: If a category is Fully Met but the LLM-generated note contains
+        # improvement language (e.g., "Consider...", "Try to..."), replace with praise.
+        improvement_words = ['consider', 'try to', 'work on', 'practice', 'focus on', 'could improve']
+        for category_name in assessments:
+            if assessments[category_name] in [CategoryAssessment.FULLY_MET, CategoryAssessment.MEETS_CRITERIA]:
+                note = notes.get(category_name, '')
+                if note and any(word in note.lower() for word in improvement_words):
+                    notes[category_name] = cls.generate_default_notes(category_name, assessments[category_name], context)
         
         # Get threshold
         threshold = response_threshold or cls.get_response_factor_threshold()

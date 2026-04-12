@@ -16,7 +16,7 @@ import streamlit as st
 import logging
 from groq import Groq
 from time_utils import get_formatted_utc_time
-from feedback_template import FeedbackFormatter
+from feedback_template import FeedbackFormatter, EVALUATOR_SYSTEM_PROMPT
 from scoring_utils import validate_student_name
 from pdf_utils import generate_pdf_report
 from end_control_middleware import (
@@ -210,9 +210,9 @@ def generate_and_display_feedback(personas_dict, session_type, student_name, ret
 
     try:
         feedback_response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": personas_dict[st.session_state.selected_persona]},
+                {"role": "system", "content": EVALUATOR_SYSTEM_PROMPT},
                 {"role": "user", "content": review_prompt}
             ]
         )
@@ -348,9 +348,10 @@ def handle_chat_input(personas_dict, client, domain_name=None, domain_keywords=N
             if domain_name and domain_keywords:
                 from persona_guard import apply_guardrails
                 needs_intervention, guard_message = apply_guardrails(
-                    user_prompt, domain_name, domain_keywords
+                    user_prompt, domain_name, domain_keywords,
+                    turn_count=st.session_state.get('turn_count', 0)
                 )
-                
+
                 if needs_intervention:
                     logger.warning(f"Guardrail intervention triggered for user message: '{user_prompt[:50]}'")
             
@@ -388,7 +389,21 @@ CRITICAL INSTRUCTIONS:
                 messages.append(guard_message)
             
             messages.extend(st.session_state.chat_history)
-            
+
+            # Mid-conversation role reinforcement: every 4 assistant turns, remind
+            # the model it is the PATIENT to prevent provider-voice drift in long sessions.
+            current_turn = st.session_state.get('turn_count', 0)
+            if current_turn > 0 and current_turn % 4 == 0:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "REMINDER: You are the PATIENT, not the provider. "
+                        "Do NOT use provider language like 'You're welcome', "
+                        "'Is there anything else I can do for you', or "
+                        "'It was a pleasure helping you.' Continue responding as the patient."
+                    )
+                })
+
             try:
                 response = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
@@ -548,9 +563,10 @@ def handle_chat_input_with_voice(personas_dict, client, domain_name=None, domain
         if domain_name and domain_keywords:
             from persona_guard import apply_guardrails
             needs_intervention, guard_message = apply_guardrails(
-                user_prompt, domain_name, domain_keywords
+                user_prompt, domain_name, domain_keywords,
+                turn_count=st.session_state.get('turn_count', 0)
             )
-            
+
             if needs_intervention:
                 logger.warning(f"Guardrail intervention triggered for user message: '{user_prompt[:50]}'")
         
@@ -587,7 +603,20 @@ CRITICAL INSTRUCTIONS:
             messages.append(guard_message)
         
         messages.extend(st.session_state.chat_history)
-        
+
+        # Mid-conversation role reinforcement for voice mode path
+        current_turn = st.session_state.get('turn_count', 0)
+        if current_turn > 0 and current_turn % 4 == 0:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "REMINDER: You are the PATIENT, not the provider. "
+                    "Do NOT use provider language like 'You're welcome', "
+                    "'Is there anything else I can do for you', or "
+                    "'It was a pleasure helping you.' Continue responding as the patient."
+                )
+            })
+
         try:
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
