@@ -36,7 +36,7 @@ import faiss
 import numpy as np
 from time_utils import get_formatted_utc_time
 from pdf_utils import generate_pdf_report
-from feedback_template import FeedbackFormatter, FeedbackValidator
+from feedback_template import FeedbackFormatter, FeedbackValidator, EVALUATOR_SYSTEM_PROMPT
 from scoring_utils import validate_student_name
 from persona_texts import (
     OHI_PERSONAS,
@@ -299,9 +299,9 @@ if st.button(feedback_button_label):
 
         try:
             feedback_response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": PERSONAS[st.session_state.selected_persona]},
+                    {"role": "system", "content": EVALUATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": review_prompt}
                 ]
             )
