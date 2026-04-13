@@ -206,9 +206,28 @@ class EvaluationService:
             if match:
                 category = match.group(1).strip().title()
                 note = match.group(2).strip()
-                notes[category] = note
-        
+                notes[category] = cls._sanitize_note(note)
+
         return notes
+
+    @staticmethod
+    def _sanitize_note(note: str) -> str:
+        """Clean up LLM-generated note text by removing artifacts.
+
+        Strips raw score ratios (e.g. "6/9**"), trailing markdown asterisks,
+        placeholder bracket text (e.g. "[Specific feedback with conversation quotes]"),
+        and other common LLM output artifacts.
+        """
+        # Remove placeholder text in brackets
+        cleaned = re.sub(r'\[(?:Specific feedback|Direct quote|Your specific feedback)[^\]]*\]', '', note)
+        # Remove raw score ratios like "6/9**" or "6/6" that leak as notes
+        cleaned = re.sub(r'^\d+/\d+\*{0,2}\s*$', '', cleaned)
+        # Remove trailing markdown bold markers
+        cleaned = re.sub(r'\*{1,2}\s*$', '', cleaned)
+        # Remove leading markdown bold markers
+        cleaned = re.sub(r'^\*{1,2}\s*', '', cleaned)
+        cleaned = cleaned.strip()
+        return cleaned
     
     @staticmethod
     def generate_default_notes(category: str, assessment: CategoryAssessment, context: RubricContext) -> str:

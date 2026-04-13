@@ -28,6 +28,20 @@ from end_control_middleware import (
 logger = logging.getLogger(__name__)
 
 
+def sanitize_bot_response(response: str) -> str:
+    """Strip conversation-ending tokens and artifacts from bot output.
+
+    The bot sometimes generates <<END>>, <<>>, <>, or partial end markers
+    that should never be displayed to the student.
+    """
+    import re
+    # Remove <<END>>, <<>>, <>, and variations (with optional whitespace)
+    cleaned = re.sub(r'<{1,2}\s*(?:END)?\s*>{1,2}', '', response)
+    # Remove trailing whitespace left after stripping
+    cleaned = cleaned.strip()
+    return cleaned
+
+
 def enforce_patient_only_response(client, base_messages, candidate_response, domain_name: str):
     """Hard validator/regenerator for patient-only responses before rendering."""
     from persona_guard import check_response_guardrails
@@ -47,7 +61,7 @@ def enforce_patient_only_response(client, base_messages, candidate_response, dom
         correction_response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=correction_messages,
-            max_tokens=120,
+            max_tokens=200,
             temperature=0.4
         )
         response = correction_response.choices[0].message.content
@@ -365,17 +379,19 @@ def handle_chat_input(personas_dict, client, domain_name=None, domain_keywords=N
             # Increment turn count
             st.session_state.turn_count += 1
 
-            # Enhanced turn instruction with conciseness and role consistency
+            # Turn instruction: reinforce PATIENT role (not MI coach steps)
+            persona_name = st.session_state.get('selected_persona', 'the patient')
             turn_instruction = {
                 "role": "system",
-                "content": f"""Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
+                "content": f"""Stay in character as {persona_name}. You are the PATIENT, not the provider.
 
-CRITICAL INSTRUCTIONS:
-- Keep your responses CONCISE (2-3 sentences maximum)
-- Stay in character as the PATIENT throughout the entire conversation
-- DO NOT provide feedback, evaluation, or scores during the conversation
-- DO NOT switch to evaluator role until explicitly asked at the end
-- Respond naturally as the patient would, showing emotions and reactions"""
+RULES:
+- Keep responses to 2-3 sentences maximum. Be realistic and conversational.
+- Respond with your own feelings, concerns, and reactions as a patient would.
+- NEVER provide feedback, evaluation, clinical advice, or score the student.
+- NEVER say "It was a pleasure working with you", "You demonstrated", "You did well", "Is there anything else I can help with", or "before we wrap up".
+- NEVER compliment the student's technique or MI skills during the conversation.
+- If the conversation is ending, give a brief natural farewell as a patient (e.g., "Thanks, I feel better about this now")."""
             }
             
             # Build messages array with guard message if intervention needed
@@ -408,7 +424,7 @@ CRITICAL INSTRUCTIONS:
                 response = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=messages,
-                    max_tokens=150,  # Limit response length to enforce conciseness
+                    max_tokens=250,  # Allow 2-3 full sentences without mid-sentence truncation
                     temperature=0.7
                 )
                 assistant_response = response.choices[0].message.content
@@ -425,7 +441,8 @@ CRITICAL INSTRUCTIONS:
             
             if domain_name:
                 assistant_response = enforce_patient_only_response(client, messages, assistant_response, domain_name)
-            
+            assistant_response = sanitize_bot_response(assistant_response)
+
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             with st.chat_message("assistant"):
                 st.markdown(assistant_response)
@@ -580,17 +597,19 @@ def handle_chat_input_with_voice(personas_dict, client, domain_name=None, domain
         # Increment turn count
         st.session_state.turn_count += 1
         
-        # Enhanced turn instruction
+        # Turn instruction: reinforce PATIENT role (not MI coach steps)
+        persona_name = st.session_state.get('selected_persona', 'the patient')
         turn_instruction = {
             "role": "system",
-            "content": f"""Follow the MI chain-of-thought steps: identify routine, ask open question, reflect, elicit change talk, summarize & plan.
+            "content": f"""Stay in character as {persona_name}. You are the PATIENT, not the provider.
 
-CRITICAL INSTRUCTIONS:
-- Keep your responses CONCISE (2-3 sentences maximum)
-- Stay in character as the PATIENT throughout the entire conversation
-- DO NOT provide feedback, evaluation, or scores during the conversation
-- DO NOT switch to evaluator role until explicitly asked at the end
-- Respond naturally as the patient would, showing emotions and reactions"""
+RULES:
+- Keep responses to 2-3 sentences maximum. Be realistic and conversational.
+- Respond with your own feelings, concerns, and reactions as a patient would.
+- NEVER provide feedback, evaluation, clinical advice, or score the student.
+- NEVER say "It was a pleasure working with you", "You demonstrated", "You did well", "Is there anything else I can help with", or "before we wrap up".
+- NEVER compliment the student's technique or MI skills during the conversation.
+- If the conversation is ending, give a brief natural farewell as a patient (e.g., "Thanks, I feel better about this now")."""
         }
         
         # Build messages array
@@ -621,7 +640,7 @@ CRITICAL INSTRUCTIONS:
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=messages,
-                max_tokens=150,
+                max_tokens=250,
                 temperature=0.7
             )
             assistant_response = response.choices[0].message.content
@@ -636,7 +655,8 @@ CRITICAL INSTRUCTIONS:
         
         if domain_name:
             assistant_response = enforce_patient_only_response(client, messages, assistant_response, domain_name)
-        
+        assistant_response = sanitize_bot_response(assistant_response)
+
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
         
         # Show bot response with TTS
