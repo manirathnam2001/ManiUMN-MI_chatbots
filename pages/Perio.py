@@ -5,7 +5,7 @@ This Streamlit application provides an interactive environment for dental profes
 to practice Motivational Interviewing (MI) skills in periodontitis counseling.
 
 Features:
-- Multiple patient personas based on "Ava Johnson" case study showing disease progression
+- Multiple patient personas representing different stages of periodontal disease progression
 - Real-time conversation with AI-powered patient simulators
 - RAG-based feedback using MI rubrics from perio_rubrics/ directory
 - Automated scoring on 40-point MI rubric
@@ -93,7 +93,7 @@ st.title("🦷 Periodontitis MI Practice")
 st.markdown(
     """
     Welcome to the **Periodontitis MI Practice App**. This chatbot simulates realistic patients 
-    at different stages of gum disease based on the "Ava Johnson" case study. Your goal is to practice **Motivational Interviewing (MI)** skills 
+    at different stages of gum disease. Your goal is to practice **Motivational Interviewing (MI)** skills 
     by engaging in a natural conversation and helping the patient explore their thoughts and feelings about their periodontal health. 
     At the end, you'll receive **detailed feedback** based on the official MI rubric.
 
@@ -189,30 +189,21 @@ if "selected_persona" not in st.session_state:
 
 # --- Persona Selection ---
 if st.session_state.selected_persona is None:
-    st.markdown("### Choose a Patient Stage (Ava Johnson Case Study)")
+    st.markdown("### Choose a Patient Persona")
     st.markdown("""
-    Select a stage of Ava's journey with periodontitis:
+    Select a patient persona to practice with — each represents a different stage of periodontal disease:
 
-    - **Ava — Early Gingivitis**: At a cleaning appointment, noticing bleeding gums
-    - **Ava — Early Periodontitis**: New patient, recently diagnosed, nervous about treatment
-    - **Ava — Disease Management**: Maintenance appointment, struggling with consistency
-    - **Ava — Advanced Disease**: Appointment to discuss advanced bone loss and treatment options
+    - **Alex**: Early gingivitis — at a cleaning appointment, noticing bleeding gums
+    - **Bob**: Early periodontitis — new patient, recently diagnosed, nervous about treatment
+    - **Charles**: Disease management — maintenance appointment, struggling with consistency
+    - **Diana**: Advanced disease — appointment to discuss bone loss and treatment options
     """)
 
-    # Map display labels to internal persona keys
-    PERIO_STAGE_LABELS = {
-        "Ava \u2014 Early Gingivitis": "Alex",
-        "Ava \u2014 Early Periodontitis": "Bob",
-        "Ava \u2014 Disease Management": "Charles",
-        "Ava \u2014 Advanced Disease": "Diana",
-    }
-
-    selected_label = st.selectbox(
-        "Select a stage:",
-        list(PERIO_STAGE_LABELS.keys()),
+    selected = st.selectbox(
+        "Select a persona:",
+        list(PERSONAS.keys()),
         key="persona_selector"
     )
-    selected = PERIO_STAGE_LABELS[selected_label]
     
     # Move "Start Conversation" button inside persona selection block
     if st.button("Start Conversation"):
@@ -224,12 +215,12 @@ if st.session_state.selected_persona is None:
         st.session_state.conversation_state = "active"
         st.session_state.turn_count = 0
         
-        # Customize greeting based on stage — Ava is AT a dental appointment
+        # Customize greeting based on persona — each is AT a dental appointment
         stage_greetings = {
-            "Alex": "Hi, I'm Ava. Thanks for seeing me today. I've been noticing my gums bleed when I brush — is that something I should be worried about?",
-            "Bob": "Hello, I'm Ava. I'm a new patient here. My last dentist told me I have periodontitis and need a deep cleaning, and honestly I'm pretty nervous about it.",
-            "Charles": "Hi there, I'm Ava. I know I missed my last maintenance appointment — things have just been really busy. I'm trying to get back on track.",
-            "Diana": "Hi, I'm Ava. I know my gum disease has gotten worse. I've been putting off coming in because I'm scared about what you're going to tell me."
+            "Alex": "Hi, I'm Alex. Thanks for seeing me today. I've been noticing my gums bleed when I brush — is that something I should be worried about?",
+            "Bob": "Hello, I'm Bob. I'm a new patient here. My last dentist told me I have periodontitis and need a deep cleaning, and honestly I'm pretty nervous about it.",
+            "Charles": "Hi there, I'm Charles. I know I missed my last maintenance appointment — things have just been really busy. I'm trying to get back on track.",
+            "Diana": "Hi, I'm Diana. I know my gum disease has gotten worse. I've been putting off coming in because I'm scared about what you're going to tell me."
         }
         
         greeting = stage_greetings.get(selected, f"Hello! I'm {selected}, nice to meet you today.")
