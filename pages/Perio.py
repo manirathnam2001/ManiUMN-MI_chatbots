@@ -189,21 +189,30 @@ if "selected_persona" not in st.session_state:
 
 # --- Persona Selection ---
 if st.session_state.selected_persona is None:
-    st.markdown("### Choose a Patient Persona (Ava Johnson Case Study)")
+    st.markdown("### Choose a Patient Stage (Ava Johnson Case Study)")
     st.markdown("""
     Select a stage of Ava's journey with periodontitis:
-    
-    - **Alex**: Early stage - noticing bleeding gums, unaware of risk
-    - **Bob**: Progression - diagnosed with early periodontitis, needs deep cleaning
-    - **Charles**: Management - maintaining after treatment, struggling with consistency
-    - **Diana**: Advanced - severe bone loss, facing possible tooth extractions
+
+    - **Ava — Early Gingivitis**: At a cleaning appointment, noticing bleeding gums
+    - **Ava — Early Periodontitis**: New patient, recently diagnosed, nervous about treatment
+    - **Ava — Disease Management**: Maintenance appointment, struggling with consistency
+    - **Ava — Advanced Disease**: Appointment to discuss advanced bone loss and treatment options
     """)
-    
-    selected = st.selectbox(
-        "Select a persona:",
-        list(PERSONAS.keys()),
+
+    # Map display labels to internal persona keys
+    PERIO_STAGE_LABELS = {
+        "Ava \u2014 Early Gingivitis": "Alex",
+        "Ava \u2014 Early Periodontitis": "Bob",
+        "Ava \u2014 Disease Management": "Charles",
+        "Ava \u2014 Advanced Disease": "Diana",
+    }
+
+    selected_label = st.selectbox(
+        "Select a stage:",
+        list(PERIO_STAGE_LABELS.keys()),
         key="persona_selector"
     )
+    selected = PERIO_STAGE_LABELS[selected_label]
     
     # Move "Start Conversation" button inside persona selection block
     if st.button("Start Conversation"):
@@ -215,12 +224,12 @@ if st.session_state.selected_persona is None:
         st.session_state.conversation_state = "active"
         st.session_state.turn_count = 0
         
-        # Customize greeting based on stage
+        # Customize greeting based on stage — Ava is AT a dental appointment
         stage_greetings = {
-            "Alex": "Hi, I'm Ava. I wanted to ask about something I've noticed with my gums...",
-            "Bob": "Hello, I'm Ava. My dentist just told me I have periodontitis and I'm honestly pretty worried.",
-            "Charles": "Hi there, I'm Ava. I've been managing gum disease for a while now, but I'm having trouble staying consistent.",
-            "Diana": "Hi, I'm Ava. I'm dealing with advanced periodontitis and facing some difficult decisions."
+            "Alex": "Hi, I'm Ava. Thanks for seeing me today. I've been noticing my gums bleed when I brush — is that something I should be worried about?",
+            "Bob": "Hello, I'm Ava. I'm a new patient here. My last dentist told me I have periodontitis and need a deep cleaning, and honestly I'm pretty nervous about it.",
+            "Charles": "Hi there, I'm Ava. I know I missed my last maintenance appointment — things have just been really busy. I'm trying to get back on track.",
+            "Diana": "Hi, I'm Ava. I know my gum disease has gotten worse. I've been putting off coming in because I'm scared about what you're going to tell me."
         }
         
         greeting = stage_greetings.get(selected, f"Hello! I'm {selected}, nice to meet you today.")
