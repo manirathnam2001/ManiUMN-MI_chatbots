@@ -34,6 +34,15 @@ Requirements:
 """
 
 import os
+
+# Suppress transformers library warnings BEFORE any imports touch it.
+# The transformers package (pulled in by sentence-transformers) tries to load
+# hundreds of vision model sub-modules that require torchvision (not installed),
+# producing thousands of ModuleNotFoundError tracebacks on every app startup.
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import logging
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
