@@ -133,10 +133,10 @@ test_email_recipient = st.text_input(
 if st.button("Send Test Email"):
     with st.spinner("Sending test email..."):
         try:
-            from pdf_utils import send_pdf_to_box
+            from email_utils import send_box_backup_email
             from io import BytesIO
             from reportlab.pdfgen import canvas
-            
+
             # Create a simple test PDF
             pdf_buffer = BytesIO()
             c = canvas.Canvas(pdf_buffer)
@@ -145,22 +145,22 @@ if st.button("Send Test Email"):
             c.drawString(100, 650, "This is a test email from the Developer Tools page.")
             c.save()
             pdf_buffer.seek(0)
-            
-            result = send_pdf_to_box(
+
+            result = send_box_backup_email(
                 pdf_buffer=pdf_buffer,
                 filename="test_email.pdf",
                 student_name=st.session_state.get('student_name', 'Developer'),
-                session_type="Developer Test"
+                session_type="Developer Test",
             )
-            
-            if result['success']:
+
+            if result.get('success'):
                 st.success("✅ Test email sent successfully!")
             else:
                 st.error(f"❌ Failed to send test email: {result.get('error', 'Unknown error')}")
-                
+
         except ImportError as e:
             st.error(f"Import error: {str(e)}")
-            st.info("Email functionality may not be configured. Check pdf_utils.py and email_utils.py")
+            st.info("Email functionality may not be configured. Check email_utils.py.")
         except Exception as e:
             st.error(f"Error sending test email: {str(e)}")
 
@@ -176,69 +176,64 @@ Test the PDF generation functionality by creating a sample feedback report.
 if st.button("Generate Test PDF"):
     with st.spinner("Generating test PDF..."):
         try:
-            from pdf_utils import generate_pdf_report
-            from feedback_template import FeedbackFormatter
-            
-            # Create test data
-            test_feedback = """
-            ## MI Conversation Feedback (Test)
-            
-            ### Overall Score: 25/30
-            
-            **Strengths:**
-            - Good use of open-ended questions
-            - Demonstrated empathy and active listening
-            - Appropriate reflection of patient statements
-            
-            **Areas for Improvement:**
-            - Could explore ambivalence more deeply
-            - Consider using more affirmations
-            - Work on summarizing key points at the end
-            
-            This is a test PDF generated from the Developer Tools page.
-            """
-            
+            from mi_evaluation import EvaluationResult, REQUIRED_CATEGORIES
+            from mi_pdf import construct_feedback_filename, generate_pdf_report
+            from rubric.mi_rubric import MIRubric
+            from time_utils import get_formatted_utc_time
+
             test_chat_history = [
                 {"role": "assistant", "content": "Hello! I'm Alex, nice to meet you today."},
                 {"role": "user", "content": "Hi Alex, how are you feeling about your oral hygiene?"},
                 {"role": "assistant", "content": "Well, I brush sometimes but I'm not very consistent."},
                 {"role": "user", "content": "I understand. What would help you be more consistent?"},
             ]
-            
-            # Format feedback
-            from time_utils import get_formatted_utc_time
-            formatted_feedback = FeedbackFormatter.format_feedback_for_pdf(
-                test_feedback,
-                get_formatted_utc_time(),
-                "Developer Test Bot"
-            )
-            
-            # Generate PDF
-            pdf_buffer = generate_pdf_report(
+
+            # Synthesize a fully-Met EvaluationResult so the PDF pipeline runs end-to-end.
+            categories = {
+                cat: {
+                    "assessment": "Fully Met",
+                    "points": float(MIRubric.get_category_points(cat)),
+                    "max_points": MIRubric.get_category_points(cat),
+                    "rationale": "Test rationale.",
+                    "evidence_quote": "",
+                }
+                for cat in REQUIRED_CATEGORIES
+            }
+            test_result: EvaluationResult = {
+                "categories": categories,
+                "total_score": float(MIRubric.get_total_possible()),
+                "max_possible_score": MIRubric.get_total_possible(),
+                "percentage": 100.0,
+                "performance_band": MIRubric.get_performance_band(MIRubric.get_total_possible()),
+                "recommendations": ["Continue building on these strengths in your next session."],
+                "partial": False,
+                "notes": "",
+            }
+
+            pdf_bytes = generate_pdf_report(
+                test_result,
                 student_name=st.session_state.get('student_name', 'Developer'),
-                raw_feedback=formatted_feedback,
-                chat_history=test_chat_history,
-                session_type="Developer Test"
+                session_type="Developer Test",
+                transcript=test_chat_history,
+                timestamp_cst=get_formatted_utc_time(),
             )
-            
-            # Provide download
-            download_filename = FeedbackFormatter.create_download_filename(
+            download_filename = construct_feedback_filename(
                 st.session_state.get('student_name', 'Developer'),
                 "TEST",
-                "Developer"
+                "Developer",
             )
-            
+
             st.success("✅ Test PDF generated successfully!")
             st.download_button(
                 label="📥 Download Test PDF",
-                data=pdf_buffer.getvalue(),
+                data=pdf_bytes,
                 file_name=download_filename,
-                mime="application/pdf"
+                mime="application/pdf",
             )
-            
+
         except ImportError as e:
             st.error(f"Import error: {str(e)}")
-            st.info("Check that pdf_utils.py and feedback_template.py are available.")
+            st.info("Check that mi_pdf.py and mi_evaluation.py are available.")
         except Exception as e:
             st.error(f"Error generating PDF: {str(e)}")
 
