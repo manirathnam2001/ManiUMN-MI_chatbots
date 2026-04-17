@@ -4,7 +4,7 @@ Run with::
 
     python3 test_evaluation.py
 
-Prints a summary and exits 0 iff all 8 cases pass.
+Prints a summary and exits 0 iff all tests pass.
 
 These tests do NOT require pytest, the Groq SDK, or network access. They use a
 small in-process fake client. The pytest equivalents under
@@ -69,8 +69,56 @@ class FakeClient:
 
 
 # ---------------------------------------------------------------------------
-# Sample valid evaluator output
+# Sample valid LLM outputs
 # ---------------------------------------------------------------------------
+
+
+# A "clean" evidence payload: every quote matches the default transcript below,
+# closing summary present, no belittling. Use this when the test's focus is on
+# the scoring pass.
+DEFAULT_TRANSCRIPT = (
+    "Student: Hi, I'm here to talk with you about your oral health.\n"
+    "Patient: Hello.\n"
+    "Student: Would it be okay if I shared some info?\n"
+    "Patient: Sure.\n"
+    "Student: What feels most important to you?\n"
+    "Patient: Cleaning better.\n"
+    "Student: So to recap, you'd like to start with flossing. Does that sound right?\n"
+    "Patient: Yes.\n"
+)
+
+
+def _evidence_payload(
+    *,
+    has_closing_summary: bool = True,
+    belittling_instances: List[str] | None = None,
+    per_category_overrides: dict | None = None,
+    notes: str = "",
+) -> str:
+    """Build a valid extractor JSON response.
+
+    All quotes below are verbatim substrings of DEFAULT_TRANSCRIPT so they
+    survive _verify_quotes. Tests that use a different transcript should
+    override per_category_overrides / belittling_instances with quotes from
+    that transcript (or empty arrays).
+    """
+    per_cat = {
+        "Collaboration": ["Hi, I'm here to talk with you about your oral health."],
+        "Acceptance": ["Would it be okay if I shared some info?"],
+        "Compassion": [],
+        "Evocation": ["What feels most important to you?"],
+        "Summary": ["So to recap, you'd like to start with flossing. Does that sound right?"],
+        "Response Factor": [],
+    }
+    if per_category_overrides:
+        per_cat.update(per_category_overrides)
+    payload = {
+        "per_category": per_cat,
+        "has_closing_summary": has_closing_summary,
+        "belittling_instances": belittling_instances or [],
+        "notes": notes,
+    }
+    return json.dumps(payload)
 
 
 def _good_payload(
@@ -102,9 +150,9 @@ def _good_payload(
 
 
 def test_happy_path() -> None:
-    client = FakeClient([_good_payload()])
+    client = FakeClient([_evidence_payload(), _good_payload()])
     result = me.evaluate_session(
-        transcript="User: Hi.\nAssistant: Hello.",
+        transcript=DEFAULT_TRANSCRIPT,
         session_type="OHI",
         student_name="Test Student",
         client=client,
@@ -117,15 +165,22 @@ def test_happy_path() -> None:
     assert result["performance_band"], "performance band must be set"
     for cat in me.REQUIRED_CATEGORIES:
         assert cat in result["categories"]
+    # Two LLM calls: extractor + scorer.
+    assert len(client.chat.completions.calls) == 2
 
 
 def test_summary_not_met_enforced() -> None:
-    """Rule 4: rationale signals no summary => Summary downgraded to Not Met."""
-    client = FakeClient([_good_payload(
-        summary_level="Fully Met",
-        summary_rationale="The student did not summarize at all; the conversation just ended.",
-    )])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    """Rule 4 legacy path: extractor says summary present but rationale signals otherwise."""
+    # Evidence says summary IS present — we want to exercise the legacy keyword
+    # net so Compassion/Acceptance paths are unaffected.
+    client = FakeClient([
+        _evidence_payload(has_closing_summary=True),
+        _good_payload(
+            summary_level="Fully Met",
+            summary_rationale="The student did not summarize at all; the conversation just ended.",
+        ),
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     assert result["categories"]["Summary"]["assessment"] == "Not Met", (
         f"expected Summary=Not Met, got {result['categories']['Summary']['assessment']}"
     )
@@ -133,16 +188,19 @@ def test_summary_not_met_enforced() -> None:
 
 
 def test_belittling_caps_compassion_and_acceptance() -> None:
-    """Rule 5: rationale signals belittling => Compassion <= Minimally Met, Acceptance <= Partially Met."""
-    client = FakeClient([_good_payload(
-        compassion_level="Fully Met",
-        acceptance_level="Fully Met",
-        compassion_rationale=(
-            "Although the student asked some good questions, they were "
-            "dismissive of the patient's concern and used lecturing language."
+    """Rule 5 legacy path: extractor flags nothing, rationale contains belittling keywords."""
+    client = FakeClient([
+        _evidence_payload(belittling_instances=[]),  # no flag from extractor
+        _good_payload(
+            compassion_level="Fully Met",
+            acceptance_level="Fully Met",
+            compassion_rationale=(
+                "Although the student asked some good questions, they were "
+                "dismissive of the patient's concern and used lecturing language."
+            ),
         ),
-    )])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     comp_level = result["categories"]["Compassion"]["assessment"]
     acc_level = result["categories"]["Acceptance"]["assessment"]
     assert comp_level == "Minimally Met", f"expected Compassion=Minimally Met, got {comp_level}"
@@ -155,24 +213,26 @@ def test_invalid_level_triggers_retry() -> None:
         "categories": {c: {"level": "Sometimes Met", "rationale": "x", "evidence_quote": ""} for c in me.REQUIRED_CATEGORIES},
         "recommendations": ["fix it"],
     })
-    client = FakeClient([bad, _good_payload()])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    client = FakeClient([_evidence_payload(), bad, _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     assert result["partial"] is False
-    assert len(client.chat.completions.calls) == 2, (
-        f"expected exactly 2 LLM calls (initial + retry), got {len(client.chat.completions.calls)}"
+    # extractor + bad scorer + retry scorer = 3 calls.
+    assert len(client.chat.completions.calls) == 3, (
+        f"expected 3 LLM calls (extractor + scorer + retry), got {len(client.chat.completions.calls)}"
     )
 
 
 def test_malformed_json_triggers_retry() -> None:
-    client = FakeClient(["this is not json at all", _good_payload()])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    client = FakeClient([_evidence_payload(), "this is not json at all", _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     assert result["partial"] is False
-    assert len(client.chat.completions.calls) == 2
+    assert len(client.chat.completions.calls) == 3
 
 
 def test_two_failures_returns_partial_no_exception() -> None:
-    client = FakeClient(["not json", "still not json"])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    # Extractor succeeds; scorer fails twice => partial.
+    client = FakeClient([_evidence_payload(), "not json", "still not json"])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     assert result["partial"] is True
     assert "Manual review required" in result["performance_band"]
     assert result["notes"], "partial result must include explanatory notes"
@@ -180,9 +240,10 @@ def test_two_failures_returns_partial_no_exception() -> None:
 
 
 def test_network_failure_raises_evaluation_error() -> None:
+    # RuntimeError fires on the extractor (first) call.
     client = FakeClient([RuntimeError("connection refused")])
     try:
-        me.evaluate_session("transcript", "OHI", "S", client=client)
+        me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     except me.EvaluationError as exc:
         assert exc.phase == "llm_call", f"expected phase=llm_call, got phase={exc.phase}"
         return
@@ -203,12 +264,125 @@ def test_recommendations_include_lowest_category() -> None:
         # Note: recommendations omit "Summary" entirely.
         "recommendations": ["Continue using open-ended questions."],
     }
-    client = FakeClient([json.dumps(payload_dict)])
-    result = me.evaluate_session("transcript", "OHI", "S", client=client)
+    client = FakeClient([
+        _evidence_payload(has_closing_summary=False),  # consistent with scorer
+        json.dumps(payload_dict),
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
     joined = " | ".join(result["recommendations"]).lower()
     assert "summary" in joined, (
         f"expected 'Summary' to appear in recommendations, got: {result['recommendations']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# New tests for the 2-call architecture
+# ---------------------------------------------------------------------------
+
+
+def test_two_call_happy_path_makes_two_calls() -> None:
+    client = FakeClient([_evidence_payload(), _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["partial"] is False
+    assert len(client.chat.completions.calls) == 2
+    # First call goes to the extractor model by default.
+    assert client.chat.completions.calls[0]["model"] == "llama-3.1-8b-instant"
+    # Second call goes to the scoring model.
+    assert client.chat.completions.calls[1]["model"] == "llama-3.3-70b-versatile"
+
+
+def test_extractor_failure_falls_back_to_single_call() -> None:
+    """Both extractor attempts fail => evidence=None, scorer uses legacy prompt."""
+    client = FakeClient([
+        "not json from extractor",
+        "still not json from extractor",
+        _good_payload(),
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["partial"] is False
+    # 2 extractor + 1 scorer = 3 calls, no extra scorer retry needed.
+    assert len(client.chat.completions.calls) == 3
+    # The 3rd call (scorer) should have used the legacy prompt — we can check
+    # for the hallmark "Remember rules 4 (Summary) and 5 (belittling)" string.
+    scorer_call = client.chat.completions.calls[2]
+    user_content = scorer_call["messages"][-1]["content"]
+    assert "rules 4" in user_content.lower() or "belittling" in user_content.lower()
+
+
+def test_hallucinated_quote_is_dropped() -> None:
+    """Quotes in extractor output not in the transcript are filtered."""
+    bad_evidence = json.dumps({
+        "per_category": {
+            "Collaboration": ["This quote is not in the transcript at all."],
+            "Acceptance":    [],
+            "Compassion":    [],
+            "Evocation":     [],
+            "Summary":       [],
+            "Response Factor": [],
+        },
+        "has_closing_summary": True,
+        "belittling_instances": ["Another fake quote that is not present."],
+        "notes": "",
+    })
+    client = FakeClient([bad_evidence, _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    # The scorer call's user prompt should NOT contain the hallucinated quote.
+    scorer_call = client.chat.completions.calls[1]
+    user_content = scorer_call["messages"][-1]["content"]
+    assert "This quote is not in the transcript at all." not in user_content
+    assert "Another fake quote that is not present." not in user_content
+    # And because belittling_instances ends up empty after verification, the
+    # belittling cap should NOT fire from evidence.
+    assert result["categories"]["Compassion"]["assessment"] == "Fully Met"
+
+
+def test_evidence_flag_forces_summary_not_met() -> None:
+    """has_closing_summary=False => Summary forced to Not Met even if scorer said Fully Met."""
+    client = FakeClient([
+        _evidence_payload(has_closing_summary=False),
+        _good_payload(summary_level="Fully Met", summary_rationale="Student summarized everything."),
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["categories"]["Summary"]["assessment"] == "Not Met"
+    assert result["categories"]["Summary"]["points"] == 0.0
+    assert "extractor flagged" in result["categories"]["Summary"]["rationale"]
+
+
+def test_evidence_flag_caps_compassion_and_acceptance() -> None:
+    """belittling_instances non-empty => hard caps on Compassion + Acceptance."""
+    client = FakeClient([
+        _evidence_payload(belittling_instances=["Would it be okay if I shared some info?"]),
+        _good_payload(
+            compassion_level="Fully Met",
+            acceptance_level="Fully Met",
+            compassion_rationale="Student was warm and supportive.",  # no keyword triggers
+        ),
+    ])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["categories"]["Compassion"]["assessment"] == "Minimally Met"
+    assert result["categories"]["Acceptance"]["assessment"] == "Partially Met"
+    assert "extractor flagged" in result["categories"]["Compassion"]["rationale"]
+
+
+def test_extractor_schema_violation_retries() -> None:
+    """Missing key in extractor output triggers retry, then succeeds."""
+    bad = json.dumps({
+        "per_category": {c: [] for c in me.REQUIRED_CATEGORIES},
+        # missing has_closing_summary + belittling_instances
+    })
+    client = FakeClient([bad, _evidence_payload(), _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["partial"] is False
+    # bad extractor + retry extractor + scorer = 3 calls.
+    assert len(client.chat.completions.calls) == 3
+
+
+def test_partial_result_when_scorer_fails_twice() -> None:
+    """Scorer double-failure still returns partial=True even when evidence succeeded."""
+    client = FakeClient([_evidence_payload(), "not json", "still not json"])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["partial"] is True
+    assert "Manual review required" in result["performance_band"]
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +399,13 @@ _TESTS: List[Callable[[], None]] = [
     test_two_failures_returns_partial_no_exception,
     test_network_failure_raises_evaluation_error,
     test_recommendations_include_lowest_category,
+    test_two_call_happy_path_makes_two_calls,
+    test_extractor_failure_falls_back_to_single_call,
+    test_hallucinated_quote_is_dropped,
+    test_evidence_flag_forces_summary_not_met,
+    test_evidence_flag_caps_compassion_and_acceptance,
+    test_extractor_schema_violation_retries,
+    test_partial_result_when_scorer_fails_twice,
 ]
 
 

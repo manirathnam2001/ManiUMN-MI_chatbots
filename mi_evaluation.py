@@ -1,4 +1,4 @@
-"""MI Evaluation: strict-JSON evaluator + schema validator + point math.
+"""MI Evaluation: two-call evaluator (evidence extraction + scoring) with fallback.
 
 Single source of truth for evaluating MI sessions. Replaces the legacy chain of
 ``services/evaluation_service.py`` (regex parsing), ``feedback_template.py``
@@ -6,23 +6,29 @@ Single source of truth for evaluating MI sessions. Replaces the legacy chain of
 
 Design goals:
 
-* Evaluator returns **strict JSON**, not free-form text. Eliminates the regex
-  parser that used to crash with ``NameError: cls`` and silently degrade PDFs.
-* Single function ``_validate_and_normalize`` owns all point math.
-* On parse / schema failure we **retry once** with a corrective system message;
-  if that still fails we return ``EvaluationResult(partial=True, ...)`` instead
-  of raising. Hard failures (network, auth) raise ``EvaluationError``.
-* Two evaluator-prompt rules added that the old system lacked:
-    - **Rule 4**: missing closing summary forces ``Summary = Not Met``.
-    - **Rule 5**: dismissive/judgmental/belittling student language caps
-      ``Compassion`` at Minimally Met and ``Acceptance`` at Partially Met.
+* Two-stage LLM pipeline: Call 1 extracts evidence (quotes + structured flags),
+  Call 2 scores the six categories using the verified evidence. Each stage is
+  strict JSON.
+* Graceful degradation: if Call 1 fails twice, we silently fall back to the
+  legacy single-call scoring path — worst-case behavior matches the old system.
+* Single function ``_validate_and_normalize`` owns all point math. Rules 4 and 5
+  are enforced deterministically from Call 1's structured flags (when available)
+  with the legacy keyword heuristic kept as a secondary safety net.
+* On parse / schema failure at the scoring stage we **retry once** with a
+  corrective system message; if that still fails we return
+  ``EvaluationResult(partial=True, ...)`` instead of raising. Hard failures
+  (network, auth) raise ``EvaluationError``.
+* Quotes returned by Call 1 are verified as verbatim substrings of the
+  transcript. Hallucinated quotes are silently dropped.
 
 Public surface:
 
 * ``EvaluationError`` (typed exception with ``phase`` + ``raw_response``)
 * ``EvaluationResult`` (TypedDict)
-* ``EVALUATOR_SYSTEM_PROMPT`` (strict JSON contract)
-* ``evaluate_session(transcript, session_type, student_name, *, client, model=...)``
+* ``EVALUATOR_SYSTEM_PROMPT`` (legacy single-call contract, still used in
+  fallback mode)
+* ``evaluate_session(transcript, session_type, student_name, *, client, model=...,
+  extractor_model=...)``
 * ``format_evaluation_for_display(result) -> str``
 """
 
@@ -66,6 +72,14 @@ class EvaluationResult(TypedDict):
     notes: str
 
 
+class _Evidence(TypedDict):
+    """Structured output of Call 1, with quotes already verified against the transcript."""
+    per_category: Dict[str, List[str]]
+    has_closing_summary: bool
+    belittling_instances: List[str]
+    notes: str
+
+
 class EvaluationError(Exception):
     """Hard failure during evaluation.
 
@@ -81,7 +95,7 @@ class EvaluationError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Constants — schema, level mapping, prompt
+# Constants — schema, level mapping, prompts
 # ---------------------------------------------------------------------------
 
 
@@ -95,7 +109,6 @@ REQUIRED_CATEGORIES: List[str] = [
 ]
 
 
-# Order matters for the level→multiplier ranking comparisons in rule 5.
 LEVEL_TO_ASSESSMENT: Dict[str, CategoryAssessment] = {
     "Not Met": CategoryAssessment.NOT_MET,
     "Minimally Met": CategoryAssessment.MINIMALLY_MET,
@@ -119,6 +132,7 @@ SESSION_TYPE_TO_CONTEXT: Dict[str, RubricContext] = {
 }
 
 
+# Legacy single-call prompt — still used as the fallback path when Call 1 fails.
 EVALUATOR_SYSTEM_PROMPT = """You are an expert Motivational Interviewing (MI) evaluator for dental and healthcare education.
 
 You will receive a session transcript between a dental student (the "user" / "Student") and a simulated patient (the "assistant" / "Patient"). Evaluate ONLY the student's MI skill, not the patient's responses and not spelling/grammar/English proficiency.
@@ -153,6 +167,78 @@ All six categories MUST be present. The four allowed level values are exactly: "
 Return only the JSON object. Do not wrap it in code fences. Do not add a preamble."""
 
 
+# Call 1: evidence extraction. No grading, no scores.
+_EXTRACTOR_SYSTEM_PROMPT = """You are an evidence collector for Motivational Interviewing (MI) evaluation of dental and healthcare education sessions.
+
+You will receive a transcript between a dental student ("Student") and a simulated patient ("Patient"). Your job is to extract EVIDENCE ONLY — do NOT score, grade, or assign levels. A separate scoring pass will do that.
+
+## Output contract — STRICT JSON ONLY
+
+Return a single JSON object (no markdown fences, no commentary) with EXACTLY this shape:
+
+{
+  "per_category": {
+    "Collaboration":     ["<verbatim student quote>", "..."],
+    "Acceptance":        ["..."],
+    "Compassion":        ["..."],
+    "Evocation":         ["..."],
+    "Summary":           ["..."],
+    "Response Factor":   ["..."]
+  },
+  "has_closing_summary": true | false,
+  "belittling_instances": ["<verbatim student quote>", "..."],
+  "notes": "<short plain-text observations, 1-3 sentences>"
+}
+
+## Rules
+
+1. All six category keys MUST be present in per_category. Use an empty array if no relevant student behavior appeared.
+2. Every string inside per_category and belittling_instances MUST be a verbatim substring of the student's words in the transcript — copy exactly, do not paraphrase. If you cannot find a relevant quote, return an empty array for that category.
+3. Set has_closing_summary to true ONLY if the student explicitly reflected the big picture of the conversation and/or checked accuracy of next steps at the end. A polite goodbye, a single thank-you, or a short sign-off is NOT a closing summary.
+4. Populate belittling_instances with any student utterance that is dismissive, judgmental, shaming, lecturing, fixing, condescending, or patronizing toward the patient. Quote the exact words. If there are none, return an empty array.
+5. notes is free-form and may include general observations a downstream scorer should know (tone, pacing, missed opportunities). Keep it under 3 sentences.
+
+Return only the JSON object. Do not wrap it in code fences. Do not add a preamble."""
+
+
+# Call 2: scoring using pre-extracted evidence. Rules 4 and 5 are handled by
+# code downstream, so we keep the prompt focused on interpretation.
+_SCORER_SYSTEM_PROMPT = """You are an expert Motivational Interviewing (MI) evaluator for dental and healthcare education.
+
+You will receive (1) a session transcript between a dental student and a simulated patient, and (2) a pre-extracted evidence block collected by a first-pass reader. Use both to score the student's MI skill across six categories.
+
+Evaluate ONLY the student's MI skill, not the patient's responses, not spelling/grammar/English proficiency.
+
+## Output contract — STRICT JSON ONLY
+
+Return a single JSON object (no markdown fences, no commentary before or after) with EXACTLY this shape:
+
+{
+  "categories": {
+    "Collaboration":     {"level": "<one of: Fully Met | Partially Met | Minimally Met | Not Met>", "rationale": "<1-3 sentences citing specific student behavior>", "evidence_quote": "<one direct student quote, or empty string>"},
+    "Acceptance":        {"level": "...", "rationale": "...", "evidence_quote": "..."},
+    "Compassion":        {"level": "...", "rationale": "...", "evidence_quote": "..."},
+    "Evocation":         {"level": "...", "rationale": "...", "evidence_quote": "..."},
+    "Summary":           {"level": "...", "rationale": "...", "evidence_quote": "..."},
+    "Response Factor":   {"level": "...", "rationale": "...", "evidence_quote": "..."}
+  },
+  "recommendations": ["<concrete, actionable improvement>", "..."]
+}
+
+All six categories MUST be present. The four allowed level values are exactly: "Fully Met", "Partially Met", "Minimally Met", "Not Met".
+
+## Grading rules
+
+1. Grade ONLY MI technique. Ignore spelling, grammar, capitalization, informality.
+2. Each rationale MUST cite specific student behavior. Prefer quotes from the pre-extracted evidence block, but you may also cite behavior you observe directly in the transcript.
+3. Each evidence_quote MUST be a verbatim substring of the student's actual words, or an empty string if you cannot find a relevant quote. Reusing a quote from the evidence block is fine.
+4. The recommendations array MUST contain at least one entry, and MUST address the lowest-scored category by name. Add up to 4 more entries for other notable gaps.
+
+Scoring Summary and Compassion / Acceptance: base your level purely on what the transcript and evidence show. An automated post-processing step applies hard rules based on the evidence block's structured flags, so do not self-censor — just be honest.
+
+Return only the JSON object. Do not wrap it in code fences. Do not add a preamble."""
+
+
 _RETRY_CORRECTION_HINT = (
     "Your previous response was not valid JSON matching the required schema. "
     "Return ONLY a single JSON object with the exact shape described in the system prompt. "
@@ -172,6 +258,7 @@ def evaluate_session(
     *,
     client: Any,
     model: str = "llama-3.3-70b-versatile",
+    extractor_model: Optional[str] = None,
 ) -> EvaluationResult:
     """Evaluate one MI session and return a normalized result.
 
@@ -179,10 +266,15 @@ def evaluate_session(
     ``transcript`` is the raw conversation text. ``session_type`` is one of
     ``"HPV"``, ``"OHI"``, ``"Tobacco"``, ``"Perio"`` (case-insensitive).
 
+    ``model`` is used for the scoring pass (Call 2). ``extractor_model`` is
+    used for the evidence pass (Call 1); when ``None`` we default to a faster
+    Groq model (``llama-3.1-8b-instant``), falling back to ``model`` if the
+    client rejects it. Callers that want to pin both stages to the same model
+    can pass ``extractor_model=model``.
+
     Returns a fully-validated :class:`EvaluationResult`. On JSON / schema
     failure that survives one retry, the result is returned with
-    ``partial=True`` and a ``notes`` string explaining what went wrong; the PDF
-    layer renders a clearly-marked partial report in that case.
+    ``partial=True`` and a ``notes`` string explaining what went wrong.
 
     Raises :class:`EvaluationError` only for hard failures (network, auth,
     invalid arguments).
@@ -193,44 +285,301 @@ def evaluate_session(
             phase="normalization",
         )
 
-    user_prompt = _build_user_prompt(transcript, session_type, student_name)
+    # Call 1: evidence extraction. On hard failure we let EvaluationError
+    # propagate (network/auth are fatal). On parse/schema failure after one
+    # retry, we silently drop evidence and fall back to the legacy single-call
+    # path for Call 2.
+    evidence = _extract_evidence(
+        transcript,
+        session_type,
+        student_name,
+        client=client,
+        model=extractor_model or "llama-3.1-8b-instant",
+        fallback_model=model,
+    )
+
+    # Call 2: scoring. If evidence is None we use the legacy single-call prompt
+    # so the system still produces a result at least as good as the old code.
+    return _score_with_evidence(
+        transcript,
+        session_type,
+        student_name,
+        evidence=evidence,
+        client=client,
+        model=model,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Call 1: evidence extraction
+# ---------------------------------------------------------------------------
+
+
+def _extract_evidence(
+    transcript: str,
+    session_type: str,
+    student_name: str,
+    *,
+    client: Any,
+    model: str,
+    fallback_model: str,
+) -> Optional[_Evidence]:
+    """Run Call 1 (evidence extraction). Return verified evidence, or None.
+
+    Returns ``None`` iff both the initial call and the retry produced
+    unparseable output. Hard failures (network / auth) are allowed to raise
+    so the caller surfaces them as :class:`EvaluationError`.
+    """
+    user_prompt = _build_extractor_user_prompt(transcript, session_type, student_name)
     base_messages = [
-        {"role": "system", "content": EVALUATOR_SYSTEM_PROMPT},
+        {"role": "system", "content": _EXTRACTOR_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_first = _call_llm(client, model, base_messages)
-    parsed = _try_parse_and_validate(raw_first, session_type)
+    # First attempt with the fast extractor model; if the client rejects it
+    # (e.g. model not available on the account), retry once with fallback_model
+    # before giving up.
+    try:
+        raw_first = _call_llm(client, model, base_messages)
+    except EvaluationError as exc:
+        if model != fallback_model and _looks_like_unknown_model(exc):
+            logger.info("Extractor model %s unavailable; falling back to %s", model, fallback_model)
+            raw_first = _call_llm(client, fallback_model, base_messages)
+            model = fallback_model
+        else:
+            raise
+
+    parsed = _try_parse_extractor(raw_first, transcript)
     if isinstance(parsed, dict) and parsed.get("__ok__"):
-        return parsed["result"]  # type: ignore[return-value]
+        return parsed["evidence"]  # type: ignore[return-value]
 
-    first_error = parsed  # parsed is the error string in the failure path
+    first_error = parsed
 
-    # Retry once with a corrective hint appended.
     retry_messages = base_messages + [
         {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
     ]
     raw_second = _call_llm(client, model, retry_messages)
-    parsed_second = _try_parse_and_validate(raw_second, session_type)
+    parsed_second = _try_parse_extractor(raw_second, transcript)
+    if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
+        return parsed_second["evidence"]  # type: ignore[return-value]
+
+    logger.warning(
+        "Evidence extractor returned unparseable output twice for student=%s session=%s. "
+        "Falling back to single-call scoring. First error: %s. Second error: %s",
+        student_name, session_type, first_error, parsed_second,
+    )
+    return None
+
+
+def _try_parse_extractor(raw: str, transcript: str):
+    """Parse + validate extractor output, returning verified :class:`_Evidence`.
+
+    Returns ``{"__ok__": True, "evidence": _Evidence}`` on success, or an error
+    message string on failure. Quotes are substring-verified against the
+    transcript; hallucinated quotes are silently dropped (not treated as an
+    error).
+    """
+    if not raw or not raw.strip():
+        return "empty response"
+
+    text = _strip_code_fences(raw)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return f"json parse: {exc.msg} at line {exc.lineno} col {exc.colno}"
+
+    schema_error = _check_extractor_schema(data)
+    if schema_error:
+        return f"schema: {schema_error}"
+
+    per_category_raw = data["per_category"]
+    per_category: Dict[str, List[str]] = {}
+    for cat in REQUIRED_CATEGORIES:
+        quotes = per_category_raw.get(cat, [])
+        per_category[cat] = _verify_quotes(quotes, transcript)
+
+    belittling = _verify_quotes(data.get("belittling_instances", []), transcript)
+
+    evidence: _Evidence = {
+        "per_category": per_category,
+        "has_closing_summary": bool(data["has_closing_summary"]),
+        "belittling_instances": belittling,
+        "notes": str(data.get("notes", "")).strip(),
+    }
+    return {"__ok__": True, "evidence": evidence}
+
+
+def _check_extractor_schema(data: Any) -> Optional[str]:
+    if not isinstance(data, dict):
+        return "top-level value must be a JSON object"
+    if "per_category" not in data:
+        return "missing 'per_category' key"
+    if "has_closing_summary" not in data:
+        return "missing 'has_closing_summary' key"
+    if "belittling_instances" not in data:
+        return "missing 'belittling_instances' key"
+
+    per_category = data["per_category"]
+    if not isinstance(per_category, dict):
+        return "'per_category' must be a JSON object"
+
+    missing = [c for c in REQUIRED_CATEGORIES if c not in per_category]
+    if missing:
+        return f"missing per_category keys: {', '.join(missing)}"
+
+    for cat in REQUIRED_CATEGORIES:
+        quotes = per_category[cat]
+        if not isinstance(quotes, list) or not all(isinstance(q, str) for q in quotes):
+            return f"per_category['{cat}'] must be a list of strings"
+
+    if not isinstance(data["has_closing_summary"], bool):
+        return "'has_closing_summary' must be a boolean"
+
+    belittling = data["belittling_instances"]
+    if not isinstance(belittling, list) or not all(isinstance(q, str) for q in belittling):
+        return "'belittling_instances' must be a list of strings"
+
+    return None
+
+
+def _verify_quotes(quotes: List[str], transcript: str) -> List[str]:
+    """Keep only quotes that appear verbatim in the transcript."""
+    verified: List[str] = []
+    for q in quotes:
+        if not isinstance(q, str):
+            continue
+        stripped = q.strip()
+        if stripped and stripped in transcript:
+            verified.append(stripped)
+    return verified
+
+
+def _build_extractor_user_prompt(transcript: str, session_type: str, student_name: str) -> str:
+    context_label = _context_label(session_type)
+    return (
+        f"## Session\n\n"
+        f"- Session type: {session_type} ({context_label})\n"
+        f"- Student name: {student_name}\n\n"
+        f"## Transcript\n\n{transcript}\n\n"
+        f"Now produce the evidence JSON as specified in the system prompt. "
+        f"Copy quotes verbatim and do not assign any scores."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Call 2: scoring with (or without) evidence
+# ---------------------------------------------------------------------------
+
+
+def _score_with_evidence(
+    transcript: str,
+    session_type: str,
+    student_name: str,
+    *,
+    evidence: Optional[_Evidence],
+    client: Any,
+    model: str,
+) -> EvaluationResult:
+    """Run Call 2 (scoring). Uses evidence when available, legacy prompt when not."""
+    if evidence is None:
+        # Fallback path: behave exactly like the pre-2-call system.
+        system_prompt = EVALUATOR_SYSTEM_PROMPT
+        user_prompt = _build_scorer_user_prompt_legacy(transcript, session_type, student_name)
+    else:
+        system_prompt = _SCORER_SYSTEM_PROMPT
+        user_prompt = _build_scorer_user_prompt_with_evidence(
+            transcript, session_type, student_name, evidence
+        )
+
+    base_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    raw_first = _call_llm(client, model, base_messages)
+    parsed = _try_parse_and_validate(raw_first, session_type, evidence=evidence)
+    if isinstance(parsed, dict) and parsed.get("__ok__"):
+        return parsed["result"]  # type: ignore[return-value]
+
+    first_error = parsed
+
+    retry_messages = base_messages + [
+        {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
+    ]
+    raw_second = _call_llm(client, model, retry_messages)
+    parsed_second = _try_parse_and_validate(raw_second, session_type, evidence=evidence)
     if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
         return parsed_second["result"]  # type: ignore[return-value]
 
-    # Both attempts failed: return a partial result rather than raise. The PDF
-    # layer surfaces this clearly with a banner; no silent fallback.
     logger.warning(
-        "Evaluator returned unparseable output twice for student=%s session=%s. "
+        "Scorer returned unparseable output twice for student=%s session=%s. "
         "Returning partial result. First error: %s. Second error: %s",
         student_name, session_type, first_error, parsed_second,
     )
     return _build_partial_result(
         session_type=session_type,
         notes=(
-            f"Evaluator output could not be parsed after one retry. "
+            f"Scorer output could not be parsed after one retry. "
             f"First failure: {first_error}. "
             f"Second failure: {parsed_second}. "
             f"Raw final response preserved below for instructor review."
         ),
         raw_response=raw_second,
+    )
+
+
+def _build_scorer_user_prompt_legacy(transcript: str, session_type: str, student_name: str) -> str:
+    context_label = _context_label(session_type)
+    return (
+        f"## Session\n\n"
+        f"- Session type: {session_type} ({context_label})\n"
+        f"- Student name: {student_name}\n\n"
+        f"## Transcript\n\n{transcript}\n\n"
+        f"Now produce the JSON object as specified in the system prompt. "
+        f"Remember rules 4 (Summary) and 5 (belittling)."
+    )
+
+
+def _build_scorer_user_prompt_with_evidence(
+    transcript: str,
+    session_type: str,
+    student_name: str,
+    evidence: _Evidence,
+) -> str:
+    context_label = _context_label(session_type)
+    per_cat_lines: List[str] = []
+    for cat in REQUIRED_CATEGORIES:
+        quotes = evidence["per_category"].get(cat, [])
+        if quotes:
+            joined = "; ".join(f"\"{q}\"" for q in quotes)
+            per_cat_lines.append(f"- {cat}: {joined}")
+        else:
+            per_cat_lines.append(f"- {cat}: (no supporting quotes found)")
+
+    belittling_block = (
+        "; ".join(f"\"{q}\"" for q in evidence["belittling_instances"])
+        if evidence["belittling_instances"]
+        else "(none)"
+    )
+
+    evidence_block = (
+        "## Pre-extracted evidence\n\n"
+        "Per-category supporting student quotes:\n"
+        + "\n".join(per_cat_lines)
+        + f"\n\nClosing summary present: {str(evidence['has_closing_summary']).lower()}\n"
+        + f"Belittling / dismissive instances: {belittling_block}\n"
+    )
+    if evidence["notes"]:
+        evidence_block += f"Extractor notes: {evidence['notes']}\n"
+
+    return (
+        f"## Session\n\n"
+        f"- Session type: {session_type} ({context_label})\n"
+        f"- Student name: {student_name}\n\n"
+        f"{evidence_block}\n"
+        f"## Transcript\n\n{transcript}\n\n"
+        f"Now produce the scoring JSON as specified in the system prompt."
     )
 
 
@@ -250,16 +599,12 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
                 temperature=0.2,
             )
         except TypeError:
-            # Older client signatures may not accept response_format.
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.2,
             )
         except Exception as exc:
-            # Groq raises BadRequestError for unsupported models; fall back to
-            # plain mode and let _try_parse_and_validate catch any malformed
-            # JSON downstream.
             if _looks_like_unsupported_format(exc):
                 response = client.chat.completions.create(
                     model=model,
@@ -290,13 +635,23 @@ def _looks_like_unsupported_format(exc: Exception) -> bool:
     return "response_format" in msg or "json_object" in msg
 
 
+def _looks_like_unknown_model(exc: EvaluationError) -> bool:
+    msg = str(exc).lower()
+    return (
+        "model_not_found" in msg
+        or "does not exist" in msg
+        or "unknown model" in msg
+        or "not available" in msg
+    )
+
+
 # ---------------------------------------------------------------------------
-# Parse + validate + normalize
+# Scorer parse + validate + normalize
 # ---------------------------------------------------------------------------
 
 
-def _try_parse_and_validate(raw: str, session_type: str):
-    """Attempt JSON parse + schema check + normalization.
+def _try_parse_and_validate(raw: str, session_type: str, *, evidence: Optional[_Evidence] = None):
+    """Attempt JSON parse + schema check + normalization for the scorer output.
 
     Returns ``{"__ok__": True, "result": EvaluationResult}`` on success, or an
     error message string on failure.
@@ -304,17 +659,7 @@ def _try_parse_and_validate(raw: str, session_type: str):
     if not raw or not raw.strip():
         return "empty response"
 
-    text = raw.strip()
-    # Strip accidental ```json fences if the model added them.
-    if text.startswith("```"):
-        text = text.strip("`")
-        # Drop a leading "json" language tag if present.
-        if text.lstrip().lower().startswith("json"):
-            text = text.lstrip()[4:]
-        text = text.strip()
-        # Drop a trailing closing fence remnant.
-        if text.endswith("```"):
-            text = text[:-3].strip()
+    text = _strip_code_fences(raw)
 
     try:
         data = json.loads(text)
@@ -326,11 +671,23 @@ def _try_parse_and_validate(raw: str, session_type: str):
         return f"schema: {schema_error}"
 
     try:
-        result = _validate_and_normalize(data, session_type)
+        result = _validate_and_normalize(data, session_type, evidence=evidence)
     except ValueError as exc:
         return f"normalization: {exc}"
 
     return {"__ok__": True, "result": result}
+
+
+def _strip_code_fences(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[4:]
+        text = text.strip()
+        if text.endswith("```"):
+            text = text[:-3].strip()
+    return text
 
 
 def _check_schema(data: Any) -> Optional[str]:
@@ -371,68 +728,82 @@ def _check_schema(data: Any) -> Optional[str]:
     return None
 
 
-def _validate_and_normalize(data: Dict[str, Any], session_type: str) -> EvaluationResult:
+def _validate_and_normalize(
+    data: Dict[str, Any],
+    session_type: str,
+    *,
+    evidence: Optional[_Evidence] = None,
+) -> EvaluationResult:
     """Convert validated raw JSON into a fully-typed :class:`EvaluationResult`.
 
     This is the **single source of truth** for point math. It also enforces
-    the post-hoc invariants from rules 4 and 5 in case the LLM violated them.
+    rules 4 and 5 as hard post-hoc invariants:
+
+    * If ``evidence`` is provided, the structured flags
+      (``has_closing_summary``, ``belittling_instances``) drive the cap
+      deterministically.
+    * The legacy keyword heuristic is kept as a secondary safety net when
+      ``evidence`` is ``None`` (fallback mode) or when evidence did not flag
+      something the LLM's rationale nevertheless reveals.
     """
     raw_categories = data["categories"]
 
-    # Apply rule 4 post-hoc safety: if level claims Summary > Not Met but
-    # rationale or evidence indicates no summary was given, downgrade to Not
-    # Met. We cannot reliably detect that from structured fields alone, so we
-    # only apply a minimal check: empty evidence_quote AND rationale containing
-    # a "no summary" signal.
-    summary = raw_categories["Summary"]
-    if summary["level"] != "Not Met":
-        rationale_lower = (summary.get("rationale") or "").lower()
-        if any(
-            phrase in rationale_lower
-            for phrase in (
-                "no summary", "did not summarize", "didn't summarize",
-                "no closing", "missing summary", "summary was not", "summary not provided",
-            )
-        ):
+    evidence_forced_summary = False
+    evidence_forced_belittling = False
+
+    # Evidence-driven rule 4 (deterministic): no closing summary => Not Met.
+    if evidence is not None and not evidence["has_closing_summary"]:
+        summary = raw_categories["Summary"]
+        if summary["level"] != "Not Met":
             summary["level"] = "Not Met"
             summary["rationale"] = (
-                summary.get("rationale", "") + " [Auto-corrected: rule 4 — no closing summary detected.]"
+                summary.get("rationale", "")
+                + " [Auto-corrected: rule 4 — extractor flagged no closing summary.]"
             ).strip()
+        evidence_forced_summary = True
 
-    # Apply rule 5 post-hoc safety: if any rationale flags belittling/dismissive
-    # language by the student, cap Compassion at Minimally Met and Acceptance
-    # at Partially Met.
-    belittling_signal = False
-    for cat_name, cat in raw_categories.items():
-        rationale_lower = (cat.get("rationale") or "").lower()
-        if any(
-            phrase in rationale_lower
-            for phrase in (
-                "belittl", "dismissive", "judgmental", "shamed", "shaming",
-                "lectur", "fixed the patient", "fixing behavior",
-                "condescend", "patroniz",
-            )
-        ):
-            belittling_signal = True
-            break
+    # Evidence-driven rule 5 (deterministic): any belittling instance => caps.
+    if evidence is not None and evidence["belittling_instances"]:
+        _apply_belittling_caps(raw_categories, reason="extractor flagged dismissive/belittling language")
+        evidence_forced_belittling = True
 
-    if belittling_signal:
-        comp = raw_categories["Compassion"]
-        if LEVEL_RANK[comp["level"]] > LEVEL_RANK["Minimally Met"]:
-            comp["level"] = "Minimally Met"
-            comp["rationale"] = (
-                comp.get("rationale", "")
-                + " [Auto-corrected: rule 5 — dismissive/belittling language detected; Compassion capped at Minimally Met.]"
-            ).strip()
-        acc = raw_categories["Acceptance"]
-        if LEVEL_RANK[acc["level"]] > LEVEL_RANK["Partially Met"]:
-            acc["level"] = "Partially Met"
-            acc["rationale"] = (
-                acc.get("rationale", "")
-                + " [Auto-corrected: rule 5 — dismissive/belittling language detected; Acceptance capped at Partially Met.]"
-            ).strip()
+    # Legacy keyword heuristic for rule 4 — only when evidence didn't already
+    # force the downgrade (avoids double-annotation).
+    if not evidence_forced_summary:
+        summary = raw_categories["Summary"]
+        if summary["level"] != "Not Met":
+            rationale_lower = (summary.get("rationale") or "").lower()
+            if any(
+                phrase in rationale_lower
+                for phrase in (
+                    "no summary", "did not summarize", "didn't summarize",
+                    "no closing", "missing summary", "summary was not", "summary not provided",
+                )
+            ):
+                summary["level"] = "Not Met"
+                summary["rationale"] = (
+                    summary.get("rationale", "") + " [Auto-corrected: rule 4 — no closing summary detected.]"
+                ).strip()
 
-    # Now compute points category-by-category.
+    # Legacy keyword heuristic for rule 5 — secondary net.
+    if not evidence_forced_belittling:
+        belittling_signal = False
+        for cat in raw_categories.values():
+            rationale_lower = (cat.get("rationale") or "").lower()
+            if any(
+                phrase in rationale_lower
+                for phrase in (
+                    "belittl", "dismissive", "judgmental", "shamed", "shaming",
+                    "lectur", "fixed the patient", "fixing behavior",
+                    "condescend", "patroniz",
+                )
+            ):
+                belittling_signal = True
+                break
+        if belittling_signal:
+            _apply_belittling_caps(raw_categories, reason="dismissive/belittling language detected")
+
+    # Point math — single source of truth.
     categories: Dict[str, CategoryResult] = {}
     total_score = 0.0
     for cat_name in REQUIRED_CATEGORIES:
@@ -458,9 +829,6 @@ def _validate_and_normalize(data: Dict[str, Any], session_type: str) -> Evaluati
     max_total = MIRubric.get_total_possible()
     percentage = (total_score / max_total) * 100.0 if max_total else 0.0
 
-    # Recommendations: ensure the lowest-scored category is referenced by name,
-    # but only when there's actually room to improve. If every category is at
-    # max points, leave the LLM's recommendations as-is.
     recs = [str(r).strip() for r in data["recommendations"] if str(r).strip()]
     lowest_name, lowest_data = min(
         categories.items(),
@@ -483,6 +851,24 @@ def _validate_and_normalize(data: Dict[str, Any], session_type: str) -> Evaluati
         partial=False,
         notes="",
     )
+
+
+def _apply_belittling_caps(raw_categories: Dict[str, Any], *, reason: str) -> None:
+    """Cap Compassion at Minimally Met and Acceptance at Partially Met."""
+    comp = raw_categories["Compassion"]
+    if LEVEL_RANK[comp["level"]] > LEVEL_RANK["Minimally Met"]:
+        comp["level"] = "Minimally Met"
+        comp["rationale"] = (
+            comp.get("rationale", "")
+            + f" [Auto-corrected: rule 5 — {reason}; Compassion capped at Minimally Met.]"
+        ).strip()
+    acc = raw_categories["Acceptance"]
+    if LEVEL_RANK[acc["level"]] > LEVEL_RANK["Partially Met"]:
+        acc["level"] = "Partially Met"
+        acc["rationale"] = (
+            acc.get("rationale", "")
+            + f" [Auto-corrected: rule 5 — {reason}; Acceptance capped at Partially Met.]"
+        ).strip()
 
 
 def _build_partial_result(*, session_type: str, notes: str, raw_response: str) -> EvaluationResult:
@@ -515,26 +901,18 @@ def _build_partial_result(*, session_type: str, notes: str, raw_response: str) -
 
 
 # ---------------------------------------------------------------------------
-# Prompt + display helpers
+# Shared helpers + display
 # ---------------------------------------------------------------------------
 
 
-def _build_user_prompt(transcript: str, session_type: str, student_name: str) -> str:
+def _context_label(session_type: str) -> str:
     context = SESSION_TYPE_TO_CONTEXT.get(_canonical_session_type(session_type), RubricContext.HPV)
-    context_label = {
+    return {
         RubricContext.HPV: "HPV vaccination",
         RubricContext.OHI: "oral hygiene",
         RubricContext.TOBACCO: "tobacco cessation",
         RubricContext.PERIO: "periodontitis and gum health",
     }[context]
-    return (
-        f"## Session\n\n"
-        f"- Session type: {session_type} ({context_label})\n"
-        f"- Student name: {student_name}\n\n"
-        f"## Transcript\n\n{transcript}\n\n"
-        f"Now produce the JSON object as specified in the system prompt. "
-        f"Remember rules 4 (Summary) and 5 (belittling)."
-    )
 
 
 def _canonical_session_type(session_type: str) -> str:
