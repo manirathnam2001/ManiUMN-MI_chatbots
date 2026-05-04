@@ -7,13 +7,12 @@ becomes a ~30-line shell that constructs a :class:`SessionConfig` and calls
 What's deliberately NOT in this runner (documented regressions per the
 approved plan; see C:\\Users\\manir\\.claude\\plans\\pure-marinating-pike.md):
 
-* Voice mode (STT/TTS) — the legacy ``chat_utils.handle_chat_input_with_voice``
-  is not wired up. ``SessionConfig`` reserves the field for a follow-up.
+* Voice mode (STT/TTS) — not wired up. ``SessionConfig`` reserves the field
+  for a follow-up.
 * Email-to-Box backup — the page-level send loop using
   ``RobustEmailSender`` is not invoked here.
-* ``end_control_middleware.prevent_ambiguous_ending`` — sessions end when the
-  student clicks the "Generate Feedback" button, not via mutual semantic
-  detection.
+* Mutual-intent semantic ending detection — sessions end when the student
+  clicks the "Generate Feedback" button, not via automatic detection.
 
 Public surface:
 
