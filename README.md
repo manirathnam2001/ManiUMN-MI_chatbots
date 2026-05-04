@@ -57,14 +57,11 @@ The chatbots now use a comprehensive **40-point rubric with granular assessment*
     │   ├── Tobacco.py         # Tobacco Cessation MI chatbot (access via portal) ✨ NEW
     │   └── Perio.py           # Periodontitis MI chatbot (access via portal) ✨ NEW
     ├── rubric/                # MI rubric system with granular scoring
-    │   └── mi_rubric.py       # Updated 40-point rubric with 4-level assessment
-    ├── services/              # Service layer for evaluation
-    │   └── evaluation_service.py  # Updated to support granular scoring and all bot contexts
+    │   └── mi_rubric.py       # 40-point rubric with 4-level assessment
     ├── secret_code_portal.py  # Main entry point - Secret code access portal
-    ├── chat_utils.py          # Shared chat handling utilities (with voice support)
-    ├── pdf_utils.py           # PDF report generation utilities (with conversation quotes)
-    ├── feedback_template.py   # Standardized feedback formatting (updated for granular scoring)
-    ├── scoring_utils.py       # MI component scoring and validation
+    ├── mi_session.py          # Shared Streamlit session runner for the four MI pages
+    ├── mi_evaluation.py       # Two-call MI evaluator (evidence extraction + scoring)
+    ├── mi_pdf.py              # PDF report generation (conversation + scored feedback)
     ├── persona_texts.py       # All persona definitions (HPV, OHI, Tobacco, Perio)
     ├── time_utils.py          # Timezone handling utilities
     ├── config_loader.py       # Configuration and environment variable management
