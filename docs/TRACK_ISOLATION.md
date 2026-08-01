@@ -41,12 +41,15 @@ All isolation is controlled by environment variables read in `app_env.py`. Every
 variable defaults to production behaviour, so an unconfigured deployment behaves
 exactly as the application did before this module existed.
 
-| Variable | Default | Track A value | Track B value |
-|---|---|---|---|
-| `MI_SHEET_ID` | Production sheet ID | Unset, or the production sheet ID | The test sheet ID |
-| `MI_SHEET_NAME` | `Sheet1` | Unset | Worksheet name in the test sheet |
-| `MI_ENVIRONMENT` | `production` | Unset | `test` |
-| `MI_SMTP_ENABLED` | `true` | Unset | `false` |
+| Variable | Default | Track A value | Track B value | Phase |
+|---|---|---|---|---|
+| `MI_SHEET_ID` | Production sheet ID | Unset, or the production sheet ID | The test sheet ID | 1 |
+| `MI_SHEET_NAME` | `Sheet1` | Unset | Worksheet name in the test sheet | 1 |
+| `MI_ENVIRONMENT` | `production` | Unset | `test` | 1 |
+| `MI_SMTP_ENABLED` | `true` | Unset | `false` | 1 |
+| `MI_BOX_EMAIL_OVERRIDE` | unset | Unset | A test mailbox | 7 |
+| `MI_STATE_DIR` | local path | Unset | MSI Tier 1 project path | 7 |
+| `MI_LOG_DIR` | local path | Unset | MSI Tier 1 project path | 5, 7 |
 
 On Streamlit Community Cloud these are set per application under Settings, then
 Secrets.
@@ -91,6 +94,42 @@ deliberately. If it were placed lower, a disabled deployment would fall through
 to the retry queue, and `email_queue.py` would write a named student PDF to
 disk. Suppressing that write is part of the point of the flag.
 
+### 3.4 `MI_BOX_EMAIL_OVERRIDE` (arrives in Phase 7)
+
+Not yet implemented. It becomes mandatory the moment Phase 7 restores the
+session-flow Box send.
+
+Today the only code path that emails Box is the startup retry queue, so
+`MI_SMTP_ENABLED=false` is sufficient isolation. Once every completed session
+triggers a send, Track B needs a way to exercise that path without emailing a
+real course folder. `MI_BOX_EMAIL_OVERRIDE` replaces the resolved recipient for
+all four bots with a single test mailbox.
+
+The rule for Phase 7: **the override ships in the same commit as the
+restoration, never after it.**
+
+---
+
+## 3A. The storage split
+
+Phase 7 introduces a boundary that is easy to breach by accident, so it is
+stated here as well as in the migration plan.
+
+| Artifact | Destination | Carries identity? |
+|---|---|---|
+| Feedback PDF | **Box only** | Yes |
+| Conversation history | MSI Tier 1 | No |
+| Evaluation results | MSI Tier 1 | No |
+| Application logs | MSI Tier 1 | No, scrubbed before write |
+
+**No PDF is ever written to MSI.** The PDF exists in exactly two places: the
+student's browser download and the course Box folder.
+
+**Application logs are the likeliest accidental breach.** `logger_config.py`
+records `log_action` calls that carry student names. Once logs are written to
+MSI, the Phase 6 scrubbing function must be applied as a logging filter, not
+only in the evaluation path.
+
 ---
 
 ## 4. Shared resources
@@ -100,7 +139,8 @@ These are the actual coupling points between the two tracks.
 | Resource | Status | Control |
 |---|---|---|
 | Google Sheet | **Decoupled** | `MI_SHEET_ID` |
-| Outbound email and Box archive | **Decoupled** | `MI_SMTP_ENABLED` |
+| Outbound email | **Decoupled** | `MI_SMTP_ENABLED` |
+| Box course folders | **Decoupled today**, needs `MI_BOX_EMAIL_OVERRIDE` from Phase 7 | `MI_SMTP_ENABLED`, then the override |
 | Google service account | Shared credential, separate sheets | Grant the service account access to both sheets |
 | Repository `main` branch | Protected | No merge from `msi-hybrid` until cutover |
 | Groq account | Not shared | Track A uses per-student keys; Track B uses an operator key |

@@ -8,6 +8,71 @@ this changelog reaches the production deployment before the Phase 12 cutover.
 
 ---
 
+## Plan amendment, 2026-07-31 (plan version 2.1)
+
+No code changed. Recorded here because it alters the scope of Phase 7.
+
+### Storage split made explicit
+
+Feedback PDFs are archived to Box and are **never** written to MSI. MSI holds
+the conversation history, the evaluation results, and the application logs, as a
+pseudonymous backend store and fallback.
+
+Version 2.0 of the plan had proposed a Tier 2 S3 PDF archive on MSI. That is
+withdrawn. Keeping the one artifact that must carry a student name inside Box,
+a UMN-sanctioned system, is both simpler and a stronger position against the
+MSI User Agreement prohibition on FERPA-protected data.
+
+### Correction: Box archiving is a regression, not a missing feature
+
+An earlier assessment in this work described Box archiving as "not wired into
+the session flow" and treated restoring it as new development. The first half is
+accurate for the current code. The second half was wrong, and the framing was
+misleading.
+
+Box archiving was fully implemented and working. Each of the four bot pages
+carried its own send block calling `RobustEmailSender.send_with_guaranteed_delivery`,
+with a progress bar, a persistent retry queue, retry and skip controls, and
+download-button gating. It was lost in commit `1656112`, the refactor that
+replaced the four fat page files with thin shells over `mi_session.run_practice_session`.
+The send block was not carried into the shared runner.
+
+Evidence:
+
+| Item | Location |
+|---|---|
+| Reference implementation | `git show 1656112^:pages/OHI.py`, lines 356 to 440 |
+| Same block in the other three bots | `1656112^:pages/HPV.py`, `Perio.py`, `Tobacco.py` |
+| Regression recorded at the time | `mi_session.py:12-13` |
+| Reserved hook left by the refactor | `SessionConfig.enable_email_to_box`, `mi_session.py:105` |
+
+Consequence for the plan: Phase 7 ports a known-good implementation rather than
+designing a new one. Lower risk, and the download-gating behaviour must be
+preserved rather than reinvented.
+
+### Phase 7 rescoped
+
+Retitled from "Session durability and redemption race fix" to "Data persistence
+(Box archiving and the MSI backend store)". Estimate raised from 2 days to 3 to
+4 days. New requirements:
+
+- `MI_BOX_EMAIL_OVERRIDE`, which must ship in the same commit as the Box
+  restoration, otherwise every Track B session emails a real course folder.
+- Log scrubbing as a logging filter. `logger_config.py` `log_action` calls carry
+  student names, so writing logs to MSI unscrubbed breaches the FERPA boundary
+  just as an unscrubbed transcript would.
+- Two explicit negative verifications: no PDF under `$MI_STATE_DIR`, and no
+  student name anywhere under `$MI_STATE_DIR` or `$MI_LOG_DIR`.
+
+### Stated assumption
+
+An opaque session identifier is generated per session, used as the MSI record
+key, and printed in the Box PDF footer. Without it the MSI store cannot function
+as a per-student fallback. If the linkage is unwanted, drop the footer line;
+the store still works but individual sessions become unrecoverable by student.
+
+---
+
 ## Phase 1: Track B setup, safety net, and dead code removal
 
 Date: 2026-07-31

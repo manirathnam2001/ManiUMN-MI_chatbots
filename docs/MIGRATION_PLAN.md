@@ -1,14 +1,21 @@
 # MI Chatbots: MSI Migration Implementation Plan
 
-Document version: 2.0
+Document version: 2.1
 Date: 2026-07-31
-Status: Awaiting approval
-Supersedes: version 1.0 (single-track in-place migration)
+Status: Approved; Phase 1 complete
+Supersedes: version 2.0
 Related research: `docs/MSI_MIGRATION_RESEARCH.md`
+Related: `docs/TRACK_ISOLATION.md`, `docs/CHANGELOG_MIGRATION.md`
 
-Change from version 1.0: the migration is now structured as two isolated tracks. The existing
+Change from version 1.0: the migration is structured as two isolated tracks. The existing
 production deployment is frozen and remains authoritative. All migration work happens in a
 parallel environment that shares no live resource with production.
+
+Change from version 2.0: the storage split is now explicit. Feedback PDFs are archived to Box
+and are never stored on MSI. MSI holds the conversation history, the evaluation results, and
+the application logs, as a backend store. Because Box archiving is currently dormant in the
+session flow, restoring it becomes new in-scope work rather than a preserved behaviour. See
+sections 1.3 and 12.
 
 ---
 
@@ -39,22 +46,54 @@ that shape every decision in this plan:
 ### 1.3 Chosen architecture
 
 **Hybrid.** The Streamlit front end remains on a public, FERPA-appropriate host. MSI runs
-the vLLM inference endpoints and receives only pseudonymous transcripts. The Groq dependency
-is eliminated.
+the vLLM inference endpoints and the backend data store, and receives only pseudonymous
+data. The Groq dependency is eliminated.
 
 ```
 Students ---- HTTPS ----> Streamlit front end
                           (public host, holds student identity)
-                                   |
-                                   | pseudonymous payloads only
-                                   | over UMN network / VPN
-                                   v
-                          MSI Agate cluster
-                          - vLLM: Llama 3.1 8B  (chat turns, evidence extraction)
-                          - vLLM: Llama 3.3 70B (MI scoring)
-                          - Tier 1: session journal, logs
-                          - Tier 2 S3: pseudonymous PDF archive
+                             |                    |
+                             |                    | identified PDF
+       pseudonymous data     |                    | over SMTP
+       over UMN network      |                    v
+                             |            Box course folders
+                             v            - feedback PDF, named
+                    MSI Agate cluster       (the only PDF archive)
+                    - vLLM: Llama 3.1 8B  (chat turns, evidence extraction)
+                    - vLLM: Llama 3.3 70B (MI scoring)
+                    - Tier 1: conversation history
+                    - Tier 1: evaluation results
+                    - Tier 1: application logs
 ```
+
+### 1.3.1 The storage split
+
+This split is deliberate and is the governing rule for every persistence decision in this
+plan.
+
+| Artifact | Destination | Carries student identity? |
+|---|---|---|
+| Feedback PDF | **Box only** | Yes. Box is the system of record for graded output |
+| Conversation history | **MSI Tier 1** | No. Pseudonymous |
+| Evaluation results (scores, rationales, recommendations) | **MSI Tier 1** | No. Pseudonymous |
+| Application logs | **MSI Tier 1** | No. Scrubbed before write |
+| Access codes and redemption state | Google Sheets | Yes. Unchanged |
+
+**No PDF is ever written to MSI.** MSI is a backend store and a fallback, not a document
+archive. This keeps the one artifact that must carry a student name entirely within a
+UMN-sanctioned system, and keeps MSI clear of the MSI User Agreement prohibition on
+FERPA-protected data.
+
+### 1.3.2 Stated assumption: session identifiers
+
+For the MSI store to function as a fallback, a specific student's session must be locatable
+in it. The plan therefore assumes an opaque session identifier is generated per session,
+used as the MSI record key, and printed in the footer of the Box PDF.
+
+This gives recovery without giving MSI an identity: anyone holding the Box PDF can find the
+matching MSI record, while MSI alone holds nothing that identifies anybody. If this linkage
+is not wanted, drop the PDF footer line; the MSI store still works, but individual sessions
+become unrecoverable by student.
 
 ### 1.4 Intended outcome
 
@@ -62,6 +101,10 @@ On completion:
 
 - No dependency on the Groq hosted API. Inference runs on University hardware.
 - No student identity ever leaves the front end or reaches MSI storage.
+- **Every completed session archives its feedback PDF to the correct course Box folder.**
+  This does not happen today.
+- **Conversation history, evaluation results, and application logs are retained on MSI**,
+  pseudonymously. Today none of them are retained anywhere.
 - Switching inference providers is a configuration change, not a code change.
 - The application survives process restarts without destroying in-flight student sessions.
 - Student-visible behaviour, scoring, and PDF output are unchanged.
@@ -126,8 +169,14 @@ decoupled before Track B accepts any traffic.
 |---|---|---|---|
 | Google Sheet of access codes | Track B testing marks real student codes as used, locking students out of production | Create a separate test sheet. Make the sheet ID configurable via `MI_SHEET_ID` instead of the three hardcoded literals | 1 |
 | Google service account | Track B credential problems could affect Track A Sheets access | Use one service account with read and write on both sheets, or provision a second service account for Track B. Rotation is handled separately in Phase 0 | 0 |
-| Gmail SMTP account | Track B could emit real email during testing | Set `MI_SMTP_ENABLED=false` in Track B, or point Track B at a disposable mailbox | 1 |
-| Box intake addresses | Track B PDFs could land in the real course archive | Track B must never use the four addresses in `config.json:15-18`. Note that Box archiving is currently not invoked from the session flow at all, so the exposure is limited to the startup queue drain | 1 |
+| Gmail SMTP account | Track B could emit real email during testing | Set `MI_SMTP_ENABLED=false` in Track B, or point Track B at a disposable mailbox | 1 (done) |
+| Box intake addresses | Track B PDFs could land in the real course archive | Two controls. `MI_SMTP_ENABLED=false` blocks sending outright. When Track B needs to exercise the restored Box flow, `MI_BOX_EMAIL_OVERRIDE` redirects all four course addresses to a single test mailbox | 1 (partial), 7 |
+
+**The Box exposure grows in Phase 7.** In the current code the only exposure is the startup
+queue drain, because the session-flow send was lost in commit `1656112` (see section 12.1).
+Once Phase 7 restores it, every completed Track B session would email a real course folder if
+SMTP were enabled without an override. `MI_BOX_EMAIL_OVERRIDE` must land in the same change as
+the restoration, not after it.
 | Repository `main` branch | Merging Track B work early would change production | No merge to `main` until the cutover decision in Phase 12 | All |
 | GitHub Actions on `main` | Existing workflow performs a live SMTP login on every push to main | Add a workflow that runs on `msi-hybrid` only. See section 2.4 regarding the existing workflow | 1 |
 | Groq account and billing | None. Track A uses per-student keys; Track B uses an operator key or MSI | No action | n/a |
@@ -191,6 +240,9 @@ implementation.
 | Unused dependencies | Remove `torch`, `sentence-transformers`, `faiss-cpu`, `numpy` | Track B only. Container image drops from roughly 6 GB to roughly 400 MB; the `huggingface.co` outbound dependency disappears |
 | `database/mi_sessions.sql` | Delete | Track B only. Removes an obsolete rubric definition |
 | `end_control_middleware.py` | Delete | Track B only. Also removes approximately five test files; scheduled in Phase 1 so the Track B baseline test suite reflects the post-deletion state |
+| Feedback PDF storage | **Box only.** Never MSI | The one artifact carrying a student name stays in a UMN-sanctioned system, keeping MSI clear of the User Agreement prohibition |
+| MSI storage contents | Conversation history, evaluation results, application logs | All pseudonymous. MSI acts as a backend store and fallback, not a document archive |
+| Box session-flow archiving | **Restore it** (Phase 7) | Regression from commit `1656112`. A known-good reference implementation exists at `1656112^:pages/OHI.py` |
 
 ---
 
@@ -209,7 +261,7 @@ require MSI access and, in some cases, answers from the MSI Help Desk.
 | 4 | Retire per-student API keys | B | No | 0.5 day |
 | 5 | Path externalization | B | No | 1 day |
 | 6 | FERPA de-identification boundary | B | No | 2 to 3 days |
-| 7 | Session durability and redemption race fix | B | No | 2 days |
+| 7 | Data persistence: Box archiving and the MSI backend store | B | No | 3 to 4 days |
 | 8 | Containerization with Apptainer | B | Yes | 1 day |
 | 9 | vLLM service jobs and endpoint registry | B | Yes, plus Help Desk answers | 2 to 3 days |
 | 10 | Streamlit service job (conditional) | B | Yes, plus Help Desk clearance | 2 days |
@@ -227,15 +279,19 @@ These are not preferences. Violating them causes defined failures.
    bare relative path becomes a startup crash inside a container, not a warning.
 3. **Phase 2 must precede Phase 8.** Building an image before pruning dependencies produces
    a 6 GB image with CUDA layers that is then discarded.
-4. **Phase 6 must precede Phase 7.** The durability journal writes transcripts to MSI Tier 1
-   storage. Journaling identified transcripts before de-identification is in place would
-   place FERPA-protected data on MSI, which is exactly the User Agreement violation this
-   plan exists to avoid.
-5. **The error-classification work in Phase 3 must precede Phase 9.** The string matching at
+4. **Phase 6 must precede Phase 7.** The MSI store writes transcripts, evaluation results, and
+   logs to Tier 1. Writing any of them before de-identification is in place would place
+   FERPA-protected data on MSI, which is exactly the User Agreement violation this plan
+   exists to avoid. This now applies to the log scrubbing filter as well as the transcript
+   path; see section 12.2.
+5. **`MI_BOX_EMAIL_OVERRIDE` must land in the same commit as the Box restoration.** Restoring
+   the send without the override would cause every Track B test session to email a real
+   course Box folder. See section 2.2.
+6. **The error-classification work in Phase 3 must precede Phase 9.** The string matching at
    `mi_evaluation.py:638-645` is Groq-shaped. Against vLLM it will not match, and the
    extractor fallback at `mi_evaluation.py:342-350` will silently stop working. If this is
    not fixed first, it will be misdiagnosed as a vLLM problem.
-6. **The endpoint registry in Phase 9 is mandatory, not optional.** vLLM jobs are capped at
+7. **The endpoint registry in Phase 9 is mandatory, not optional.** vLLM jobs are capped at
    24 to 96 hours. A Streamlit job can run 37 days. Baking a static `MI_LLM_BASE_URL` into
    the front end means every vLLM restart takes the application down.
 
@@ -814,31 +870,97 @@ production.
 
 ---
 
-## 12. Phase 7: Session durability and redemption race fix
+## 12. Phase 7: Data persistence (Box archiving and the MSI backend store)
 
-**Goal.** Survive process restarts without destroying in-flight student sessions.
+**Goal.** Deliver the storage split defined in section 1.3.1. Feedback PDFs reach Box.
+Conversation history, evaluation results, and application logs reach MSI, pseudonymously.
+In-flight sessions survive process restarts.
 
-All state currently lives in `st.session_state` (`mi_session.py:115-138`), in-process, and is
-lost on restart.
+This phase absorbs what version 2.0 of this plan called "session durability" and adds the Box
+restoration.
 
-### 12.1 Session journal
+### 12.1 Restore Box PDF archiving
 
-Append-only JSONL, one file per session, at
-`$MI_STATE_DIR/<yyyy-mm>/<session_id>.jsonl`, one line per turn:
-`{"ts": ..., "role": ..., "content": ...}` where `content` is already scrubbed by Phase 6.
+**This is the repair of a regression, not new development.**
 
-`MI_STATE_DIR` points at Tier 1 project storage (`/projects/standard/<project>/state`).
+Box archiving was fully implemented and working. Each of the four bot pages carried its own
+send block that called `RobustEmailSender.send_with_guaranteed_delivery` with a progress
+callback and a retry and skip interface. It was lost in commit `1656112`, the refactor that
+collapsed the four fat page files into thin shells over the shared runner
+`mi_session.run_practice_session`. The send block did not make it into the shared runner.
+
+Two artifacts of that refactor confirm the intent to restore it:
+
+- `mi_session.py:12-13` records the omission explicitly as a known regression.
+- `SessionConfig.enable_email_to_box` (`mi_session.py:105`) is the reserved hook, currently
+  defaulting to `False`.
+
+**Reference implementation:** `git show 1656112^:pages/OHI.py`, lines 356 to 440. The port
+should follow it rather than reinvent it. Its behaviour:
+
+| Element | Detail |
+|---|---|
+| Recipient | `email_config.get('<bot>_box_email')` from `config.json:15-18`, one address per bot |
+| Transport | `RobustEmailSender.send_with_guaranteed_delivery`, which retries with backoff and queues persistently on failure |
+| Progress | `progress_callback` driving a `st.progress` bar and a status line |
+| State machine | `st.session_state.email_backup_status`, one of `pending`, `success`, `queued`, `failed`, `no_email`, `skipped` |
+| Failure handling | "Retry Backup" and "Skip and Download Only" buttons |
+| Download gating | **The download button appears only once backup resolves.** This is a deliberate design choice, not an accident: it stops a student walking away with the only copy of a report the course never received |
+
+**Work required:**
+
+1. Add a `box_email_key` field to `SessionConfig`, or derive it as
+   `f"{session_type.lower()}_box_email"`. Set `enable_email_to_box = True` on all four pages.
+2. Port the send block into `mi_session._render_feedback`, immediately after
+   `generate_pdf_report` at `mi_session.py:317-323` and before the `st.download_button` at
+   `:329-334`.
+3. Preserve the download gating behaviour above.
+4. Add `MI_BOX_EMAIL_OVERRIDE`, which when set replaces the resolved recipient for every bot.
+   Track B sets this to a test mailbox. Without it, restoring the send would cause every
+   Track B session to email a real course folder.
+
+**Identity note.** The Box PDF carries the real student name, unchanged. Box is the sanctioned
+system of record for graded output, and Phase 6 de-identification must not be applied to it.
+The de-identification boundary sits between the front end and MSI, not between the front end
+and Box.
+
+**Risk.** This restores a live SMTP dependency in the student-facing path. `config.json:7`
+currently holds an empty `smtp_app_password`, so the credential must be confirmed working
+before this ships. It also reintroduces the failure mode where a Gmail outage blocks the
+download button, which is why the skip control must be ported with it.
+
+### 12.2 MSI backend store
+
+MSI receives three record types per session, all keyed by the opaque session identifier from
+section 1.3.2, all pseudonymous, all under Tier 1 project storage.
+
+| Record | Path | Content |
+|---|---|---|
+| Conversation history | `$MI_STATE_DIR/<yyyy-mm>/<session_id>.jsonl` | One line per turn: timestamp, role, scrubbed content |
+| Evaluation result | `$MI_STATE_DIR/<yyyy-mm>/<session_id>.eval.json` | The full `EvaluationResult`: scores, levels, rationales, evidence quotes, recommendations |
+| Application logs | `$MI_LOG_DIR/` | Scrubbed application logs, rotated |
+
+`MI_STATE_DIR` and `MI_LOG_DIR` point at `/projects/standard/<project>/`.
 
 **Never use `/scratch.global`.** Files there are deleted 30 days after creation, which is
 shorter than a semester.
 
-### 12.2 Session resume
+**No PDF is written to MSI.** The PDF exists in exactly two places: the student's browser
+download and the course Box folder.
+
+**Log scrubbing is mandatory, not optional.** Application logs today are written by
+`logger_config.py` and include `log_action` calls carrying student names. Writing them to MSI
+unscrubbed would place FERPA-protected data on MSI just as surely as an unscrubbed transcript
+would. The `scrub()` function from Phase 6 must be applied in a logging filter, not only in
+the evaluation path. This is the single easiest way to breach the boundary by accident.
+
+### 12.3 Session resume
 
 Write `session_id` into `st.query_params` at session start. On page load, if the identifier is
 present and `st.session_state.chat_history` is empty, replay the journal. This makes a browser
 reconnection after a service restart non-destructive.
 
-### 12.3 Fix the double-redemption race
+### 12.4 Fix the double-redemption race
 
 `secret_code_portal.py` reads access codes through `@st.cache_data(ttl=300)` at `:230` and
 performs a non-atomic read, check, then write against `update_cell` at `:514-517`. Two
@@ -855,18 +977,30 @@ caches.
 Because Track B uses a separate test sheet, this can be exercised destructively without any
 risk to real student codes.
 
-### 12.4 Database schema decision
+### 12.5 Database schema decision
 
-`database/mi_sessions.sql` was deleted in Phase 1. If Phase 7 requires a relational store,
-author a **new** SQLite schema generated from the actual `EvaluationResult` shape. Do not
-resurrect the old schema: it encodes a 30-point 4-category rubric while the live rubric is
-40 points across 6 categories, and reviving it would introduce an incorrect rubric into a
-graded system.
+`database/mi_sessions.sql` was deleted in Phase 1. The MSI store in section 12.2 is
+file-based, which is sufficient for a fallback and avoids running a database service under a
+Slurm walltime ceiling. If a relational store later proves necessary, author a **new** SQLite
+schema generated from the actual `EvaluationResult` shape. Do not resurrect the old schema: it
+encodes a 30-point 4-category rubric while the live rubric is 40 points across 6 categories,
+and reviving it would introduce an incorrect rubric into a graded system.
 
-**Verification.** Start a session on the Track B application, add several turns, terminate the
-process, restart it, reload the same session URL, and confirm the chat history is intact.
-Separately, attempt to redeem one test code from two simultaneous clients and confirm exactly
-one succeeds.
+**Verification.**
+
+| Check | Method |
+|---|---|
+| Box archiving works | Complete a Track B session with `MI_BOX_EMAIL_OVERRIDE` set to a test mailbox. Confirm the PDF arrives and the download button appears only after backup resolves |
+| Box failure is survivable | Point SMTP at an unreachable host. Confirm the queue accepts the entry, the warning renders, and the skip control releases the download |
+| Transcript reaches MSI | Confirm the JSONL file exists, one line per turn |
+| Evaluation reaches MSI | Confirm the `.eval.json` file matches the on-screen scores |
+| **No PDF on MSI** | `find $MI_STATE_DIR -name '*.pdf'` must return nothing |
+| **No identity on MSI** | Run a session as a distinctive test name, then `grep -ri "<name>" $MI_STATE_DIR $MI_LOG_DIR`. Must return nothing. This covers logs, not just transcripts |
+| Session resume | Add turns, terminate the process, restart, reload the session URL, confirm history is intact |
+| Redemption race | Redeem one test code from two simultaneous clients; exactly one succeeds |
+
+The two checks in bold are the machine-checkable statement of the storage split and belong in
+the compliance evidence alongside the Phase 6 recording assertion.
 
 ---
 
@@ -1154,7 +1288,7 @@ Test contract:
 | 4 | `grep -rn "os.environ\[" --include=*.py .` shows no request-path assignment; two-browser concurrency check |
 | 5 | Start from a foreign working directory with `MI_LOG_DIR` and `MI_QUEUE_DIR` set |
 | 6 | Golden-score regression test; recording assertion test |
-| 7 | Kill and restart the process; confirm session resume; confirm single-redemption |
+| 7 | Box PDF arrives at a test mailbox; transcript and evaluation land on MSI; `find $MI_STATE_DIR -name '*.pdf'` returns nothing; grep for a test student name across `$MI_STATE_DIR` and `$MI_LOG_DIR` returns nothing; session resume works; single-redemption holds |
 | 8 | `apptainer exec mi-app.sif python -m pytest /app/tests -q` with a read-only filesystem |
 | 9 | `curl $ENDPOINT/v1/models`; full suite and a live session against vLLM |
 | 10 | `curl -f .../_stcore/health`; forced restart and resume |
@@ -1178,7 +1312,11 @@ must remain reachable and functional.** Check it at the end of every working ses
 | vLLM restart takes down the front end | 9 | High | Endpoint registry file, never a static base URL |
 | Compute nodes lack outbound internet, breaking SMTP and Google Sheets | 5, 9 | High | Help Desk question 5; the hybrid architecture already keeps Sheets and SMTP on the front end, off MSI |
 | Different model weights produce different scores on a graded artifact | 12 | High | Parallel cohort run, score distribution comparison, and a rubric calibration pass |
-| Track B emails test PDFs to the real Box archive | 1 | Medium | `MI_SMTP_ENABLED=false` in Track B; Box archiving is not currently wired into the session flow |
+| Track B emails test PDFs to the real Box archive | 1, 7 | **High from Phase 7** | `MI_SMTP_ENABLED=false` today. Once archiving is restored, `MI_BOX_EMAIL_OVERRIDE` must ship in the same commit |
+| Application logs carry student names onto MSI | 7 | **High** | The Phase 6 `scrub()` must be applied as a logging filter, not only in the evaluation path. Verified by grepping `$MI_LOG_DIR` for a distinctive test name |
+| A PDF is written to MSI by accident | 7 | Medium | Explicit verification step: `find $MI_STATE_DIR -name '*.pdf'` must return nothing |
+| Restored Box send blocks the download button during a Gmail outage | 7 | Medium | Port the "Skip and Download Only" control together with the send block; it exists in the reference implementation |
+| SMTP credential is not actually working | 7 | Medium | `config.json:7` holds an empty `smtp_app_password`. Confirm the credential before shipping the restoration |
 | 70B throughput inadequate for a full class finishing simultaneously | 11 | Medium | Load test before any student is routed to Track B |
 | Leaked Google service-account key is used before rotation | 0 | Medium | Rotate immediately, before any credential is copied to MSI |
 | `msi-hybrid` drifts far from `main` | All | Medium | Track A change freeze (section 2.3); rebase after every `main` commit |
