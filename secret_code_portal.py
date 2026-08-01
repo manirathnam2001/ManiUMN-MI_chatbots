@@ -13,8 +13,8 @@ Features:
 - Robust error handling with admin-friendly messages
 
 Google Sheet Structure:
-- Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
-- Sheet Name: Sheet1
+- Sheet ID: set by MI_SHEET_ID, defaulting to the production sheet (see app_env.py)
+- Sheet Name: set by MI_SHEET_NAME, defaulting to Sheet1
 - Columns: Table No, Name, Bot, Secret, Used, Role (optional)
 
 Usage:
@@ -63,6 +63,7 @@ from utils.access_control import (
     normalize_bot_type,
 )
 from logger_config import setup_logging, get_logger, log_action, log_error_with_context
+from app_env import get_sheet_id, get_sheet_name, render_environment_banner
 
 # Setup centralized logging
 setup_logging(level=logging.INFO, console_output=True, file_output=True)
@@ -80,8 +81,11 @@ BOT_PAGE_MAP = {
     'DEVELOPER': 'pages/developer_page.py'
 }
 
-SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
-SHEET_NAME = "Sheet1"
+# Resolved from the environment so the production deployment and the parallel
+# migration deployment can run from one codebase without sharing a sheet.
+# Defaults to the production sheet when unconfigured. See app_env.py.
+SHEET_ID = get_sheet_id()
+SHEET_NAME = get_sheet_name()
 
 # --- Streamlit page configuration ---
 st.set_page_config(
@@ -89,6 +93,10 @@ st.set_page_config(
     page_icon="🔐",
     layout="centered"
 )
+
+# Warn loudly when this is not the production deployment, so a student who
+# receives the wrong link cannot complete a graded session here by mistake.
+render_environment_banner()
 
 # --- Process failed email queue on startup ---
 # This runs once when the application starts to retry any queued emails

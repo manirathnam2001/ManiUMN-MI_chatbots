@@ -11,9 +11,10 @@ approved plan; see C:\\Users\\manir\\.claude\\plans\\pure-marinating-pike.md):
   is not wired up. ``SessionConfig`` reserves the field for a follow-up.
 * Email-to-Box backup — the page-level send loop using
   ``RobustEmailSender`` is not invoked here.
-* ``end_control_middleware.prevent_ambiguous_ending`` — sessions end when the
-  student clicks the "Generate Feedback" button, not via mutual semantic
-  detection.
+* Mutual semantic end detection — sessions end when the student clicks the
+  "Generate Feedback" button. The ``end_control_middleware`` module that
+  implemented this was removed during the MSI migration work; it had been
+  dead code since this runner replaced ``chat_utils.py``.
 
 Public surface:
 
@@ -41,6 +42,7 @@ from mi_evaluation import (
 )
 from mi_pdf import construct_feedback_filename, generate_pdf_report
 from time_utils import get_formatted_utc_time
+from app_env import render_environment_banner
 
 
 logger = logging.getLogger(__name__)
@@ -400,6 +402,7 @@ def _persona_selection(config: SessionConfig, persona_prompts: Dict[str, str]) -
 def run_practice_session(config: SessionConfig) -> None:
     """Render the full Streamlit page for one MI practice session."""
     st.set_page_config(page_title=config.page_title, page_icon=config.page_icon, layout="centered")
+    render_environment_banner()
     _auth_guard(config.session_type)
 
     st.title(f"{config.page_icon} {config.page_title}")

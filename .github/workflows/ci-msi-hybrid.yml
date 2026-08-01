@@ -1,0 +1,59 @@
+name: CI (msi-hybrid)
+
+# Continuous integration for the MSI migration branch.
+#
+# This workflow deliberately requires no secrets and makes no network calls.
+# It exists because the production workflow (deploy.yml) triggers only on
+# pushes to main and performs a live SMTP login, which is not appropriate as a
+# pull request gate.
+
+on:
+  push:
+    branches:
+      - msi-hybrid
+  pull_request:
+    branches:
+      - msi-hybrid
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run test suite
+        run: python -m pytest tests/ test_evaluation.py -q
+
+      - name: Import smoke check
+        # Confirms every runtime module is importable without a Streamlit
+        # runtime, real credentials, or network access.
+        env:
+          MI_SMTP_ENABLED: 'false'
+          MI_SHEET_ID: 'ci-placeholder-sheet-id'
+          MI_ENVIRONMENT: 'test'
+        run: |
+          python -c "import app_env, config_loader, logger_config, mi_evaluation, mi_pdf, time_utils"
+
+      - name: Assert no hardcoded production sheet ID outside app_env
+        # The production sheet ID must appear only as the documented default in
+        # app_env.py. A hardcoded copy elsewhere would cause a test deployment
+        # to consume real student access codes.
+        run: |
+          matches=$(grep -rn "1x_MA3MqvyxN3p7v" --include='*.py' . | grep -v '^./app_env.py:' || true)
+          if [ -n "$matches" ]; then
+            echo "Hardcoded production sheet ID found outside app_env.py:"
+            echo "$matches"
+            exit 1
+          fi

@@ -30,6 +30,7 @@ from utils.access_control import (
     SheetAccessError,
     CredentialError,
 )
+from app_env import get_sheet_id, get_sheet_name, render_environment_banner
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ st.set_page_config(
     page_icon="🛠️",
     layout="centered"
 )
+
+render_environment_banner()
 
 # --- AUTHENTICATION GUARD ---
 # Check if user is authenticated
@@ -101,7 +104,7 @@ if st.button("Test Sheet Connection"):
                 st.info(f"Service account: {service_email}")
             
             # Try to access the sheet
-            SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
+            SHEET_ID = get_sheet_id()
             try:
                 sheet = check_sheet_permission(client, SHEET_ID, service_email)
                 st.success(f"✅ Successfully accessed the access codes spreadsheet!")
@@ -272,9 +275,9 @@ with st.form("mark_code_form"):
             with st.spinner("Updating sheet..."):
                 try:
                     client, _, _ = get_sheet_client(st.secrets)
-                    SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
+                    SHEET_ID = get_sheet_id()
                     sheet = client.open_by_key(SHEET_ID)
-                    worksheet = sheet.worksheet("Sheet1")
+                    worksheet = sheet.worksheet(get_sheet_name())
                     
                     # Update the Used column (column 5)
                     worksheet.update_cell(row_number, 5, mark_as)
