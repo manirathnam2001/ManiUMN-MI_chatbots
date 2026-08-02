@@ -124,5 +124,48 @@ class TestBannerIsInert(AppEnvTestCase):
         app_env.render_environment_banner()
 
 
+class TestSmtpGateDoesNotAlterDefaultBehaviour(AppEnvTestCase):
+    """The SMTP gate must be inert unless explicitly switched off.
+
+    The gate added to email_utils returns early from five methods. If it ever
+    fired by default it would silently disable outbound email in production.
+    These tests pin the default and the explicit-off behaviour at the boundary
+    that email_utils depends on.
+    """
+
+    def test_gate_is_open_by_default(self):
+        self.assertTrue(
+            app_env.is_smtp_enabled(),
+            "SMTP must be enabled when MI_SMTP_ENABLED is unset, otherwise "
+            "production would silently stop archiving to Box.",
+        )
+
+    def test_gate_closes_only_on_explicit_false(self):
+        os.environ["MI_SMTP_ENABLED"] = "false"
+        self.assertFalse(app_env.is_smtp_enabled())
+
+    def test_gate_stays_open_on_garbage_input(self):
+        # Fail safe: an unparseable value must not disable email.
+        for value in ("", "maybe", "TRUE-ish", "2"):
+            with self.subTest(value=value):
+                os.environ["MI_SMTP_ENABLED"] = value
+                self.assertTrue(app_env.is_smtp_enabled())
+
+
+class TestProductionSheetIsTheDefault(AppEnvTestCase):
+    """Guards the Track A side of the isolation boundary.
+
+    Phase 1 replaced three hardcoded sheet ID literals with this lookup. If the
+    default ever drifted, the production deployment would silently read the
+    wrong sheet and every student access code would appear invalid.
+    """
+
+    def test_default_is_exactly_the_production_sheet(self):
+        self.assertEqual(app_env.get_sheet_id(), PRODUCTION_SHEET_ID)
+
+    def test_default_worksheet_is_exactly_sheet1(self):
+        self.assertEqual(app_env.get_sheet_name(), "Sheet1")
+
+
 if __name__ == "__main__":
     unittest.main()

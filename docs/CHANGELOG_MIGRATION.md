@@ -8,6 +8,77 @@ this changelog reaches the production deployment before the Phase 12 cutover.
 
 ---
 
+## Phase 1 safety review, 2026-08-01
+
+A review of whether the branch can break the running application. One real
+defect was found and fixed. Everything else was verified clean.
+
+### Defect found and fixed: ambient environment leaked into the test suite
+
+Five tests in `tests/test_email_utils.py` assert on the behaviour of
+`send_email_with_attachment` and `test_connection`. The SMTP gate added in
+Phase 1 returns early from both when `MI_SMTP_ENABLED=false`. A developer
+working on the migration environment will have exactly that variable exported,
+because it is the documented Track B setting. Running the suite in that shell
+would have produced five failures unrelated to any code change.
+
+Fixed by adding a repository-root `conftest.py` with a session-scoped autouse
+fixture that clears the deployment isolation variables for the duration of the
+run and restores them afterwards. Tests needing a non-default value set it
+themselves, as `tests/test_app_env.py` does.
+
+Five regression tests were added to pin the boundary the gate depends on: that
+SMTP is enabled when the variable is unset, that it closes only on an explicit
+false, that unparseable values fail safe to enabled, and that the sheet ID and
+worksheet name defaults are exactly the production values.
+
+### Verified clean
+
+| Check | Method | Result |
+|---|---|---|
+| Production branch untouched | `git diff main pre-msi-baseline` | Empty |
+| Nothing pushed | `git log origin/main..msi-hybrid` | Local only |
+| No tracked file became ignored | `git ls-files \| git check-ignore --stdin` | Empty |
+| No test references a deleted path | grep for `mi_sessions`, `end_control`, `test_php` across tests | Empty |
+| No runtime import of the deleted module | grep across all `.py` | Only an explanatory docstring |
+| No circular import | `app_env` imports only `os` at module scope; Streamlit is imported lazily and only in the test-environment branch | Safe |
+| `self.logger` always set before the gate runs | `SecureEmailSender.__init__:60`; `RobustEmailSender.__init__:538` calls `super().__init__` | Safe |
+| `app_env` resolves wherever `email_utils` does | Both at repository root; pytest inserts the package root because `tests/` has `__init__.py` | No new failure mode |
+
+### Runtime behaviour with no environment variables set
+
+Every added runtime line is either an import, a lookup that returns the previous
+hardcoded value, or a call that returns immediately.
+
+| Element | Default behaviour |
+|---|---|
+| `SHEET_ID` | The production sheet literal, unchanged |
+| `SHEET_NAME` | `Sheet1`, unchanged |
+| `render_environment_banner()` | Returns before importing Streamlit |
+| SMTP gate | Open. No method short-circuits |
+| Deleted modules | Never imported at runtime |
+
+**One genuine difference remains:** `runtime.txt` moved from `python-3.10` to
+`python-3.11`. Every pinned dependency supports 3.11, but this changes the
+interpreter a deployment from this branch would build against. It does not
+affect production, which is on `main` at 3.10.
+
+### Test count after this review
+
+| | Count |
+|---|---|
+| After Phase 1 | 230 |
+| Added by this review | 5 |
+| After | 235 |
+
+### Still outstanding
+
+The suite has still not been executed. No Python interpreter and no WSL
+distribution are available on the authoring machine. The checks above are
+static. The continuous integration workflow will run the suite on push.
+
+---
+
 ## Plan amendment, 2026-07-31 (plan version 2.1)
 
 No code changed. Recorded here because it alters the scope of Phase 7.
@@ -127,11 +198,15 @@ post-deletion state.
 |---|---|
 | Before | 245 |
 | Removed with `end_control_middleware` | 31 |
-| Added in `tests/test_app_env.py` | 18 |
-| After | 232 |
+| Added in `tests/test_app_env.py` | 16 |
+| After | 230 |
 
 The reduction is expected and is recorded here so it is not later mistaken for
 a regression.
+
+Correction, 2026-08-01: this table originally recorded 18 added and 232 after.
+The correct figures are 16 and 230, measured with
+`cat tests/*.py test_evaluation.py | grep -c '^\s*def test_'`.
 
 ### Verification
 
