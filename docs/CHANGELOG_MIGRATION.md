@@ -71,11 +71,49 @@ affect production, which is on `main` at 3.10.
 | Added by this review | 5 |
 | After | 235 |
 
-### Still outstanding
+### Suite executed, 2026-08-02
 
-The suite has still not been executed. No Python interpreter and no WSL
-distribution are available on the authoring machine. The checks above are
-static. The continuous integration workflow will run the suite on push.
+The branch was pushed and continuous integration ran the suite. To classify the
+failures, the identical suite was also run against the frozen baseline from a
+temporary branch created at the `pre-msi-baseline` tag. That branch has since
+been deleted.
+
+| Run | Result |
+|---|---|
+| Baseline (`pre-msi-baseline`, equals production `main`) | 17 failed, 226 passed, 2 skipped |
+| Migration branch (`msi-hybrid`) | 17 failed, 216 passed, 2 skipped |
+
+**The two failure sets are identical.** Comparing them in both directions
+produced no differences:
+
+```
+comm -13 baseline_failures branch_failures   ->  empty
+comm -23 baseline_failures branch_failures   ->  empty
+```
+
+**This branch introduces zero new test failures.** All 17 failures pre-date the
+migration work and are present on production `main` today.
+
+The passed count differs because of the deliberate test changes:
+226 minus 31 removed with `end_control_middleware` plus 21 in
+`tests/test_app_env.py` equals 216.
+
+### Pre-existing failures inherited from earlier refactors
+
+These are not caused by the migration and are not fixed by it. They are recorded
+because a permanently red suite is a weak safety net, and Phase 6 depends on the
+suite as its regression signal for scoring changes.
+
+| Count | File | Cause |
+|---|---|---|
+| 1 | `tests/test_multipage_integration.py` | Asserts `AUTHENTICATION GUARD` appears in `pages/OHI.py`. Commit `1656112` made the bot pages thin shells, moving the guard into `mi_session._auth_guard` |
+| 2 | `tests/test_path_resolution.py` | Assert `pages/OHI.py` imports `Path` and contains error handling. Same cause: the logic moved into `mi_session` |
+| 14 | `tests/test_secret_code_googlesa.py` | Patch `secret_code_portal.gspread`, but that module never imported `gspread` directly. It uses `utils.access_control`, where the real client lives |
+
+All 17 are stale assertions about code layout, not product defects. The
+application behaves correctly; the tests describe a structure that no longer
+exists. Recommended as a cleanup before Phase 6, so that a red suite means
+something again.
 
 ---
 
