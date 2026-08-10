@@ -31,30 +31,59 @@ def test_multipage_structure():
     print("✓ Multipage structure is correct")
 
 
-def test_authentication_guards():
-    """Test that authentication guards are present in bot pages."""
-    print("\nTesting authentication guards...")
-    
-    for page in ['pages/OHI.py', 'pages/HPV.py']:
+def test_bot_pages_delegate_to_the_shared_runner():
+    """Every bot page must route through mi_session.run_practice_session.
+
+    The bot pages used to carry their own inline authentication guard. That
+    guard now lives in mi_session._auth_guard, and the pages are thin shells
+    that call run_practice_session. A page that stopped delegating would
+    silently lose authentication, so the delegation is the property worth
+    asserting here. The guard itself is tested in
+    test_shared_runner_enforces_authentication below.
+    """
+    print("\nTesting that bot pages delegate to the shared runner...")
+
+    for page in ['pages/OHI.py', 'pages/HPV.py', 'pages/Perio.py', 'pages/Tobacco.py']:
         with open(page, 'r', encoding='utf-8') as f:
             content = f.read()
-        
-        # Check for authentication guard markers
-        assert 'AUTHENTICATION GUARD' in content, f"{page} should have authentication guard"
-        assert 'st.session_state.get(\'authenticated\'' in content, f"{page} should check authentication"
-        assert 'st.switch_page' in content, f"{page} should use st.switch_page for redirects"
-        
-        # Check that API key input is removed
-        assert 'text_input' not in content or 'GROQ API Key' not in content, \
-            f"{page} should not have API key input field"
-        
-        # Check that credentials come from session state
-        assert 'st.session_state.groq_api_key' in content, \
-            f"{page} should get API key from session state"
-        assert 'st.session_state.student_name' in content, \
-            f"{page} should get student name from session state"
-        
-        print(f"  ✓ {page} has proper authentication guard")
+
+        assert 'run_practice_session' in content, \
+            f"{page} must call run_practice_session, which applies the auth guard"
+        assert 'SessionConfig' in content, \
+            f"{page} must construct a SessionConfig"
+
+        # The page must not have reintroduced its own API key input.
+        assert 'text_input' not in content, \
+            f"{page} should not collect credentials; the portal does that"
+
+        print(f"  OK {page} delegates to the shared runner")
+
+
+def test_shared_runner_enforces_authentication():
+    """mi_session._auth_guard must perform the checks the pages used to do.
+
+    Asserted against the source of mi_session rather than the pages, because
+    that is where the logic moved.
+    """
+    print("\nTesting the shared authentication guard...")
+
+    with open('mi_session.py', 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    assert 'def _auth_guard' in content, \
+        "mi_session must define _auth_guard"
+    assert 'st.session_state.get("authenticated"' in content, \
+        "_auth_guard must check the authenticated flag"
+    assert 'st.switch_page' in content, \
+        "_auth_guard must offer a redirect back to the portal"
+    assert 'st.stop()' in content, \
+        "_auth_guard must halt rendering when a check fails"
+    assert 'student_name' in content, \
+        "_auth_guard must require student_name in session state"
+    assert '_auth_guard(' in content, \
+        "run_practice_session must actually invoke _auth_guard"
+
+    print("  OK shared auth guard enforces authentication")
 
 
 def test_portal_credentials():
