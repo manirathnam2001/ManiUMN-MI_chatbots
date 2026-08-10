@@ -1,0 +1,183 @@
+# MSI Migration Tracker
+
+Document version: 1.0
+Date: 2026-08-02
+Tracks: `MIGRATION_PLAN.md` version 2.1
+Integration branch: `msi-hybrid`
+Baseline tag: `pre-msi-baseline`
+
+Update the status table in section 3 as each phase lands. This file is the
+single place to look for where the migration stands.
+
+---
+
+## 1. Branch and pull request strategy
+
+### 1.1 The rule
+
+**No pull request targets `main` until Phase 12.**
+
+Each phase gets its own branch off `msi-hybrid` and its own pull request **into
+`msi-hybrid`**. At cutover, one final pull request merges `msi-hybrid` into
+`main`.
+
+```
+main  (frozen, production)
+  |
+  |  <-- one PR, at Phase 12 cutover only
+  |
+msi-hybrid  (integration branch)
+  ^   ^   ^
+  |   |   |  <-- one PR per phase
+  |   |   msi/phase-4-api-keys
+  |   msi/phase-3-llm-provider
+  msi/phase-2-deps
+```
+
+### 1.2 Why not a pull request to `main` now
+
+Three reasons, in order of weight:
+
+1. **`main` has no branch protection.** Confirmed on 2026-08-02: the GitHub API
+   returns "Branch not protected". A pull request against `main` is a live merge
+   button on a branch that must not reach production until the Phase 12 decision.
+   One misclick ends the isolation guarantee.
+2. **The repository is public.** A large open pull request against `main` reads
+   to any observer as the intended next state of production. It is not.
+3. **Nothing is ready to merge.** Phase 1 is isolation scaffolding. It has value
+   only in combination with Phases 2 through 11.
+
+If a review surface against `main` is wanted before cutover, open it as a
+**draft** pull request titled `DO NOT MERGE`, and enable branch protection on
+`main` first. Enabling protection is worth doing regardless.
+
+### 1.3 Naming
+
+| Item | Convention |
+|---|---|
+| Phase branch | `msi/phase-<n>-<slug>`, for example `msi/phase-3-llm-provider` |
+| Pull request title | `Phase <n>: <goal>` |
+| Pull request base | `msi-hybrid`, always, until Phase 12 |
+
+### 1.4 Every phase pull request must state
+
+- Which plan section it implements.
+- The CI result, and the failure count compared against the 17 known
+  pre-existing failures recorded in `CHANGELOG_MIGRATION.md`.
+- Confirmation that production remains reachable.
+- Its rollback posture.
+
+---
+
+## 2. Merge gates
+
+A phase pull request may merge into `msi-hybrid` when all of these hold.
+
+| Gate | Requirement |
+|---|---|
+| CI | Green, or failing only the 17 known pre-existing tests. Any new failure blocks |
+| Production untouched | `git diff main pre-msi-baseline` is empty |
+| Plan reference | The pull request names the section it implements |
+| Changelog | A `CHANGELOG_MIGRATION.md` entry is included in the same pull request |
+| Ordering | Every hard prerequisite in plan section 4.1 is satisfied |
+
+---
+
+## 3. Status
+
+Legend: Done, In progress, Blocked, Not started.
+
+| Phase | Title | Branch | PR | Status | Gate |
+|---|---|---|---|---|---|
+| 0 | Unblock: security, accounts, environment | n/a | n/a | **In progress** | Key rotation and Help Desk answers outstanding |
+| 1 | Track B setup, safety net, dead code removal | `msi-hybrid` direct | none | **Done** 2026-08-02 | CI run, zero new failures |
+| 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | not opened | Not started | None. Ready to start |
+| 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | not opened | Not started | None. Ready to start |
+| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. Watch PR #117 overlap |
+| 5 | Path externalization | `msi/phase-5-paths` | not opened | Not started | Blocks Phase 8 |
+| 6 | FERPA de-identification boundary | `msi/phase-6-deident` | not opened | Not started | **Blocked** on the A1 FERPA answer. Blocks Phase 7 |
+| 7 | Data persistence: Box archiving and MSI store | `msi/phase-7-persistence` | not opened | Not started | After Phase 6. Needs A3 answer for the MSI half |
+| 8 | Containerization with Apptainer | `msi/phase-8-container` | not opened | Not started | **Blocked** on MSI account. After Phases 2 and 5 |
+| 9 | vLLM service jobs and endpoint registry | `msi/phase-9-vllm` | not opened | Not started | **Blocked** on MSI answers A2, B1 |
+| 10 | Streamlit service job (conditional) | `msi/phase-10-frontend` | not opened | Not started | **Conditional.** Skipped unless A2 or A4 allows it |
+| 11 | Capacity and load testing | `msi/phase-11-load` | not opened | Not started | After Phase 9 |
+| 12 | Parallel run, decision, cutover | `msi-hybrid` to `main` | not opened | Not started | Everything above, plus a written FERPA determination |
+
+### 3.1 Phase 0 detail
+
+| Item | Status | Owner |
+|---|---|---|
+| Rotate Google service-account key | **Outstanding. Urgent** | User |
+| Send Help Desk questions (`MSI_HELPDESK_QUESTIONS.md`) | Outstanding | User |
+| Written FERPA determination from UMN privacy office | Outstanding | User |
+| Faculty PI creates MSI project via MyMSI | Outstanding | User |
+| Create test Google Sheet | Outstanding | User |
+| Deploy Track B Streamlit app from `msi-hybrid` | Outstanding | User |
+| Decide the two optional production touches | Outstanding | User |
+
+**On the key rotation.** The repository is public, confirmed 2026-08-02. The
+Google service-account private key in commits `0ebde65`, `d6ea9e5`, and
+`64dbfe2` is therefore recoverable by anyone on the internet, not only by
+collaborators. This raises the rotation from required to urgent, and it is
+independent of the migration.
+
+---
+
+## 4. Conflict watch
+
+Work in flight that will collide with a migration phase.
+
+### PR #117, `claude/heuristic-bohr-05a3c6`, targeting `main`
+
+Touches `email_queue.py`, `mi_session.py`, `tests/test_email_queue.py`. Three
+fixes, all overlapping this plan:
+
+| Fix in #117 | Overlaps |
+|---|---|
+| Groq client race: pass `Groq(api_key=...)` instead of mutating `os.environ` | Phase 3 (`make_client`) and Phase 4 (removing the key entirely) |
+| Dead rubric load removed | Phase 2 section 7.5, same recommendation |
+| `EmailQueue.remove()` double-load bug | Phase 5 and Phase 7, which both touch the queue |
+
+**Recommendation: merge #117 into `main`.** The Groq race is a live defect that
+can bill one student's requests to another student's key, so it qualifies as a
+production bug fix under the Track A freeze. It also makes production safer
+while the migration runs.
+
+**Then rebase `msi-hybrid` onto `main` immediately.** Expect a conflict in
+`mi_session.py` around the client construction at lines 408 to 410, which both
+#117 and Phase 3 rewrite. Resolve in favour of the Phase 3 abstraction, which
+supersedes #117's fix by removing the `os.environ` write entirely.
+
+### Older open pull requests
+
+`#105`, `#104`, `#102` are stale, from January to March 2026. Close them or
+merge them before the migration proceeds, so the conflict surface stops growing.
+
+---
+
+## 5. Rebase discipline
+
+- Rebase `msi-hybrid` onto `main` after every commit that lands on `main`.
+- Never merge `msi-hybrid` into `main` before the Phase 12 decision.
+- The `pre-msi-baseline` tag marks the frozen state. `git diff main
+  pre-msi-baseline` must be empty until a Track A change is deliberately
+  approved, at which point move the comparison to the new `main`.
+
+---
+
+## 6. Known test baseline
+
+CI is red on `main` and has been for some time, because the previous workflow
+never ran the test suite.
+
+| Branch | Result |
+|---|---|
+| `pre-msi-baseline` (equals `main`) | 17 failed, 226 passed, 2 skipped |
+| `msi-hybrid` after Phase 1 | 17 failed, 216 passed, 2 skipped |
+
+The failure sets are identical. Any phase pull request that increases the
+failure count beyond these 17, or changes which tests fail, does not merge.
+
+The 17 are stale assertions about code layout, detailed in
+`CHANGELOG_MIGRATION.md`. Clearing them is recommended before Phase 6, which
+relies on the suite as its regression signal for scoring changes.
