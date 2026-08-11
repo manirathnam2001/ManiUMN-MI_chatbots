@@ -21,6 +21,8 @@ from typing import Optional, Dict, Any, Tuple
 
 import gspread
 
+from app_env import get_google_sa_file
+
 logger = logging.getLogger(__name__)
 
 # Role constants
@@ -225,7 +227,10 @@ def get_sheet_client(
     creds_dict = None
     creds_source = None
     service_account_email = None
-    service_account_file = "umnsod-mibot-ea3154b145f1.json"
+    # Absolute, and overridable with MI_GOOGLE_SA_FILE. Previously a bare
+    # relative filename, so whether it was found depended on the process
+    # working directory.
+    service_account_file = get_google_sa_file()
     
     # Get streamlit secrets if not provided
     if streamlit_secrets is None:

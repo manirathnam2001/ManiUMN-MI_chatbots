@@ -54,7 +54,12 @@ from utils.access_control import (
     normalize_bot_type,
 )
 from logger_config import setup_logging, get_logger, log_action, log_error_with_context
-from app_env import get_sheet_id, get_sheet_name, render_environment_banner
+from app_env import (
+    ensure_writable_dirs,
+    get_sheet_id,
+    get_sheet_name,
+    render_environment_banner,
+)
 
 # Setup centralized logging
 setup_logging(level=logging.INFO, console_output=True, file_output=True)
@@ -89,36 +94,61 @@ st.set_page_config(
 # receives the wrong link cannot complete a graded session here by mistake.
 render_environment_banner()
 
-# --- Process failed email queue on startup ---
-# This runs once when the application starts to retry any queued emails
-try:
-    from config_loader import ConfigLoader
-    from email_utils import RobustEmailSender
-    from email_queue import EmailQueue
-    
-    config_loader = ConfigLoader()
-    config = config_loader.config
-    
-    # Check if queue processing is enabled
-    if config.get('email_config', {}).get('queue_retry_on_startup', True):
-        email_queue = EmailQueue(
-            queue_dir=config.get('logging', {}).get('smtp_log_directory', 'SMTP logs')
-        )
-        
+@st.cache_resource
+def _drain_email_queue_once() -> None:
+    """Retry any emails queued by a previous run.
+
+    Behind ``@st.cache_resource`` so it executes once per process rather than
+    on every script rerun, and called from the page body rather than at module
+    import.
+
+    That placement matters. This work performs live SMTP connections with
+    retry delays of up to 120 seconds and a 30 second connection timeout. At
+    import scope, a queue holding several entries and an unreachable mail
+    server would stall application startup for minutes before a student saw
+    anything. On MSI that becomes recurrent rather than occasional: outbound
+    access on port 587 from compute nodes is unconfirmed, and a service that
+    restarts on a walltime boundary would hang on every restart.
+
+    ``MI_SMTP_ENABLED=false`` short-circuits the send path entirely, so the
+    migration environment never reaches the network here.
+    """
+    try:
+        from config_loader import ConfigLoader
+        from email_utils import RobustEmailSender
+        from email_queue import EmailQueue
+
+        config = ConfigLoader().config
+
+        if not config.get('email_config', {}).get('queue_retry_on_startup', True):
+            return
+
+        # One-time move of anything left under the previous "SMTP logs"
+        # directory name, so pending reports are not stranded by the rename.
+        EmailQueue.migrate_legacy_dir()
+
+        email_queue = EmailQueue()
         pending_count = email_queue.get_queue_size()
-        if pending_count > 0:
-            logger.info(f"Processing {pending_count} queued emails from previous sessions")
-            
-            sender = RobustEmailSender(config)
-            result = sender.process_failed_queue()
-            
-            logger.info(
-                f"Queue processing complete: {result['succeeded']}/{result['processed']} succeeded, "
-                f"{result['still_failed']} still in queue"
-            )
-except Exception as e:
-    # Don't fail startup if queue processing fails
-    logger.warning(f"Failed to process email queue on startup: {e}")
+        if not pending_count:
+            return
+
+        logger.info(f"Processing {pending_count} queued emails from previous sessions")
+        result = RobustEmailSender(config).process_failed_queue()
+        logger.info(
+            f"Queue processing complete: {result['succeeded']}/{result['processed']} succeeded, "
+            f"{result['still_failed']} still in queue"
+        )
+    except Exception as e:
+        # A failure here must never prevent a student from starting a session.
+        logger.warning(f"Failed to process email queue: {e}")
+
+
+# Create the writable directories before anything tries to log or queue.
+# Failing here is deliberate: without them the application cannot function,
+# and discovering that at startup beats discovering it mid-session.
+ensure_writable_dirs()
+
+_drain_email_queue_once()
 
 
 
