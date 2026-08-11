@@ -1,10 +1,10 @@
 # MSI Migration Tracker
 
-Document version: 1.0
-Date: 2026-08-02
+Document version: 1.1
+Date: 2026-08-11
 Tracks: `MIGRATION_PLAN.md` version 2.1
 Integration branch: `msi-hybrid`
-Baseline tag: `pre-msi-baseline`
+Baseline tag: `pre-msi-baseline` (historical; `main` has moved once, for PR #117)
 
 Update the status table in section 3 as each phase lands. This file is the
 single place to look for where the migration stands.
@@ -62,8 +62,8 @@ If a review surface against `main` is wanted before cutover, open it as a
 ### 1.4 Every phase pull request must state
 
 - Which plan section it implements.
-- The CI result, and the failure count compared against the 17 known
-  pre-existing failures recorded in `CHANGELOG_MIGRATION.md`.
+- The CI result. The suite is green as of Phase 1a, so the expected figure is
+  zero failures.
 - Confirmation that production remains reachable.
 - Its rollback posture.
 
@@ -76,7 +76,7 @@ A phase pull request may merge into `msi-hybrid` when all of these hold.
 | Gate | Requirement |
 |---|---|
 | CI | **Green. Zero failures.** Since Phase 1a cleared the inherited 17, any failure is a real regression and blocks the merge |
-| Production untouched | `git diff main pre-msi-baseline` is empty |
+| Production untouched | The pull request targets `msi-hybrid`, never `main`. `main` moves only by a deliberately approved Track A fix, as PR #117 was |
 | Plan reference | The pull request names the section it implements |
 | Changelog | A `CHANGELOG_MIGRATION.md` entry is included in the same pull request |
 | Ordering | Every hard prerequisite in plan section 4.1 is satisfied |
@@ -91,10 +91,11 @@ Legend: Done, In progress, Blocked, Not started.
 |---|---|---|---|---|---|
 | 0 | Unblock: security, accounts, environment | n/a | n/a | **In progress** | Key rotation and Help Desk answers outstanding |
 | 1 | Track B setup, safety net, dead code removal | `msi-hybrid` direct | none | **Done** 2026-08-02 | CI run, zero new failures |
-| 1a | Clear the 17 stale test failures | `msi/phase-1a-stale-tests` | #118 | **Done** 2026-08-11 | CI green, 221 passed 0 failed |
+| 1a | Clear the 17 stale test failures | `msi/phase-1a-stale-tests` | #118 | **Done** 2026-08-11 | Merged. CI green |
+| - | Integrate PR #117 from main | `msi-hybrid` direct | #117 | **Done** 2026-08-11 | Merged + semantic fix. CI green, 228 passed |
 | 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | not opened | Not started | None. Ready to start |
 | 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | not opened | Not started | None. Ready to start |
-| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. Watch PR #117 overlap |
+| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. PR #117 now merged, overlap resolved |
 | 5 | Path externalization | `msi/phase-5-paths` | not opened | Not started | Blocks Phase 8 |
 | 6 | FERPA de-identification boundary | `msi/phase-6-deident` | not opened | Not started | **Blocked** on the A1 FERPA answer. Blocks Phase 7 |
 | 7 | Data persistence: Box archiving and MSI store | `msi/phase-7-persistence` | not opened | Not started | After Phase 6. Needs A3 answer for the MSI half |
@@ -128,6 +129,14 @@ independent of the migration.
 
 Work in flight that will collide with a migration phase.
 
+### PR #117: RESOLVED, merged 2026-08-11
+
+Merged into `main` at `486b51e`, then merged into `msi-hybrid` at `ad9f6e5`.
+Both branches now carry all three fixes. The follow-up in `8deba8f` repaired the
+semantic conflict described in section 5.1.
+
+The original analysis is retained below for context.
+
 ### PR #117, `claude/heuristic-bohr-05a3c6`, targeting `main`
 
 Touches `email_queue.py`, `mi_session.py`, `tests/test_email_queue.py`. Three
@@ -156,13 +165,31 @@ merge them before the migration proceeds, so the conflict surface stops growing.
 
 ---
 
-## 5. Rebase discipline
+## 5. Integration discipline
 
-- Rebase `msi-hybrid` onto `main` after every commit that lands on `main`.
+- **Merge `main` into `msi-hybrid` after every commit that lands on `main`.**
+  Earlier versions of this document said rebase. That was written before
+  `msi-hybrid` was pushed and before PR #120 existed. Rebasing now would mean
+  force-pushing published history under an open pull request, so merge instead.
+  It reaches the same state without rewriting anything.
+- Phase branches, which are short-lived and unpushed until their pull request,
+  may still be rebased onto `msi-hybrid` freely.
 - Never merge `msi-hybrid` into `main` before the Phase 12 decision.
-- The `pre-msi-baseline` tag marks the frozen state. `git diff main
-  pre-msi-baseline` must be empty until a Track A change is deliberately
-  approved, at which point move the comparison to the new `main`.
+- `pre-msi-baseline` marks the original frozen state. It is now historical:
+  `main` has deliberately moved once, for PR #117. Compare against `origin/main`
+  from here, not against the tag.
+
+### 5.1 Watch for semantic conflicts
+
+A clean textual merge does not mean a correct one. When PR #117 landed, git
+merged it into `msi-hybrid` with a single trivial docstring conflict, yet the
+result failed two tests: #117 deleted `mi_session._load_rubric_text`, while
+tests added in Phase 1a asserted that function exists. The changes were in
+different files, so git could not see the contradiction.
+
+**After every merge from `main`, run CI before assuming the branch is healthy.**
+This is also the clearest argument for the zero-failure gate: against the old
+17-failure baseline, two new failures would have been lost in the noise.
 
 ---
 
@@ -172,7 +199,9 @@ merge them before the migration proceeds, so the conflict surface stops growing.
 |---|---|
 | `pre-msi-baseline` (equals `main`) | 17 failed, 226 passed, 2 skipped |
 | `msi-hybrid` after Phase 1 | 17 failed, 216 passed, 2 skipped |
-| `msi-hybrid` after Phase 1a | **0 failed, 221 passed, 2 skipped** |
+| `msi-hybrid` after Phase 1a | 0 failed, 221 passed, 2 skipped |
+| `msi-hybrid` after merging PR #117 (`ad9f6e5`) | 2 failed, 227 passed, 2 skipped |
+| `msi-hybrid` after the semantic fix (`8deba8f`) | **0 failed, 228 passed, 2 skipped** |
 
 **The suite is green. Any failure from this point is a real regression and
 blocks the merge.**
