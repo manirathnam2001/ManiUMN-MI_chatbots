@@ -117,6 +117,107 @@ something again.
 
 ---
 
+## Phase 5: externalize runtime paths
+
+Date: 2026-08-11
+Branch: `msi/phase-5-paths`
+Pull request: #124
+Plan reference: `MIGRATION_PLAN.md` section 10
+Result: **264 passed, 2 skipped, 0 failed.**
+
+### Purpose
+
+Make the application run correctly with an arbitrary working directory and a
+read-only application directory. Hard prerequisite for Phase 8, where Apptainer
+mounts the application directory read-only and every bare relative write would
+fail on the first attempt.
+
+### What was wrong
+
+Four paths resolved against the process working directory.
+
+| Path | Used for |
+|---|---|
+| `git_logs` | Application logs |
+| `SMTP logs` | Email retry queue, including student PDFs on delivery failure |
+| `open('config.json')` | Configuration, opened by bare name in two places |
+| `umnsod-mibot-...json` | Google service account, bare filename |
+
+That is correct only when the app is launched from the repository root, which a
+Slurm job does not guarantee.
+
+### Added
+
+Five resolvers in `app_env`, each returning an absolute path and defaulting to a
+location beside `app_env.py` so an unconfigured deployment keeps today's layout:
+`MI_LOG_DIR`, `MI_QUEUE_DIR`, `MI_STATE_DIR`, `MI_CONFIG_PATH`,
+`MI_GOOGLE_SA_FILE`.
+
+A relative override resolves against the application root rather than the
+working directory, because that dependence is the thing being removed.
+
+`MI_STATE_DIR` is introduced here although Phase 7 consumes it, so the path
+layer is completed in one change rather than revisited.
+
+`ensure_writable_dirs()` creates the directories at startup and deliberately
+does not swallow failure. A deployment that cannot log or queue should fail
+visibly at startup rather than mid-session.
+
+### The directory with a space
+
+`SMTP logs` became `smtp_queue`. The space had to be quoted in every shell
+command, Slurm script and Apptainer bind argument that referenced it.
+
+`EmailQueue.migrate_legacy_dir()` moves anything left under the old name on
+first run, refusing to overwrite an existing entry. Without it, any report
+queued at the moment this version deploys would never be sent.
+
+### Resolution at call time, not import time
+
+`logger_config` would naturally have bound the log directory into a module
+constant. That freezes whatever `MI_LOG_DIR` happened to be when the module was
+first imported, which is the same trap that made `SessionConfig`'s model
+defaults unconfigurable in Phase 3. Caught during this change rather than after
+it.
+
+### The startup hang
+
+The email queue drain ran at module import scope. It performs live SMTP
+connections with retry delays up to 120 seconds and a 30 second connection
+timeout, so a queue holding several entries and an unreachable mail server
+stalled application startup for minutes before a student saw anything.
+
+On MSI this would become recurrent rather than occasional: outbound port 587
+from compute nodes is unconfirmed, and a service restarting on a walltime
+boundary would hang on every restart. It now sits behind `@st.cache_resource`,
+called from the page body.
+
+### config.json
+
+Dropped `log_directory`, `log_file` and `smtp_log_directory`. Keeping path keys
+in a config file that is itself located by a path is circular, and the values
+were bare relative paths.
+
+### Tests
+
+`tests/test_path_externalization.py` pins absoluteness, override behaviour, the
+no-space rename, and an AST check that no module outside `app_env` hardcodes a
+writable directory literal, so the pattern cannot creep back in.
+
+### Verification
+
+The acceptance test is starting from a foreign working directory:
+
+```
+cd / && MI_LOG_DIR=/tmp/mi/logs MI_QUEUE_DIR=/tmp/mi/queue \
+  python -m streamlit run /abs/path/secret_code_portal.py
+```
+
+That has not been executed here, since no Python interpreter is available on the
+authoring machine. It should be run on the Track B deployment before Phase 8.
+
+---
+
 ## Phase 4: retire the per-student API key
 
 Date: 2026-08-11

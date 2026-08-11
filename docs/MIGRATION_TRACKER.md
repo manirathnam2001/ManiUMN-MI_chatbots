@@ -95,8 +95,8 @@ Legend: Done, In progress, Blocked, Not started.
 | - | Integrate PR #117 from main | `msi-hybrid` direct | #117 | **Done** 2026-08-11 | Merged + semantic fix. CI green, 228 passed |
 | 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | #121 | **Done** 2026-08-11 | Merged. CI green |
 | 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | #122 | **Done** 2026-08-11 | Merged. CI green |
-| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | #123 | **In review** 2026-08-11 | CI green, 254 passed |
-| 5 | Path externalization | `msi/phase-5-paths` | not opened | Not started | Blocks Phase 8 |
+| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | #123 | **Done** 2026-08-11 | Merged. CI green |
+| 5 | Path externalization | `msi/phase-5-paths` | #124 | **In review** 2026-08-11 | CI green, 264 passed. Unblocks Phase 8 |
 | 6 | FERPA de-identification boundary | `msi/phase-6-deident` | not opened | Not started | **Blocked** on the A1 FERPA answer. Blocks Phase 7 |
 | 7 | Data persistence: Box archiving and MSI store | `msi/phase-7-persistence` | not opened | Not started | After Phase 6. Needs A3 answer for the MSI half |
 | 8 | Containerization with Apptainer | `msi/phase-8-container` | not opened | Not started | **Blocked** on MSI account. After Phases 2 and 5 |
