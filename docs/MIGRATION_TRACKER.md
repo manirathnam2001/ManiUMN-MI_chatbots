@@ -93,7 +93,7 @@ Legend: Done, In progress, Blocked, Not started.
 | 1 | Track B setup, safety net, dead code removal | `msi-hybrid` direct | none | **Done** 2026-08-02 | CI run, zero new failures |
 | 1a | Clear the 17 stale test failures | `msi/phase-1a-stale-tests` | #118 | **Done** 2026-08-11 | Merged. CI green |
 | - | Integrate PR #117 from main | `msi-hybrid` direct | #117 | **Done** 2026-08-11 | Merged + semantic fix. CI green, 228 passed |
-| 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | not opened | Not started | None. Ready to start |
+| 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | #121 | **In review** 2026-08-11 | CI green. 14 direct deps to 8, lockfile added |
 | 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | not opened | Not started | None. Ready to start |
 | 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. PR #117 now merged, overlap resolved |
 | 5 | Path externalization | `msi/phase-5-paths` | not opened | Not started | Blocks Phase 8 |

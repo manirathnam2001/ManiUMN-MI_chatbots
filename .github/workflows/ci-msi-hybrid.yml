@@ -45,6 +45,29 @@ jobs:
           /tmp/lockenv/bin/pip freeze
           echo "----- END RUNTIME LOCK -----"
 
+      - name: Assert requirements.txt pins match requirements.lock
+        # The two files are maintained separately, so they can drift. A pin that
+        # disagrees with the lock means an install from one file differs from an
+        # install from the other, which defeats the point of locking.
+        run: |
+          fail=0
+          while IFS= read -r line; do
+            case "$line" in \#*|"") continue ;; esac
+            pkg="${line%%==*}"
+            want="${line%% *}"
+            got=$(grep -iE "^${pkg}==" requirements.lock | sed 's/ *#.*//' | head -1)
+            if [ "$want" != "$got" ]; then
+              echo "MISMATCH ${pkg}: requirements.txt has '${want}', requirements.lock has '${got:-<absent>}'"
+              fail=1
+            fi
+          done < requirements.txt
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "Regenerate requirements.lock from the RUNTIME LOCK block above."
+            exit 1
+          fi
+          echo "OK: every pin in requirements.txt matches requirements.lock."
+
       - name: Static check for undefined names
         # Catches the failure mode dependency pruning creates: removing a block
         # of dead code also removes an import a later line still needs. The test

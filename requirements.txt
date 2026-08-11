@@ -12,21 +12,25 @@
 # the lockfile.
 
 # Core framework
-streamlit
+streamlit==1.61.1
 
 # LLM API. Replaced by an OpenAI-compatible client in Phase 3 of the MSI
 # migration, which allows the same code to talk to Groq or a self-hosted vLLM
 # endpoint. See docs/MIGRATION_PLAN.md.
-groq
+groq==1.6.0
 
 # PDF generation
-reportlab
+reportlab==5.0.0
 
 # Utilities
-pytz
-python-dotenv
-python-dateutil
+pytz==2026.3.post1
+python-dotenv==1.2.2
+python-dateutil==2.9.0.post0
 
-# Google Sheets integration (secret code portal)
-gspread
-google-auth
+# Google Sheets integration (secret code portal).
+#
+# gspread is version-sensitive: utils/access_control.py branches on
+# hasattr(gspread, "service_account_from_dict"), which exists from gspread 5.0
+# and falls back to gspread.authorize below that.
+gspread==6.2.1
+google-auth==2.56.3
