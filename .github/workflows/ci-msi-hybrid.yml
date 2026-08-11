@@ -46,14 +46,24 @@ jobs:
         run: |
           python -c "import app_env, config_loader, logger_config, mi_evaluation, mi_pdf, time_utils"
 
-      - name: Assert no hardcoded production sheet ID outside app_env
-        # The production sheet ID must appear only as the documented default in
-        # app_env.py. A hardcoded copy elsewhere would cause a test deployment
-        # to consume real student access codes.
+      - name: Assert no hardcoded production sheet ID in application code
+        # The production sheet ID must appear in application code only as the
+        # documented default in app_env.py. A hardcoded copy anywhere else would
+        # cause a test deployment to consume real student access codes.
+        #
+        # Test files are exempt: tests/test_app_env.py asserts that the default
+        # is exactly the production sheet, which is the check that stops the
+        # default silently drifting. Pinning an expected value is the point of
+        # that test, not a violation.
         run: |
-          matches=$(grep -rn "1x_MA3MqvyxN3p7v" --include='*.py' . | grep -v '^./app_env.py:' || true)
+          matches=$(grep -rn "1x_MA3MqvyxN3p7v" --include='*.py' . \
+            | grep -v '^\./app_env\.py:' \
+            | grep -v '^\./tests/' \
+            | grep -v '^\./test_' || true)
           if [ -n "$matches" ]; then
-            echo "Hardcoded production sheet ID found outside app_env.py:"
+            echo "Hardcoded production sheet ID found in application code:"
             echo "$matches"
+            echo ""
+            echo "Read it from app_env.get_sheet_id() instead."
             exit 1
           fi
