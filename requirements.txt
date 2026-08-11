@@ -1,13 +1,23 @@
+# Runtime dependencies.
+#
+# Every package here is imported by application code. Development and test-only
+# packages live in requirements-dev.txt.
+#
+# Versions are pinned and a resolved lockfile is provided in requirements.lock.
+# Install from the lockfile for a reproducible environment:
+#
+#     pip install -r requirements.lock
+#
+# Use this file when you intend to pick up compatible updates, then regenerate
+# the lockfile.
+
 # Core framework
 streamlit
 
-# LLM API
+# LLM API. Replaced by an OpenAI-compatible client in Phase 3 of the MSI
+# migration, which allows the same code to talk to Groq or a self-hosted vLLM
+# endpoint. See docs/MIGRATION_PLAN.md.
 groq
-
-# RAG and embeddings
-sentence-transformers
-faiss-cpu
-numpy
 
 # PDF generation
 reportlab
@@ -17,13 +27,6 @@ pytz
 python-dotenv
 python-dateutil
 
-# Google Sheets integration (for secret code portal)
+# Google Sheets integration (secret code portal)
 gspread
 google-auth
-google-auth-oauthlib
-
-# Deep learning backend (required by sentence-transformers)
-torch>=2.5.1
-
-# Speech features (Text-to-Speech fallback)
-gTTS>=2.3.0

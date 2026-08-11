@@ -1,18 +1,15 @@
 [server]
-# Exclude heavy ML libraries from Streamlit's file watcher.
-# The transformers library has hundreds of vision model sub-modules that each
-# try to import torchvision (not installed), producing ~4,000 ModuleNotFoundError
-# tracebacks on every startup. These packages never change at runtime, so
-# watching them is pure overhead.
+# Exclude libraries from Streamlit's file watcher. They never change at runtime,
+# so watching them is pure overhead.
+#
+# The transformers, torch, sentence_transformers, faiss and numpy entries were
+# removed in Phase 2 of the MSI migration, along with the packages themselves.
+# They existed because transformers tried to import hundreds of vision
+# sub-modules requiring torchvision, producing roughly 4,000 ModuleNotFoundError
+# tracebacks at every startup. With those packages gone the noise is gone too.
 folderWatchBlacklist = [
-    "**/transformers/**",
-    "**/torch/**",
-    "**/sentence_transformers/**",
-    "**/faiss/**",
-    "**/numpy/**",
     "**/reportlab/**",
 ]
 
 [logger]
-# Suppress noisy transformers import warnings in Streamlit logs
 level = "warning"
