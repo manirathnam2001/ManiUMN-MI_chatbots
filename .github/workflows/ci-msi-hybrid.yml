@@ -32,11 +32,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Record resolved versions
-        # Prints the fully resolved dependency tree. This is the source for
-        # requirements.lock, which cannot be generated on a machine without a
-        # Python interpreter.
-        run: pip freeze
+      - name: Record runtime-only resolved versions
+        # Resolves requirements.txt alone in a throwaway virtualenv, so the
+        # output is the runtime closure without pytest, pyflakes, gTTS or their
+        # transitives. This is the source for requirements.lock, which cannot be
+        # generated on a machine with no Python interpreter.
+        run: |
+          python -m venv /tmp/lockenv
+          /tmp/lockenv/bin/pip install --quiet --upgrade pip
+          /tmp/lockenv/bin/pip install --quiet -r requirements.txt
+          echo "----- BEGIN RUNTIME LOCK -----"
+          /tmp/lockenv/bin/pip freeze
+          echo "----- END RUNTIME LOCK -----"
 
       - name: Static check for undefined names
         # Catches the failure mode dependency pruning creates: removing a block
