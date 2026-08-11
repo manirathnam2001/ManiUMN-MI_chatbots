@@ -20,10 +20,7 @@ streamlit==1.61.1
 # endpoint: Groq via base_url https://api.groq.com/openai/v1, and a self-hosted
 # vLLM server via its own base_url. That is what makes moving inference to MSI a
 # configuration change rather than a code change. See llm_provider.py.
-#
-# Unpinned pending the next lockfile regeneration; CI resolves it and the pin
-# follows in the same pull request.
-openai
+openai==2.53.0
 
 # PDF generation
 reportlab==5.0.0
