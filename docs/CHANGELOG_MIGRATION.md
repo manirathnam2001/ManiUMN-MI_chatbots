@@ -117,6 +117,117 @@ something again.
 
 ---
 
+## Phase 2: dependency prune, pin, and lock
+
+Date: 2026-08-11
+Branch: `msi/phase-2-deps`
+Pull request: #121
+Plan reference: `MIGRATION_PLAN.md` section 7
+
+### Purpose
+
+Reduce the runtime surface before it is baked into an Apptainer image in
+Phase 8. Building the image first would produce a roughly 6 GB artifact with
+CUDA layers that is then discarded.
+
+### Removed
+
+| Package | Reason |
+|---|---|
+| `torch>=2.5.1` | Imported nowhere |
+| `sentence-transformers` | Imported nowhere |
+| `faiss-cpu` | Imported nowhere |
+| `numpy` | Not imported directly. Still installed transitively via `streamlit` |
+| `google-auth-oauthlib` | **Not identified in the plan.** Imported nowhere, and there is no interactive OAuth flow: credentials are service-account based. Still installed transitively via `gspread` |
+
+The first four supported a RAG pipeline that no longer exists. PR #117 removed
+its last vestige, `_load_rubric_text`, which read rubric text and immediately
+discarded it.
+
+Note that removing `numpy` and `google-auth-oauthlib` drops a *declaration*, not
+a package: both remain in the install as transitive dependencies. The value is
+that the file now lists only what the code imports.
+
+### Moved to `requirements-dev.txt`
+
+`gTTS`, imported only by `speech_text/tts_handler.py`, which is imported only by
+tests. This also drops an outbound runtime dependency on
+`translate.google.com`.
+
+### Runtime set
+
+Eight direct packages, each confirmed imported by application code:
+`streamlit`, `groq`, `reportlab`, `pytz`, `python-dotenv`, `python-dateutil`,
+`gspread`, `google-auth`. All pinned with `==`.
+
+`requirements.lock` records the full resolved closure of 60 packages.
+
+### Provenance of the pinned versions
+
+The plan called for capturing `pip freeze` from the running production
+deployment, so that today's behaviour could be reproduced. That was not
+possible: the deployment could not be inspected from here.
+
+The versions instead come from resolving the current requirements in a clean
+isolated virtualenv on Python 3.11 in CI. Production has been installing
+unpinned packages since it was first deployed, so its actual versions may
+differ. **Verify on the Track B deployment before cutover.**
+
+No Python interpreter is available on the authoring machine, so the resolution
+had to be performed by CI and copied back.
+
+### Impact
+
+| | Before | After |
+|---|---|---|
+| Direct runtime packages | 14 | 8 |
+| Approximate install size | ~6 GB, CUDA wheels | ~400 MB |
+| Runtime outbound dependencies | plus `huggingface.co` and `translate.google.com` | neither |
+
+Removing `huggingface.co` retires part of Help Desk question B4.
+
+### A defect introduced and caught
+
+Removing the dead `transformers` suppression block at the top of
+`secret_code_portal.py` also removed the `import os` that line 728 still
+depends on. That would have been a `NameError` at runtime.
+
+The test suite could not have caught it: `secret_code_portal` is a Streamlit
+script the suite never imports. The import was restored, and **pyflakes** was
+added to CI, since undefined names are exactly the failure mode dependency
+pruning creates.
+
+The pyflakes gate is deliberately narrow. Its first run reported 17 findings,
+none of which were undefined names: unused imports, f-strings without
+placeholders, and unused locals, all pre-existing. Failing on those would create
+a permanently red gate that everyone learns to ignore, which is the problem
+Phase 1a existed to fix. **Only undefined names fail the build.** The rest print
+as advisory output.
+
+Cleaning up those 17 is worth doing, but not inside a dependency change, and
+several sit in files Phases 3 through 7 will rewrite.
+
+### New CI steps
+
+| Step | Purpose |
+|---|---|
+| Record runtime-only resolved versions | Resolves `requirements.txt` alone in a throwaway virtualenv. Source for the lockfile |
+| Static check for undefined names | pyflakes, failing only on undefined names |
+| Assert pins match the lockfile | The two files are maintained separately and can drift |
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Four target packages imported nowhere | Confirmed by grep before removal |
+| `google-auth-oauthlib` unused, no OAuth flow | Confirmed by grep |
+| `gTTS` reachable only from tests | Confirmed by grep |
+| No undefined names anywhere in the tree | pyflakes, CI |
+| Every pin matches the lockfile | CI, all eight |
+| Test suite | Green |
+
+---
+
 ## Phase 1a: stale test cleanup
 
 Date: 2026-08-11

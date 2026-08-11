@@ -1,29 +1,36 @@
+# Runtime dependencies.
+#
+# Every package here is imported by application code. Development and test-only
+# packages live in requirements-dev.txt.
+#
+# Versions are pinned and a resolved lockfile is provided in requirements.lock.
+# Install from the lockfile for a reproducible environment:
+#
+#     pip install -r requirements.lock
+#
+# Use this file when you intend to pick up compatible updates, then regenerate
+# the lockfile.
+
 # Core framework
-streamlit
+streamlit==1.61.1
 
-# LLM API
-groq
-
-# RAG and embeddings
-sentence-transformers
-faiss-cpu
-numpy
+# LLM API. Replaced by an OpenAI-compatible client in Phase 3 of the MSI
+# migration, which allows the same code to talk to Groq or a self-hosted vLLM
+# endpoint. See docs/MIGRATION_PLAN.md.
+groq==1.6.0
 
 # PDF generation
-reportlab
+reportlab==5.0.0
 
 # Utilities
-pytz
-python-dotenv
-python-dateutil
+pytz==2026.3.post1
+python-dotenv==1.2.2
+python-dateutil==2.9.0.post0
 
-# Google Sheets integration (for secret code portal)
-gspread
-google-auth
-google-auth-oauthlib
-
-# Deep learning backend (required by sentence-transformers)
-torch>=2.5.1
-
-# Speech features (Text-to-Speech fallback)
-gTTS>=2.3.0
+# Google Sheets integration (secret code portal).
+#
+# gspread is version-sensitive: utils/access_control.py branches on
+# hasattr(gspread, "service_account_from_dict"), which exists from gspread 5.0
+# and falls back to gspread.authorize below that.
+gspread==6.2.1
+google-auth==2.56.3
