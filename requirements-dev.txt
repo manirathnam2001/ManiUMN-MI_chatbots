@@ -1,0 +1,28 @@
+# Development and test dependencies.
+#
+# Install alongside the runtime requirements:
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+
+# Test runner
+pytest
+
+# Static checks for undefined and unused names.
+#
+# Added in Phase 2 after removing a block of dead imports also removed the
+# `import os` that a later line still depended on. The test suite would not have
+# caught it: the module is a Streamlit script the suite never imports. pyflakes
+# catches undefined names and unused imports without needing to execute code,
+# which is exactly the failure mode dependency pruning creates.
+pyflakes
+
+# Text-to-speech, used only by speech_text/tts_handler.py.
+#
+# Voice mode is a documented dormant feature: speech_text/ is imported by the
+# test suite and by nothing else at runtime. See mi_session.py, which records
+# the regression. Keeping gTTS out of the runtime set also removes an outbound
+# dependency on translate.google.com, which matters for the MSI migration
+# because compute-node internet access is restricted.
+#
+# If voice mode is restored, move this back into requirements.txt.
+gTTS>=2.3.0

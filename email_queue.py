@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from app_env import get_legacy_queue_dir, get_queue_dir
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,19 +28,61 @@ class EmailQueue:
     """Manages persistent queue of failed email attempts."""
     
     QUEUE_FILE = "failed_emails.json"
-    
-    def __init__(self, queue_dir: str = "SMTP logs"):
+
+    def __init__(self, queue_dir: Optional[str] = None):
         """
         Initialize email queue.
-        
+
         Args:
-            queue_dir: Directory to store queue file and PDFs (default: "SMTP logs")
+            queue_dir: Directory to store queue file and PDFs. Defaults to
+                app_env.get_queue_dir(), which is absolute and controlled by
+                MI_QUEUE_DIR.
+
+        Note that this directory holds generated student PDFs when delivery
+        fails, so it is a FERPA-relevant location. It must never be inside the
+        application directory on a shared filesystem.
         """
-        self.queue_path = Path(queue_dir) / self.QUEUE_FILE
-        self.queue_dir = Path(queue_dir)
+        resolved = queue_dir or get_queue_dir()
+        self.queue_path = Path(resolved) / self.QUEUE_FILE
+        self.queue_dir = Path(resolved)
         self.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"Email queue initialized at: {self.queue_path}")
+
+    @classmethod
+    def migrate_legacy_dir(cls) -> int:
+        """Move anything left in the old "SMTP logs" directory into the new one.
+
+        The queue directory was renamed from "SMTP logs" to "smtp_queue"
+        because the space had to be quoted in every shell command, Slurm script
+        and Apptainer bind argument that referenced it.
+
+        Without this, any report queued under the old name at the moment this
+        version deploys would never be sent. Returns the number of files moved.
+        """
+        legacy = Path(get_legacy_queue_dir())
+        if not legacy.is_dir():
+            return 0
+
+        target = Path(get_queue_dir())
+        target.mkdir(parents=True, exist_ok=True)
+
+        moved = 0
+        for item in list(legacy.glob("queued_*.pdf")) + list(legacy.glob(cls.QUEUE_FILE)):
+            destination = target / item.name
+            if destination.exists():
+                # Never overwrite a live queue entry with a stale one.
+                logger.warning("Skipping legacy queue item, target exists: %s", item.name)
+                continue
+            try:
+                item.replace(destination)
+                moved += 1
+            except OSError as exc:
+                logger.error("Could not migrate legacy queue item %s: %s", item.name, exc)
+
+        if moved:
+            logger.info("Migrated %d item(s) from the legacy queue directory", moved)
+        return moved
         
     def add(self, pdf_data: bytes, filename: str, recipient: str, 
             student_name: str, session_type: str) -> str:

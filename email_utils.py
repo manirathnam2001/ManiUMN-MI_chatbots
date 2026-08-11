@@ -8,6 +8,10 @@ This module provides secure email sending functionality with:
 - Support for PDF attachments
 - Daily rotating logs with retry tracking
 - Robust email delivery with queue persistence
+
+Outbound sending can be switched off entirely by setting MI_SMTP_ENABLED=false.
+Every entry point that opens a connection or writes to the retry queue checks
+this first. See app_env.py.
 """
 
 import smtplib
@@ -24,6 +28,8 @@ from pathlib import Path
 import io
 import time
 from datetime import datetime
+
+from app_env import get_config_path, get_queue_dir, is_smtp_enabled
 
 
 class EmailConfigError(Exception):
@@ -66,18 +72,21 @@ class SecureEmailSender:
             logger.setLevel(logging.INFO)
         return logger
     
-    def setup_smtp_logger(self, log_directory: str = "SMTP logs", 
+    def setup_smtp_logger(self, log_directory: Optional[str] = None,
                           log_filename: str = "email_backup.log") -> logging.Logger:
         """
         Set up a rotating file logger for SMTP operations.
         
         Args:
-            log_directory: Directory to store log files
+            log_directory: Directory to store log files. Defaults to
+                app_env.get_queue_dir(), which is absolute.
             log_filename: Name of the log file
-            
+
         Returns:
             Configured logger instance
         """
+        log_directory = log_directory or get_queue_dir()
+
         # Create log directory if it doesn't exist
         os.makedirs(log_directory, exist_ok=True)
         
@@ -114,7 +123,24 @@ class SecureEmailSender:
         smtp_logger.addHandler(console_handler)
         
         return smtp_logger
-    
+
+    def _smtp_disabled(self, operation: str) -> bool:
+        """Return True when outbound SMTP is switched off for this deployment.
+
+        Controlled by MI_SMTP_ENABLED (see app_env.py). The migration
+        environment sets this to false so that test reports cannot reach the
+        course Box archive and so that no student PDF is written to the
+        on-disk retry queue.
+        """
+        if is_smtp_enabled():
+            return False
+        self.logger.warning(
+            "Outbound email is disabled for this deployment "
+            "(MI_SMTP_ENABLED=false). Skipping %s.",
+            operation,
+        )
+        return True
+
     def get_smtp_credentials(self) -> Dict[str, str]:
         """
         Get SMTP credentials from environment variables or config.
@@ -249,11 +275,14 @@ class SecureEmailSender:
         Raises:
             EmailSendError: If email sending fails after validation
         """
+        if self._smtp_disabled(f"send to {recipient}"):
+            return False
+
         try:
             # Get credentials and settings
             credentials = self.get_smtp_credentials()
             settings = self.get_smtp_settings()
-            
+
             # Use provided sender or credentials username
             from_email = sender_email or credentials['username']
             
@@ -351,13 +380,17 @@ class SecureEmailSender:
         """
         # Use provided logger or default
         logger = smtp_logger or self.logger
-        
+
         result = {
             'success': False,
             'attempts': 0,
             'error': None,
             'timestamp': datetime.now().isoformat()
         }
+
+        if self._smtp_disabled(f"send to {recipient}"):
+            result['error'] = 'Outbound email is disabled for this deployment.'
+            return result
         
         for attempt in range(1, max_retries + 1):
             result['attempts'] = attempt
@@ -425,7 +458,15 @@ class SecureEmailSender:
             'smtp_port': None,
             'authentication': False
         }
-        
+
+        if self._smtp_disabled("connection test"):
+            result['status'] = 'disabled'
+            result['message'] = (
+                'Outbound email is disabled for this deployment '
+                '(MI_SMTP_ENABLED=false). No connection was attempted.'
+            )
+            return result
+
         try:
             # Get credentials and settings
             credentials = self.get_smtp_credentials()
@@ -509,8 +550,9 @@ class RobustEmailSender(SecureEmailSender):
         
         # Initialize email queue
         from email_queue import EmailQueue
-        log_dir = config.get('logging', {}).get('smtp_log_directory', 'SMTP logs') if config else 'SMTP logs'
-        self.email_queue = EmailQueue(queue_dir=log_dir)
+        # The queue location comes from app_env rather than config.json, so it
+        # is absolute and independent of the working directory.
+        self.email_queue = EmailQueue()
     
     def send_with_guaranteed_delivery(self, 
                                        pdf_buffer: io.BytesIO, 
@@ -544,7 +586,17 @@ class RobustEmailSender(SecureEmailSender):
                 - error: Error message if failed (None if successful)
         """
         from time_utils import get_cst_timestamp
-        
+
+        # Checked before the retry loop so that a disabled deployment does not
+        # fall through to the queue and write a student PDF to disk.
+        if self._smtp_disabled(f"guaranteed delivery of {filename}"):
+            return {
+                'success': False,
+                'attempts': 0,
+                'queued': False,
+                'error': 'Outbound email is disabled for this deployment.',
+            }
+
         self.logger.info(f"Starting guaranteed delivery for {filename} to {recipient}")
         
         # Prepare email content
@@ -659,8 +711,17 @@ This is an automated backup of the MI practice feedback report.
                 - still_failed: Number still in queue
                 - results: List of individual results
         """
+        if self._smtp_disabled("failed email queue processing"):
+            return {
+                'total_pending': 0,
+                'processed': 0,
+                'succeeded': 0,
+                'still_failed': 0,
+                'results': [],
+            }
+
         self.logger.info("Processing failed email queue...")
-        
+
         pending_emails = self.email_queue.get_pending()
         results = {
             'total_pending': len(pending_emails),
@@ -749,7 +810,7 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     if config is None:
         try:
             import json
-            with open('config.json', 'r') as f:
+            with open(get_config_path(), 'r') as f:
                 config = json.load(f)
         except Exception as e:
             return {
@@ -809,7 +870,7 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     
     # Set up SMTP logger
     logging_config = config.get('logging', {})
-    log_dir = logging_config.get('smtp_log_directory', 'SMTP logs')
+    log_dir = get_queue_dir()
     log_file = logging_config.get('smtp_log_file', 'email_backup.log')
     
     # Create sender instance
@@ -863,7 +924,7 @@ if __name__ == "__main__":
     
     # Test configuration loading
     try:
-        with open('config.json', 'r') as f:
+        with open(get_config_path(), 'r') as f:
             config = json.load(f)
         
         sender = SecureEmailSender(config)

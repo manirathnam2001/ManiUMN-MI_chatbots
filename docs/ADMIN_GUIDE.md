@@ -97,13 +97,21 @@ The portal expects a Google Sheet with the following structure:
 
 ### Sheet ID
 
-The default sheet ID is configured in `secret_code_portal.py`:
+The sheet ID is read from the `MI_SHEET_ID` environment variable and falls back
+to the production sheet when unset. The default lives in `app_env.py`.
 
-```python
-SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
+To point a deployment at a different sheet, set the environment variable rather
+than editing code:
+
+```
+MI_SHEET_ID=<your sheet id>
+MI_SHEET_NAME=Sheet1
 ```
 
-To use a different sheet, modify this value or set it via configuration.
+On Streamlit Community Cloud, set these in the application settings under
+Secrets. Do not hardcode a sheet ID in the source: the production deployment and
+any test deployment share this codebase, and a hardcoded value would cause a test
+run to mark real student access codes as used.
 
 ### Sharing the Sheet
 

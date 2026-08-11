@@ -21,9 +21,23 @@ coverage.xml
 *.tmp
 *.log
 
-# SMTP logs (keep directory, ignore log files)
+# Application logs (rotated backups do not match the bare *.log rule above)
+git_logs/
+*.log.[0-9]*
+
+# SMTP queue (keep directory, ignore log files)
 SMTP logs/*.log
 SMTP logs/*.log.*
+smtp_queue/*.log
+smtp_queue/*.log.*
+
+# Student-identifying artifacts written by the email retry queue.
+# These contain student names and generated MI evaluation PDFs and must
+# never be committed. See email_queue.py.
+SMTP logs/failed_emails.json
+SMTP logs/queued_*.pdf
+smtp_queue/failed_emails.json
+smtp_queue/queued_*.pdf
 
 # Environment variables and secrets
 .env
@@ -31,6 +45,13 @@ SMTP logs/*.log.*
 .env.*.local
 *.key
 *.pem
+
+# Credentials. The absence of a rule covering service account JSON is how a
+# Google private key was previously committed to this repository.
+.streamlit/secrets.toml
+*service-account*.json
+*-service-account.json
+umnsod-mibot-*.json
 
 # OS generated files
 .DS_Store
@@ -43,3 +64,7 @@ Thumbs.db
 # Sample PDFs for testing
 sample_*.pdf
 test_*.pdf
+
+# Local Claude Code tooling, including git worktrees. Never commit these:
+# they are embedded repositories that break clones of this repo.
+.claude/

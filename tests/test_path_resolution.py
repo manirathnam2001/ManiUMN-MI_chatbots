@@ -1,165 +1,106 @@
-"""
-Test path resolution for rubric directories in OHI/HPV scripts.
+"""Test rubric directory path resolution.
 
-This test validates:
-1. Path resolution works from repo root (OHI.py, HPV.py)
-2. Path resolution works from pages/ directory (pages/OHI.py, pages/HPV.py)
-3. Graceful error handling when rubrics are missing
+This file previously hardcoded the GitHub Actions runner path
+`/home/runner/work/ManiUMN-MI_chatbots/ManiUMN-MI_chatbots`. Locally that path
+does not exist, so every check silently took a `continue` branch and the suite
+looked green. On CI the path did exist, so the assertions ran and failed. The
+failures went unnoticed because the previous CI workflow never ran the suite.
+
+The repo root is now derived from this file's own location, so the tests behave
+identically everywhere.
+
+The assertions also used to target `pages/OHI.py` and `pages/HPV.py` directly.
+Rubric loading moved into `mi_session._load_rubric_text` when the bot pages
+became thin shells.
+
+That loader has since been removed by PR #117, because it read the rubric text
+and immediately discarded it: the strict-JSON evaluator carries its own
+self-contained prompt. Nothing loads rubrics at runtime today.
+
+What survives is a configuration invariant. Every bot page still declares a
+`rubric_dir_name` on its `SessionConfig`, and those directories are retained so
+retrieval can be reinstated later. The tests below assert that the declared
+names actually exist on disk with content, which is the part that can still
+silently rot.
+
+If rubric loading is ever restored, restore file-relative resolution with it:
+resolve against `__file__`, never the process working directory, or it will
+break under Apptainer and Slurm.
 """
 
-import os
-import sys
 import ast
 from pathlib import Path
 
 
-def test_path_resolution_logic():
-    """Test the path resolution logic works for both locations."""
-    print("Testing path resolution logic...")
-    
-    # Simulate running from repo root
-    repo_root = Path("/home/runner/work/ManiUMN-MI_chatbots/ManiUMN-MI_chatbots")
-    root_file = repo_root / "OHI.py"
-    
-    current_file = root_file.resolve()
-    computed_root = current_file.parent.parent if current_file.parent.name == "pages" else current_file.parent
-    
-    assert computed_root == repo_root, f"Expected {repo_root}, got {computed_root}"
-    
-    rubrics_dir = computed_root / "ohi_rubrics"
-    assert rubrics_dir.exists(), f"OHI rubrics not found at {rubrics_dir}"
-    
-    # Simulate running from pages/
-    pages_file = repo_root / "pages" / "OHI.py"
-    current_file = pages_file.resolve()
-    computed_root = current_file.parent.parent if current_file.parent.name == "pages" else current_file.parent
-    
-    assert computed_root == repo_root, f"Expected {repo_root}, got {computed_root} for pages/OHI.py"
-    
-    rubrics_dir = computed_root / "ohi_rubrics"
-    assert rubrics_dir.exists(), f"OHI rubrics not found at {rubrics_dir} from pages/"
-    
-    print("  ✓ Path resolution logic works correctly for both locations")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+PAGES = ("OHI.py", "HPV.py", "Perio.py", "Tobacco.py")
 
 
-def extract_path_resolution_code(filepath):
-    """Extract the path resolution code from a Python file."""
-    with open(filepath, 'r') as f:
-        tree = ast.parse(f.read())
-    
-    # Look for Path import
-    has_path_import = False
-    has_pathlib_import = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            if node.module == 'pathlib':
-                for alias in node.names:
-                    if alias.name == 'Path':
-                        has_path_import = True
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == 'pathlib':
-                    has_pathlib_import = True
-    
-    return has_path_import or has_pathlib_import
+def _declared_rubric_dirs():
+    """Return the rubric_dir_name declared by each bot page.
+
+    Parsed from the source rather than hardcoded, so a page that renames or
+    drops its rubric directory is caught rather than silently diverging from
+    this test's own list.
+    """
+    declared = {}
+    for page in PAGES:
+        path = REPO_ROOT / "pages" / page
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.keyword) and node.arg == "rubric_dir_name":
+                if isinstance(node.value, ast.Constant):
+                    declared[page] = node.value.value
+    return declared
 
 
-def test_files_have_path_import():
-    """Test that all OHI/HPV files import Path from pathlib."""
-    print("Testing Path import in files...")
-    
-    files_to_check = [
-        "OHI.py",
-        "HPV.py",
-        "pages/OHI.py",
-        "pages/HPV.py"
-    ]
-    
-    for filepath in files_to_check:
-        full_path = os.path.join("/home/runner/work/ManiUMN-MI_chatbots/ManiUMN-MI_chatbots", filepath)
-        if not os.path.exists(full_path):
-            print(f"  ⚠️  {filepath} not found, skipping")
-            continue
-            
-        has_import = extract_path_resolution_code(full_path)
-        assert has_import, f"{filepath} should import Path from pathlib"
-        print(f"  ✓ {filepath} has Path import")
+def test_repo_root_is_discoverable():
+    """The derived repo root must actually be the repo root."""
+    assert (REPO_ROOT / "mi_session.py").exists(), \
+        f"Expected mi_session.py under the derived repo root {REPO_ROOT}"
+    assert (REPO_ROOT / "secret_code_portal.py").exists(), \
+        f"Expected secret_code_portal.py under the derived repo root {REPO_ROOT}"
 
 
-def check_error_handling(filepath):
-    """Check if file has graceful error handling for missing rubrics."""
-    with open(filepath, 'r') as f:
-        content = f.read()
-    
-    # Check for user-friendly error messages
-    has_error_message = "Configuration Error" in content or "Rubric files not found" in content
-    has_st_error = "st.error" in content
-    has_st_info = "st.info" in content
-    
-    return has_error_message and has_st_error and has_st_info
+def test_every_page_declares_a_rubric_dir():
+    """All four bot pages must declare a rubric_dir_name."""
+    declared = _declared_rubric_dirs()
+    missing = [p for p in PAGES if p not in declared]
+    assert not missing, f"pages missing a rubric_dir_name declaration: {missing}"
 
 
-def test_error_handling():
-    """Test that files have graceful error handling."""
-    print("Testing graceful error handling...")
-    
-    files_to_check = [
-        "pages/OHI.py",
-        "pages/HPV.py"
-    ]
-    
-    for filepath in files_to_check:
-        full_path = os.path.join("/home/runner/work/ManiUMN-MI_chatbots/ManiUMN-MI_chatbots", filepath)
-        if not os.path.exists(full_path):
-            print(f"  ⚠️  {filepath} not found, skipping")
-            continue
-            
-        has_handling = check_error_handling(full_path)
-        assert has_handling, f"{filepath} should have graceful error handling"
-        print(f"  ✓ {filepath} has graceful error handling")
+def test_declared_rubric_dirs_exist_with_content():
+    """Every declared rubric directory must exist and hold .txt files.
+
+    Nothing reads these at runtime since PR #117 removed the loader, so a typo
+    or a rename would otherwise go unnoticed until retrieval is reinstated.
+    """
+    for page, rubric_name in sorted(_declared_rubric_dirs().items()):
+        rubric_dir = REPO_ROOT / rubric_name
+        assert rubric_dir.exists(), \
+            f"{page} declares {rubric_name}, but {rubric_dir} does not exist"
+        assert rubric_dir.is_dir(), \
+            f"{page} declares {rubric_name}, which is not a directory"
+
+        txt_files = list(rubric_dir.glob("*.txt"))
+        assert txt_files, \
+            f"{page} declares {rubric_name}, which contains no .txt files"
 
 
-def test_rubrics_exist():
-    """Test that rubric directories exist and contain files."""
-    print("Testing rubric directories exist...")
-    
-    repo_root = Path("/home/runner/work/ManiUMN-MI_chatbots/ManiUMN-MI_chatbots")
-    
-    ohi_rubrics = repo_root / "ohi_rubrics"
-    assert ohi_rubrics.exists(), f"OHI rubrics directory not found at {ohi_rubrics}"
-    ohi_files = list(ohi_rubrics.glob("*.txt"))
-    assert len(ohi_files) > 0, "OHI rubrics directory should contain .txt files"
-    print(f"  ✓ OHI rubrics directory exists with {len(ohi_files)} files")
-    
-    hpv_rubrics = repo_root / "hpv_rubrics"
-    assert hpv_rubrics.exists(), f"HPV rubrics directory not found at {hpv_rubrics}"
-    hpv_files = list(hpv_rubrics.glob("*.txt"))
-    assert len(hpv_files) > 0, "HPV rubrics directory should contain .txt files"
-    print(f"  ✓ HPV rubrics directory exists with {len(hpv_files)} files")
+def test_declared_rubric_dirs_resolve_from_root_and_from_pages():
+    """Rubric directories must be reachable from either module location.
 
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("Path Resolution Tests")
-    print("=" * 60)
-    
-    try:
-        test_path_resolution_logic()
-        test_files_have_path_import()
-        test_error_handling()
-        test_rubrics_exist()
-        
-        print("=" * 60)
-        print("✓ All path resolution tests passed!")
-        print("=" * 60)
-        sys.exit(0)
-    except AssertionError as e:
-        print(f"\n✗ Test failed: {e}")
-        print("=" * 60)
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        print("=" * 60)
-        sys.exit(1)
+    A module at the repo root and a module in pages/ must both be able to find
+    them by trying `<dir>/<name>` then `<dir>/../<name>`. This is the resolution
+    strategy any restored loader should use, anchored on `__file__` rather than
+    the process working directory.
+    """
+    for rubric_name in sorted(set(_declared_rubric_dirs().values())):
+        for origin in (REPO_ROOT, REPO_ROOT / "pages"):
+            candidates = [origin / rubric_name, origin.parent / rubric_name]
+            resolved = next(
+                (p for p in candidates if p.exists() and p.is_dir()), None
+            )
+            assert resolved is not None, \
+                f"{rubric_name} not resolvable from {origin}"

@@ -12,7 +12,10 @@ approved plan; see C:\\Users\\manir\\.claude\\plans\\pure-marinating-pike.md):
 * Email-to-Box backup — the page-level send loop using
   ``RobustEmailSender`` is not invoked here.
 * Mutual-intent semantic ending detection — sessions end when the student
-  clicks the "Generate Feedback" button, not via automatic detection.
+  clicks the "Generate Feedback" button, not via automatic detection. The
+  ``end_control_middleware`` module that implemented this was removed during
+  the MSI migration work; it had been dead code since this runner replaced
+  ``chat_utils.py``.
 
 Public surface:
 
@@ -29,7 +32,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import streamlit as st
-from groq import Groq
 
 from mi_evaluation import (
     EvaluationError,
@@ -39,6 +41,13 @@ from mi_evaluation import (
 )
 from mi_pdf import construct_feedback_filename, generate_pdf_report
 from time_utils import get_formatted_utc_time
+from app_env import render_environment_banner
+from llm_provider import (
+    MODELS,
+    is_auth_error,
+    load_settings,
+    make_client,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -92,9 +101,16 @@ class SessionConfig:
     bot_name_short: str  # used for filename: "OHI" | "HPV" | "Perio" | "Tobacco"
     evaluator_label: str  # human-readable label for the evaluator field
 
-    # Models
-    chat_model: str = "llama-3.1-8b-instant"
-    eval_model: str = "llama-3.3-70b-versatile"
+    # Model overrides. Leave as None to use whatever llm_provider resolves,
+    # which is the registry default unless MI_LLM_CHAT_MODEL or
+    # MI_LLM_EVAL_MODEL is set. A page only needs to set these if it wants a
+    # different model from every other page, which none currently do.
+    #
+    # These must not default to the registry literals directly: the pages
+    # construct SessionConfig at import time, so a literal default would
+    # silently win over the environment and make the endpoint unconfigurable.
+    chat_model: Optional[str] = None
+    eval_model: Optional[str] = None
 
     # Reserved for follow-up reintegration (not implemented in this change).
     enable_voice: bool = False
@@ -157,8 +173,8 @@ def _auth_guard(expected_bot: str) -> None:
             st.switch_page("secret_code_portal.py")
         st.stop()
 
-    if "groq_api_key" not in st.session_state or "student_name" not in st.session_state:
-        st.error(":warning: Session Error: Missing credentials.")
+    if "student_name" not in st.session_state:
+        st.error(":warning: Session Error: Missing student name.")
         if st.button("Return to Portal"):
             st.switch_page("secret_code_portal.py")
         st.stop()
@@ -184,7 +200,8 @@ def _personas_to_prompt_dict(personas: Dict[str, Any]) -> Dict[str, str]:
 
 def _handle_chat_turn(
     *,
-    client: Groq,
+    client: Any,
+    settings: Any,
     config: SessionConfig,
     persona_prompts: Dict[str, str],
 ) -> None:
@@ -235,16 +252,23 @@ def _handle_chat_turn(
 
     try:
         response = client.chat.completions.create(
-            model=config.chat_model,
+            model=config.chat_model or settings.chat_model,
             messages=messages,
-            max_tokens=250,
+            max_tokens=settings.chat_max_tokens,
             temperature=0.7,
+            timeout=settings.timeout_s,
         )
         assistant_text = response.choices[0].message.content or ""
     except Exception as exc:
-        msg = str(exc).lower()
-        if "401" in msg or "invalid api key" in msg or "authentication" in msg:
-            st.error("Invalid API key. Re-enter your Groq key on the portal and reload.")
+        if is_auth_error(exc):
+            # The credential is now operator-held, so there is nothing a
+            # student can do about this. Direct them to their instructor and
+            # log the detail for whoever maintains the deployment.
+            logger.error("LLM authentication failed: %s", exc)
+            st.error(
+                "The practice service is currently unavailable. "
+                "Please contact your instructor."
+            )
             return
         raise
 
@@ -262,7 +286,7 @@ def _handle_chat_turn(
 # ---------------------------------------------------------------------------
 
 
-def _generate_feedback(client: Groq, config: SessionConfig) -> None:
+def _generate_feedback(client: Any, settings: Any, config: SessionConfig) -> None:
     """Call the evaluator, store the result, and surface errors clearly."""
     transcript_parts = [
         f"{msg['role'].capitalize()}: {msg['content']}"
@@ -278,7 +302,11 @@ def _generate_feedback(client: Groq, config: SessionConfig) -> None:
             session_type=config.session_type,
             student_name=student_name,
             client=client,
-            model=config.eval_model,
+            model=config.eval_model or settings.eval_model,
+            extractor_model=settings.extractor_model,
+            max_tokens=settings.eval_max_tokens,
+            extractor_max_tokens=settings.extractor_max_tokens,
+            timeout=settings.eval_timeout_s,
         )
     except EvaluationError as exc:
         logger.error("EvaluationError phase=%s: %s", exc.phase, exc)
@@ -368,15 +396,18 @@ def _persona_selection(config: SessionConfig, persona_prompts: Dict[str, str]) -
 def run_practice_session(config: SessionConfig) -> None:
     """Render the full Streamlit page for one MI practice session."""
     st.set_page_config(page_title=config.page_title, page_icon=config.page_icon, layout="centered")
+    render_environment_banner()
     _auth_guard(config.session_type)
 
     st.title(f"{config.page_icon} {config.page_title}")
     st.markdown(config.intro_markdown, unsafe_allow_html=True)
 
-    # Initialize Groq client from session credentials. Pass the key directly
-    # rather than mutating os.environ, which is process-global and would race
-    # under concurrent users.
-    client = Groq(api_key=st.session_state.groq_api_key)
+    # Resolve the LLM endpoint. The credential is operator-held, supplied
+    # through MI_LLM_API_KEY rather than by each student, which removes the
+    # cross-user race that the per-student model had. Pointing MI_LLM_BASE_URL
+    # at a self-hosted vLLM server switches provider with no code change.
+    settings = load_settings()
+    client = make_client(settings)
 
     _initialize_state(config)
     persona_prompts = _personas_to_prompt_dict(config.personas)
@@ -405,12 +436,17 @@ def run_practice_session(config: SessionConfig) -> None:
             st.warning("Have at least one exchange before requesting feedback.")
         else:
             with st.spinner("Evaluating your MI session..."):
-                _generate_feedback(client, config)
+                _generate_feedback(client, settings, config)
 
     _render_feedback_section(config)
 
     # Chat input (disabled once evaluation is complete).
-    _handle_chat_turn(client=client, config=config, persona_prompts=persona_prompts)
+    _handle_chat_turn(
+        client=client,
+        settings=settings,
+        config=config,
+        persona_prompts=persona_prompts,
+    )
 
     # New session button.
     if st.button("Start New Conversation"):

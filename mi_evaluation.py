@@ -38,6 +38,11 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, TypedDict
 
+from llm_provider import (
+    MODELS,
+    is_unknown_model,
+    is_unsupported_response_format,
+)
 from rubric.mi_rubric import (
     CategoryAssessment,
     MIRubric,
@@ -257,20 +262,30 @@ def evaluate_session(
     student_name: str,
     *,
     client: Any,
-    model: str = "llama-3.3-70b-versatile",
+    model: str = MODELS["eval"],
     extractor_model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    extractor_max_tokens: Optional[int] = None,
+    timeout: Optional[float] = None,
 ) -> EvaluationResult:
     """Evaluate one MI session and return a normalized result.
 
-    ``client`` must expose a Groq-style ``chat.completions.create(...)`` method.
+    ``client`` must expose an OpenAI-style ``chat.completions.create(...)``
+    method. Both the Groq SDK and the ``openai`` SDK satisfy this, which is what
+    lets the same code target Groq or a self-hosted vLLM server.
     ``transcript`` is the raw conversation text. ``session_type`` is one of
     ``"HPV"``, ``"OHI"``, ``"Tobacco"``, ``"Perio"`` (case-insensitive).
 
     ``model`` is used for the scoring pass (Call 2). ``extractor_model`` is
-    used for the evidence pass (Call 1); when ``None`` we default to a faster
-    Groq model (``llama-3.1-8b-instant``), falling back to ``model`` if the
-    client rejects it. Callers that want to pin both stages to the same model
-    can pass ``extractor_model=model``.
+    used for the evidence pass (Call 1); when ``None`` we default to the faster
+    registry model, falling back to ``model`` if the client rejects it. Callers
+    that want to pin both stages to the same model can pass
+    ``extractor_model=model``.
+
+    ``max_tokens``, ``extractor_max_tokens`` and ``timeout`` bound the two
+    calls. They matter far more against a self-hosted model than against Groq:
+    vLLM defaults generation to the remaining context window, so a degenerate
+    response can otherwise run for minutes.
 
     Returns a fully-validated :class:`EvaluationResult`. On JSON / schema
     failure that survives one retry, the result is returned with
@@ -294,8 +309,10 @@ def evaluate_session(
         session_type,
         student_name,
         client=client,
-        model=extractor_model or "llama-3.1-8b-instant",
+        model=extractor_model or MODELS["extractor"],
         fallback_model=model,
+        max_tokens=extractor_max_tokens,
+        timeout=timeout,
     )
 
     # Call 2: scoring. If evidence is None we use the legacy single-call prompt
@@ -307,6 +324,8 @@ def evaluate_session(
         evidence=evidence,
         client=client,
         model=model,
+        max_tokens=max_tokens,
+        timeout=timeout,
     )
 
 
@@ -323,6 +342,8 @@ def _extract_evidence(
     client: Any,
     model: str,
     fallback_model: str,
+    max_tokens: Optional[int] = None,
+    timeout: Optional[float] = None,
 ) -> Optional[_Evidence]:
     """Run Call 1 (evidence extraction). Return verified evidence, or None.
 
@@ -340,11 +361,11 @@ def _extract_evidence(
     # (e.g. model not available on the account), retry once with fallback_model
     # before giving up.
     try:
-        raw_first = _call_llm(client, model, base_messages)
+        raw_first = _call_llm(client, model, base_messages, max_tokens=max_tokens, timeout=timeout)
     except EvaluationError as exc:
         if model != fallback_model and _looks_like_unknown_model(exc):
             logger.info("Extractor model %s unavailable; falling back to %s", model, fallback_model)
-            raw_first = _call_llm(client, fallback_model, base_messages)
+            raw_first = _call_llm(client, fallback_model, base_messages, max_tokens=max_tokens, timeout=timeout)
             model = fallback_model
         else:
             raise
@@ -358,7 +379,7 @@ def _extract_evidence(
     retry_messages = base_messages + [
         {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
     ]
-    raw_second = _call_llm(client, model, retry_messages)
+    raw_second = _call_llm(client, model, retry_messages, max_tokens=max_tokens, timeout=timeout)
     parsed_second = _try_parse_extractor(raw_second, transcript)
     if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
         return parsed_second["evidence"]  # type: ignore[return-value]
@@ -480,6 +501,8 @@ def _score_with_evidence(
     evidence: Optional[_Evidence],
     client: Any,
     model: str,
+    max_tokens: Optional[int] = None,
+    timeout: Optional[float] = None,
 ) -> EvaluationResult:
     """Run Call 2 (scoring). Uses evidence when available, legacy prompt when not."""
     if evidence is None:
@@ -497,7 +520,7 @@ def _score_with_evidence(
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_first = _call_llm(client, model, base_messages)
+    raw_first = _call_llm(client, model, base_messages, max_tokens=max_tokens, timeout=timeout)
     parsed = _try_parse_and_validate(raw_first, session_type, evidence=evidence)
     if isinstance(parsed, dict) and parsed.get("__ok__"):
         return parsed["result"]  # type: ignore[return-value]
@@ -507,7 +530,7 @@ def _score_with_evidence(
     retry_messages = base_messages + [
         {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
     ]
-    raw_second = _call_llm(client, model, retry_messages)
+    raw_second = _call_llm(client, model, retry_messages, max_tokens=max_tokens, timeout=timeout)
     parsed_second = _try_parse_and_validate(raw_second, session_type, evidence=evidence)
     if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
         return parsed_second["result"]  # type: ignore[return-value]
@@ -588,8 +611,28 @@ def _build_scorer_user_prompt_with_evidence(
 # ---------------------------------------------------------------------------
 
 
-def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
-    """Call the Groq client. Try with json_object response_format, fall back if unsupported."""
+def _call_llm(
+    client: Any,
+    model: str,
+    messages: List[Dict[str, str]],
+    *,
+    max_tokens: Optional[int] = None,
+    timeout: Optional[float] = None,
+) -> str:
+    """Call the LLM. Try with json_object response_format, fall back if unsupported.
+
+    Works against any OpenAI-compatible endpoint, including Groq and vLLM.
+
+    ``max_tokens`` and ``timeout`` are omitted from the request when ``None``,
+    which keeps the previous behaviour for callers that do not set them and
+    avoids sending nulls to endpoints that reject them.
+    """
+    bounds: Dict[str, Any] = {}
+    if max_tokens is not None:
+        bounds["max_tokens"] = max_tokens
+    if timeout is not None:
+        bounds["timeout"] = timeout
+
     try:
         try:
             response = client.chat.completions.create(
@@ -597,12 +640,14 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
                 messages=messages,
                 response_format={"type": "json_object"},
                 temperature=0.2,
+                **bounds,
             )
         except TypeError:
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.2,
+                **bounds,
             )
         except Exception as exc:
             if _looks_like_unsupported_format(exc):
@@ -610,6 +655,7 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
                     model=model,
                     messages=messages,
                     temperature=0.2,
+                    **bounds,
                 )
             else:
                 raise
@@ -630,19 +676,25 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
         ) from exc
 
 
+# Provider-portable error classification. These delegate to llm_provider, which
+# inspects typed SDK exceptions first and falls back to substring matching.
+#
+# The previous implementations matched only on Groq's error text. Against vLLM
+# the model-not-found strings would not have matched, so the extractor fallback
+# above would never have triggered: instead of quietly retrying with the scoring
+# model, the whole evaluation would have failed. That is the kind of bug that
+# gets misdiagnosed as "vLLM is broken", so it is fixed here rather than at the
+# point of migration.
+#
+# The thin wrappers are kept so the call sites and their tests read unchanged.
+
+
 def _looks_like_unsupported_format(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return "response_format" in msg or "json_object" in msg
+    return is_unsupported_response_format(exc)
 
 
 def _looks_like_unknown_model(exc: EvaluationError) -> bool:
-    msg = str(exc).lower()
-    return (
-        "model_not_found" in msg
-        or "does not exist" in msg
-        or "unknown model" in msg
-        or "not available" in msg
-    )
+    return is_unknown_model(exc)
 
 
 # ---------------------------------------------------------------------------

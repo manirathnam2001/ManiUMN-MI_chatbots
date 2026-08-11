@@ -13,8 +13,8 @@ Features:
 - Robust error handling with admin-friendly messages
 
 Google Sheet Structure:
-- Sheet ID: 1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY
-- Sheet Name: Sheet1
+- Sheet ID: set by MI_SHEET_ID, defaulting to the production sheet (see app_env.py)
+- Sheet Name: set by MI_SHEET_NAME, defaulting to Sheet1
 - Columns: Table No, Name, Bot, Secret, Used, Role (optional)
 
 Usage:
@@ -33,17 +33,8 @@ Requirements:
     - Internet connection for Google Sheets API calls
 """
 
-import os
-
-# Suppress transformers library warnings BEFORE any imports touch it.
-# The transformers package (pulled in by sentence-transformers) tries to load
-# hundreds of vision model sub-modules that require torchvision (not installed),
-# producing thousands of ModuleNotFoundError tracebacks on every app startup.
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
 import logging
+
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 
@@ -63,6 +54,12 @@ from utils.access_control import (
     normalize_bot_type,
 )
 from logger_config import setup_logging, get_logger, log_action, log_error_with_context
+from app_env import (
+    ensure_writable_dirs,
+    get_sheet_id,
+    get_sheet_name,
+    render_environment_banner,
+)
 
 # Setup centralized logging
 setup_logging(level=logging.INFO, console_output=True, file_output=True)
@@ -80,8 +77,11 @@ BOT_PAGE_MAP = {
     'DEVELOPER': 'pages/developer_page.py'
 }
 
-SHEET_ID = "1x_MA3MqvyxN3p7v_mQ3xYB9SmEGPn1EspO0fUsYayFY"
-SHEET_NAME = "Sheet1"
+# Resolved from the environment so the production deployment and the parallel
+# migration deployment can run from one codebase without sharing a sheet.
+# Defaults to the production sheet when unconfigured. See app_env.py.
+SHEET_ID = get_sheet_id()
+SHEET_NAME = get_sheet_name()
 
 # --- Streamlit page configuration ---
 st.set_page_config(
@@ -90,36 +90,65 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- Process failed email queue on startup ---
-# This runs once when the application starts to retry any queued emails
-try:
-    from config_loader import ConfigLoader
-    from email_utils import RobustEmailSender
-    from email_queue import EmailQueue
-    
-    config_loader = ConfigLoader()
-    config = config_loader.config
-    
-    # Check if queue processing is enabled
-    if config.get('email_config', {}).get('queue_retry_on_startup', True):
-        email_queue = EmailQueue(
-            queue_dir=config.get('logging', {}).get('smtp_log_directory', 'SMTP logs')
-        )
-        
+# Warn loudly when this is not the production deployment, so a student who
+# receives the wrong link cannot complete a graded session here by mistake.
+render_environment_banner()
+
+@st.cache_resource
+def _drain_email_queue_once() -> None:
+    """Retry any emails queued by a previous run.
+
+    Behind ``@st.cache_resource`` so it executes once per process rather than
+    on every script rerun, and called from the page body rather than at module
+    import.
+
+    That placement matters. This work performs live SMTP connections with
+    retry delays of up to 120 seconds and a 30 second connection timeout. At
+    import scope, a queue holding several entries and an unreachable mail
+    server would stall application startup for minutes before a student saw
+    anything. On MSI that becomes recurrent rather than occasional: outbound
+    access on port 587 from compute nodes is unconfirmed, and a service that
+    restarts on a walltime boundary would hang on every restart.
+
+    ``MI_SMTP_ENABLED=false`` short-circuits the send path entirely, so the
+    migration environment never reaches the network here.
+    """
+    try:
+        from config_loader import ConfigLoader
+        from email_utils import RobustEmailSender
+        from email_queue import EmailQueue
+
+        config = ConfigLoader().config
+
+        if not config.get('email_config', {}).get('queue_retry_on_startup', True):
+            return
+
+        # One-time move of anything left under the previous "SMTP logs"
+        # directory name, so pending reports are not stranded by the rename.
+        EmailQueue.migrate_legacy_dir()
+
+        email_queue = EmailQueue()
         pending_count = email_queue.get_queue_size()
-        if pending_count > 0:
-            logger.info(f"Processing {pending_count} queued emails from previous sessions")
-            
-            sender = RobustEmailSender(config)
-            result = sender.process_failed_queue()
-            
-            logger.info(
-                f"Queue processing complete: {result['succeeded']}/{result['processed']} succeeded, "
-                f"{result['still_failed']} still in queue"
-            )
-except Exception as e:
-    # Don't fail startup if queue processing fails
-    logger.warning(f"Failed to process email queue on startup: {e}")
+        if not pending_count:
+            return
+
+        logger.info(f"Processing {pending_count} queued emails from previous sessions")
+        result = RobustEmailSender(config).process_failed_queue()
+        logger.info(
+            f"Queue processing complete: {result['succeeded']}/{result['processed']} succeeded, "
+            f"{result['still_failed']} still in queue"
+        )
+    except Exception as e:
+        # A failure here must never prevent a student from starting a session.
+        logger.warning(f"Failed to process email queue: {e}")
+
+
+# Create the writable directories before anything tries to log or queue.
+# Failing here is deliberate: without them the application cannot function,
+# and discovering that at startup beats discovering it mid-session.
+ensure_writable_dirs()
+
+_drain_email_queue_once()
 
 
 
@@ -577,7 +606,7 @@ def main():
         Enter the secret code provided by your instructor to access your assigned chatbot practice session.
         
         **Instructions:**
-        1. Enter your name and Groq API key
+        1. Enter your name
         2. Enter your secret code
         3. Click "Submit Code" to verify your access
         4. You will be redirected to your assigned chatbot (OHI, HPV, Tobacco, or Perio)
@@ -684,14 +713,6 @@ def main():
                 help="Your name for the feedback report"
             )
             
-            # Groq API key input
-            groq_api_key = st.text_input(
-                "🔑 Groq API Key",
-                type="password",
-                placeholder="Enter your Groq API key",
-                help="Your Groq API key for accessing the chatbot. Get one at https://console.groq.com/"
-            )
-            
             # Secret code input
             secret_code = st.text_input(
                 "🎫 Secret Code",
@@ -706,8 +727,6 @@ def main():
                 # Validate all inputs
                 if not student_name:
                     st.error("Please enter your name.")
-                elif not groq_api_key:
-                    st.error("Please enter your Groq API key.")
                 elif not secret_code:
                     st.error("Please enter a secret code.")
                 else:
@@ -723,12 +742,8 @@ def main():
                                 'role': result.get('role', ROLE_STUDENT)
                             }
                             st.session_state.student_name = student_name
-                            st.session_state.groq_api_key = groq_api_key
                             st.session_state.user_role = result.get('role', ROLE_STUDENT)
-                            
-                            # Set environment variable for libraries that need it
-                            os.environ["GROQ_API_KEY"] = groq_api_key
-                            
+
                             st.success(result['message'])
                             
                             # Handle Instructor role with access to all bots

@@ -29,10 +29,21 @@ from pathlib import Path
 from datetime import datetime
 import pytz
 
+from app_env import get_log_dir
 
-# Default log configuration
+
+# Default log configuration.
+#
+# The log directory is resolved by app_env.get_log_dir() at call time, not
+# bound to a module constant. Binding it at import would freeze whatever
+# MI_LOG_DIR happened to be when this module was first imported, which is the
+# same trap that made SessionConfig's model defaults unconfigurable.
+#
+# It was previously the bare relative path "git_logs", so the log location
+# depended on the process working directory and could not be redirected at all.
+# Under Apptainer the application directory is read-only and that would fail on
+# the first write.
 DEFAULT_LOG_LEVEL = logging.INFO
-DEFAULT_LOG_DIR = "git_logs"
 DEFAULT_LOG_FILE = "chatbot.log"
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 DEFAULT_BACKUP_COUNT = 5
@@ -158,7 +169,7 @@ def setup_logging(
     This should be called once at application startup.
     
     Args:
-        log_dir: Directory for log files (default: git_logs)
+        log_dir: Directory for log files (default: app_env.get_log_dir())
         log_file: Log file name (default: chatbot.log)
         level: Logging level (default: INFO)
         console_output: Whether to output logs to console (default: True)
@@ -167,8 +178,9 @@ def setup_logging(
         backup_count: Number of backup files to keep (default: 5)
         redact_emails: Whether to redact email addresses (default: False)
     """
-    # Use defaults if not provided
-    log_dir = log_dir or DEFAULT_LOG_DIR
+    # Use defaults if not provided. get_log_dir() is called here rather than
+    # read from a module constant so MI_LOG_DIR is honoured at call time.
+    log_dir = log_dir or get_log_dir()
     log_file = log_file or DEFAULT_LOG_FILE
     
     # Create log directory if it doesn't exist
@@ -324,4 +336,4 @@ if __name__ == "__main__":
     logger.info("API key: sk-abcdef123456 should be redacted")
     logger.info("Password: mypassword123 should be redacted")
     
-    print("\nLogging test complete. Check git_logs/chatbot.log for output.")
+    print(f"\nLogging test complete. Check {get_log_dir()}/chatbot.log for output.")
