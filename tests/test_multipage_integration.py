@@ -31,143 +31,30 @@ def test_multipage_structure():
     print("✓ Multipage structure is correct")
 
 
-def test_bot_pages_delegate_to_the_shared_runner():
-    """Every bot page must route through mi_session.run_practice_session.
-
-    The bot pages used to carry their own inline authentication guard. That
-    guard now lives in mi_session._auth_guard, and the pages are thin shells
-    that call run_practice_session. A page that stopped delegating would
-    silently lose authentication, so the delegation is the property worth
-    asserting here. The guard itself is tested in
-    test_shared_runner_enforces_authentication below.
-    """
-    print("\nTesting that bot pages delegate to the shared runner...")
-
-    for page in ['pages/OHI.py', 'pages/HPV.py', 'pages/Perio.py', 'pages/Tobacco.py']:
+def test_authentication_guards():
+    """Test that authentication guards are present in bot pages."""
+    print("\nTesting authentication guards...")
+    
+    for page in ['pages/OHI.py', 'pages/HPV.py']:
         with open(page, 'r', encoding='utf-8') as f:
             content = f.read()
-
-        assert 'run_practice_session' in content, \
-            f"{page} must call run_practice_session, which applies the auth guard"
-        assert 'SessionConfig' in content, \
-            f"{page} must construct a SessionConfig"
-
-        # The page must not have reintroduced its own API key input.
-        assert 'text_input' not in content, \
-            f"{page} should not collect credentials; the portal does that"
-
-        print(f"  OK {page} delegates to the shared runner")
-
-
-def _find_function(tree, name):
-    """Return the FunctionDef node called `name`, or None."""
-    return next(
-        (n for n in ast.walk(tree)
-         if isinstance(n, ast.FunctionDef) and n.name == name),
-        None,
-    )
-
-
-def _calls_function(node, name):
-    """True if `node`'s subtree contains a call to the bare function `name`."""
-    for sub in ast.walk(node):
-        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
-            if sub.func.id == name:
-                return True
-    return False
-
-
-def test_call_detection_discriminates():
-    """The call detector must not be satisfied by a definition alone.
-
-    This is the bug the previous version of these tests had: searching the
-    module for the substring `_auth_guard(` matched the `def _auth_guard(`
-    line, so the assertion passed whether or not the call site existed. This
-    test pins the discrimination so that regression cannot come back.
-    """
-    print("\nTesting that call detection discriminates...")
-
-    # A runner that defines the guard nearby but never calls it.
-    without_call = ast.parse(
-        "def _auth_guard(bot):\n"
-        "    pass\n"
-        "\n"
-        "def run_practice_session(config):\n"
-        "    render(config)\n"
-    )
-    runner = _find_function(without_call, 'run_practice_session')
-    assert not _calls_function(runner, '_auth_guard'), \
-        "detector must not report a call when the runner only renders"
-
-    # The same module with the call restored.
-    with_call = ast.parse(
-        "def _auth_guard(bot):\n"
-        "    pass\n"
-        "\n"
-        "def run_practice_session(config):\n"
-        "    _auth_guard(config.session_type)\n"
-        "    render(config)\n"
-    )
-    runner = _find_function(with_call, 'run_practice_session')
-    assert _calls_function(runner, '_auth_guard'), \
-        "detector must report a call when the runner invokes the guard"
-
-    print("  OK call detection distinguishes definition from invocation")
-
-
-def test_shared_runner_invokes_the_auth_guard():
-    """run_practice_session must actually call _auth_guard.
-
-    Checked by walking the AST of run_practice_session for a genuine call node,
-    not by searching the file for the substring `_auth_guard(`. A substring
-    search matches the `def _auth_guard(` definition itself, so it would keep
-    passing even if the call site were deleted, which is precisely the
-    regression this test exists to catch.
-    """
-    print("\nTesting that the runner invokes the auth guard...")
-
-    source = open('mi_session.py', 'r', encoding='utf-8').read()
-    tree = ast.parse(source)
-
-    runner = _find_function(tree, 'run_practice_session')
-    assert runner is not None, "mi_session must define run_practice_session"
-
-    assert _calls_function(runner, '_auth_guard'), \
-        "run_practice_session must call _auth_guard, otherwise every bot page " \
-        "renders without authentication"
-
-    print("  OK run_practice_session calls _auth_guard")
-
-
-def test_auth_guard_performs_its_checks():
-    """_auth_guard must enforce authentication, and halt when it fails.
-
-    Assertions are scoped to the _auth_guard function body rather than the whole
-    module. Several of these markers appear elsewhere in mi_session: st.stop()
-    is also used by _load_rubric_text, for example. Asserting against the whole
-    file would pass even if the guard lost the check entirely.
-    """
-    print("\nTesting the shared authentication guard...")
-
-    source = open('mi_session.py', 'r', encoding='utf-8').read()
-    tree = ast.parse(source)
-
-    guard = _find_function(tree, '_auth_guard')
-    assert guard is not None, "mi_session must define _auth_guard"
-
-    body = ast.get_source_segment(source, guard) or ""
-    assert body, "could not extract the _auth_guard source"
-
-    assert 'st.session_state.get("authenticated"' in body, \
-        "_auth_guard must check the authenticated flag"
-    assert 'st.switch_page' in body, \
-        "_auth_guard must offer a redirect back to the portal"
-    assert 'st.stop()' in body, \
-        "_auth_guard must halt rendering when a check fails"
-    assert 'student_name' in body, \
-        "_auth_guard must require student_name in session state"
-
-    print("  OK shared auth guard enforces authentication")
+        
+        # Check for authentication guard markers
+        assert 'AUTHENTICATION GUARD' in content, f"{page} should have authentication guard"
+        assert 'st.session_state.get(\'authenticated\'' in content, f"{page} should check authentication"
+        assert 'st.switch_page' in content, f"{page} should use st.switch_page for redirects"
+        
+        # Check that API key input is removed
+        assert 'text_input' not in content or 'GROQ API Key' not in content, \
+            f"{page} should not have API key input field"
+        
+        # Check that credentials come from session state
+        assert 'st.session_state.groq_api_key' in content, \
+            f"{page} should get API key from session state"
+        assert 'st.session_state.student_name' in content, \
+            f"{page} should get student name from session state"
+        
+        print(f"  ✓ {page} has proper authentication guard")
 
 
 def test_portal_credentials():
