@@ -17,17 +17,15 @@
         "tobacco_box_email": "Tobacco.uyjxww6ze8qonvnx@u.box.com",
         "perio_box_email": "Perio_D.5bdqj9rorjklmg30@u.box.com"
     },
+    "_comment_logging": "Directory locations are resolved by app_env from MI_LOG_DIR and MI_QUEUE_DIR, not from this file. The former log_directory, log_file, smtp_log_directory and smtp_log_file keys held bare relative paths that depended on the process working directory and could not be redirected, which fails under a read-only container filesystem.",
     "logging": {
-        "log_directory": "git_logs",
         "max_log_size_mb": 10,
         "backup_count": 5,
         "cleanup_days": 90,
         "enable_monitoring": true,
-        "log_file": "git_logs/chatbot.log",
         "max_size": 10485760,
         "log_level": "INFO",
-        "smtp_log_directory": "SMTP logs",
-        "smtp_log_file": "SMTP logs/email_backup.log",
+        "smtp_log_file": "email_backup.log",
         "smtp_max_log_size_mb": 10,
         "smtp_backup_count": 30
     },

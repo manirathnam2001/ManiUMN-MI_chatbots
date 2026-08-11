@@ -29,7 +29,7 @@ import io
 import time
 from datetime import datetime
 
-from app_env import is_smtp_enabled
+from app_env import get_config_path, get_queue_dir, is_smtp_enabled
 
 
 class EmailConfigError(Exception):
@@ -72,18 +72,21 @@ class SecureEmailSender:
             logger.setLevel(logging.INFO)
         return logger
     
-    def setup_smtp_logger(self, log_directory: str = "SMTP logs", 
+    def setup_smtp_logger(self, log_directory: Optional[str] = None,
                           log_filename: str = "email_backup.log") -> logging.Logger:
         """
         Set up a rotating file logger for SMTP operations.
         
         Args:
-            log_directory: Directory to store log files
+            log_directory: Directory to store log files. Defaults to
+                app_env.get_queue_dir(), which is absolute.
             log_filename: Name of the log file
-            
+
         Returns:
             Configured logger instance
         """
+        log_directory = log_directory or get_queue_dir()
+
         # Create log directory if it doesn't exist
         os.makedirs(log_directory, exist_ok=True)
         
@@ -547,8 +550,9 @@ class RobustEmailSender(SecureEmailSender):
         
         # Initialize email queue
         from email_queue import EmailQueue
-        log_dir = config.get('logging', {}).get('smtp_log_directory', 'SMTP logs') if config else 'SMTP logs'
-        self.email_queue = EmailQueue(queue_dir=log_dir)
+        # The queue location comes from app_env rather than config.json, so it
+        # is absolute and independent of the working directory.
+        self.email_queue = EmailQueue()
     
     def send_with_guaranteed_delivery(self, 
                                        pdf_buffer: io.BytesIO, 
@@ -806,7 +810,7 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     if config is None:
         try:
             import json
-            with open('config.json', 'r') as f:
+            with open(get_config_path(), 'r') as f:
                 config = json.load(f)
         except Exception as e:
             return {
@@ -866,7 +870,7 @@ def send_box_backup_email(pdf_buffer: io.BytesIO,
     
     # Set up SMTP logger
     logging_config = config.get('logging', {})
-    log_dir = logging_config.get('smtp_log_directory', 'SMTP logs')
+    log_dir = get_queue_dir()
     log_file = logging_config.get('smtp_log_file', 'email_backup.log')
     
     # Create sender instance
@@ -920,7 +924,7 @@ if __name__ == "__main__":
     
     # Test configuration loading
     try:
-        with open('config.json', 'r') as f:
+        with open(get_config_path(), 'r') as f:
             config = json.load(f)
         
         sender = SecureEmailSender(config)
