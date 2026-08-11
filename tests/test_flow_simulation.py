@@ -19,17 +19,15 @@ def simulate_portal_entry():
     
     # Simulated user inputs
     student_name = "John Doe"
-    groq_api_key = "gsk_test_key_123"
     secret_code = "ABC123"
-    
+
     print(f"\nStudent enters:")
     print(f"  - Name: {student_name}")
-    print(f"  - API Key: {groq_api_key[:10]}... (hidden)")
     print(f"  - Secret Code: {secret_code}")
-    
+    print(f"\nNo API key is requested. The LLM credential is operator-held.")
+
     return {
         "student_name": student_name,
-        "groq_api_key": groq_api_key,
         "secret_code": secret_code
     }
 
@@ -85,8 +83,7 @@ def simulate_session_state_setup(credentials, validation_result):
             "bot": validation_result["bot"],
             "name": validation_result["name"]
         },
-        "student_name": credentials["student_name"],
-        "groq_api_key": credentials["groq_api_key"]
+        "student_name": credentials["student_name"]
     }
     
     print("\nSession state configured:")
@@ -94,10 +91,8 @@ def simulate_session_state_setup(credentials, validation_result):
     print(f"  ✓ redirect_info.bot: {session_state['redirect_info']['bot']}")
     print(f"  ✓ redirect_info.name: {session_state['redirect_info']['name']}")
     print(f"  ✓ student_name: {session_state['student_name']}")
-    print(f"  ✓ groq_api_key: ***hidden***")
-    
-    print(f"\n✓ Environment variable set: GROQ_API_KEY")
-    
+    print(f"\n✓ No API key in session state, and no process-global env write")
+
     return session_state
 
 
@@ -140,11 +135,12 @@ def simulate_bot_page_guard(session_state, expected_bot):
         return False
     print(f"  ✓ User authorized for {expected_bot} bot")
     
-    # Check 3: Credentials present
-    if 'groq_api_key' not in session_state or 'student_name' not in session_state:
-        print(f"  ✗ Missing credentials - redirecting to portal")
+    # Check 3: Student name present. The LLM credential is no longer part of
+    # session state, so it is not checked here.
+    if 'student_name' not in session_state:
+        print(f"  ✗ Missing student name - redirecting to portal")
         return False
-    print(f"  ✓ Credentials available in session state")
+    print(f"  ✓ Student name available in session state")
     
     print(f"\n✓ All checks passed - granting access to bot")
     return True
@@ -156,16 +152,19 @@ def simulate_bot_usage(session_state):
     print("STEP 6: Bot uses centralized credentials")
     print("="*60)
     
-    print(f"\nBot retrieves credentials from session state:")
-    print(f"  api_key = st.session_state.groq_api_key")
+    print(f"\nBot retrieves the student name from session state:")
     print(f"  student_name = st.session_state.student_name")
-    
+
+    print(f"\nThe LLM endpoint and credential come from the environment:")
+    print(f"  settings = load_settings()   # MI_LLM_BASE_URL, MI_LLM_API_KEY")
+    print(f"  client = make_client(settings)")
+
     print(f"\n✓ No API key input field shown to student")
     print(f"✓ No student name input field shown to student")
     print(f"✓ Student proceeds directly to conversation")
-    
+
     print(f"\nBot functionality:")
-    print(f"  - Initializes Groq client with centralized API key")
+    print(f"  - Uses one operator-held credential, not a per-student key")
     print(f"  - Uses student name for feedback report")
     print(f"  - Maintains secure session throughout conversation")
 

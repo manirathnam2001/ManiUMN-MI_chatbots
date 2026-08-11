@@ -14,10 +14,9 @@ Usage:
 
 Requirements:
     - Authentication via secret code portal with DEVELOPER role
-    - Groq API key and student name from session state
+    - Student name in session state
 """
 
-import os
 import logging
 import streamlit as st
 
@@ -66,8 +65,8 @@ if user_role not in (ROLE_DEVELOPER, ROLE_INSTRUCTOR):
     st.stop()
 
 # Check if credentials are available
-if 'groq_api_key' not in st.session_state or 'student_name' not in st.session_state:
-    st.error("⚠️ Session Error: Missing credentials.")
+if 'student_name' not in st.session_state:
+    st.error("⚠️ Session Error: Missing student name.")
     st.info("Please go back to the portal and re-enter your information.")
     if st.button("← Return to Portal"):
         st.switch_page("secret_code_portal.py")

@@ -34,7 +34,6 @@ Requirements:
 """
 
 import logging
-import os
 
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
@@ -577,7 +576,7 @@ def main():
         Enter the secret code provided by your instructor to access your assigned chatbot practice session.
         
         **Instructions:**
-        1. Enter your name and Groq API key
+        1. Enter your name
         2. Enter your secret code
         3. Click "Submit Code" to verify your access
         4. You will be redirected to your assigned chatbot (OHI, HPV, Tobacco, or Perio)
@@ -684,14 +683,6 @@ def main():
                 help="Your name for the feedback report"
             )
             
-            # Groq API key input
-            groq_api_key = st.text_input(
-                "🔑 Groq API Key",
-                type="password",
-                placeholder="Enter your Groq API key",
-                help="Your Groq API key for accessing the chatbot. Get one at https://console.groq.com/"
-            )
-            
             # Secret code input
             secret_code = st.text_input(
                 "🎫 Secret Code",
@@ -706,8 +697,6 @@ def main():
                 # Validate all inputs
                 if not student_name:
                     st.error("Please enter your name.")
-                elif not groq_api_key:
-                    st.error("Please enter your Groq API key.")
                 elif not secret_code:
                     st.error("Please enter a secret code.")
                 else:
@@ -723,12 +712,8 @@ def main():
                                 'role': result.get('role', ROLE_STUDENT)
                             }
                             st.session_state.student_name = student_name
-                            st.session_state.groq_api_key = groq_api_key
                             st.session_state.user_role = result.get('role', ROLE_STUDENT)
-                            
-                            # Set environment variable for libraries that need it
-                            os.environ["GROQ_API_KEY"] = groq_api_key
-                            
+
                             st.success(result['message'])
                             
                             # Handle Instructor role with access to all bots
