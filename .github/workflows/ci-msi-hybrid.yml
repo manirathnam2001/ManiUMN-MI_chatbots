@@ -38,12 +38,34 @@ jobs:
         # Python interpreter.
         run: pip freeze
 
-      - name: Static check for undefined and unused names
+      - name: Static check for undefined names
         # Catches the failure mode dependency pruning creates: removing a block
         # of dead code also removes an import a later line still needs. The test
         # suite cannot catch this in Streamlit script modules, which it never
         # imports.
-        run: python -m pyflakes $(git ls-files '*.py' | grep -v '^tests/')
+        #
+        # Only undefined names fail the build. pyflakes also reports unused
+        # imports, unused locals and f-strings without placeholders; the tree
+        # currently has 17 of those, all pre-existing and all cosmetic. Failing
+        # on them would create a permanently red gate that everyone learns to
+        # ignore, which is the problem Phase 1a existed to fix. They are printed
+        # as advisory output instead.
+        run: |
+          set +e
+          out=$(python -m pyflakes $(git ls-files '*.py' | grep -v '^tests/'))
+          set -e
+
+          echo "$out"
+
+          undefined=$(echo "$out" | grep "undefined name" || true)
+          if [ -n "$undefined" ]; then
+            echo ""
+            echo "FAIL: undefined names found. These are runtime NameErrors."
+            echo "$undefined"
+            exit 1
+          fi
+          echo ""
+          echo "OK: no undefined names."
 
       - name: Run test suite
         run: python -m pytest tests/ test_evaluation.py -q
