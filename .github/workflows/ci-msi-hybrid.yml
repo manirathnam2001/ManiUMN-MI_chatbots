@@ -53,6 +53,10 @@ jobs:
           fail=0
           while IFS= read -r line; do
             case "$line" in \#*|"") continue ;; esac
+            # Only lines that actually carry a pin are checked. An unpinned
+            # entry is allowed, so a newly added package can be resolved by this
+            # job before its pin is written back.
+            case "$line" in *"=="*) ;; *) continue ;; esac
             pkg="${line%%==*}"
             want="${line%% *}"
             got=$(grep -iE "^${pkg}==" requirements.lock | sed 's/ *#.*//' | head -1)

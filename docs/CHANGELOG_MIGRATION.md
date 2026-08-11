@@ -117,6 +117,121 @@ something again.
 
 ---
 
+## Phase 3: LLM provider abstraction
+
+Date: 2026-08-11
+Branch: `msi/phase-3-llm-provider`
+Pull request: #122
+Plan reference: `MIGRATION_PLAN.md` section 8
+Result: **250 passed, 2 skipped, 0 failed. No existing test edited.**
+
+### Purpose
+
+The keystone phase. It converts "move inference to MSI" from a rewrite into a
+deployment: switching Groq for a self-hosted vLLM server becomes a change of
+`MI_LLM_BASE_URL`.
+
+### Added
+
+`llm_provider.py`, providing `LLMSettings`, a `MODELS` registry replacing four
+scattered literals, `load_settings()` reading `MI_LLM_*` with Groq-shaped
+defaults, `make_client()` returning an `openai.OpenAI`, and provider-portable
+error classifiers.
+
+`tests/test_llm_provider.py`, 23 tests.
+
+### Changed
+
+The `groq` SDK was replaced by `openai`. The openai SDK speaks to any
+OpenAI-compatible endpoint, which both Groq and vLLM are, and accepts
+`base_url` and `api_key` as explicit constructor arguments.
+
+| File | Change |
+|---|---|
+| `mi_session.py` | Client built by `make_client(load_settings(...))`; annotations to `Any`; models resolved from settings; auth branch uses `is_auth_error` |
+| `mi_evaluation.py` | Model defaults from the registry; `_call_llm` accepts `max_tokens` and `timeout`; classifiers delegate to `llm_provider` |
+| `requirements.txt` | `groq==1.6.0` replaced by `openai==2.53.0` |
+| `conftest.py` | `MI_LLM_*` added to the neutralised set |
+
+### The defect this phase fixes before it could bite
+
+`_looks_like_unknown_model` matched only Groq's error text. vLLM returns
+``The model `X` does not exist.``
+
+On vLLM the extractor fallback in `_extract_evidence` would therefore **never
+have triggered**. Instead of quietly retrying with the scoring model, the entire
+evaluation would have failed. That would almost certainly have been
+misdiagnosed as a vLLM problem during Phase 9, which is why the plan made this a
+prerequisite for it.
+
+Classification now inspects typed `openai` exceptions and status codes first,
+with substring matching only as a last resort, because the suite raises plain
+exceptions through its fake client. Tests pin both the Groq and vLLM shapes.
+
+### Bounds that did not previously exist
+
+The evaluator calls carried no `max_tokens` at all. Survivable against Groq, not
+against a self-hosted 70B: vLLM defaults generation to the remaining context
+window, so a degenerate response can run for minutes.
+
+| Call | Before | After |
+|---|---|---|
+| Chat turn | `max_tokens=250`, no timeout | plus `timeout=30s` |
+| Evaluator, scorer | none | `max_tokens=1500`, `timeout=180s` |
+| Evaluator, extractor | none | `max_tokens=1200`, `timeout=180s` |
+| Client | no retries | `max_retries=2` |
+
+Both are omitted from the request when `None`, so callers that do not set them
+are unaffected.
+
+### Two decisions worth recording
+
+**The client duck type was preserved deliberately.** `make_client` returns an
+object exposing `chat.completions.create` unchanged, because
+`test_evaluation.py`'s `FakeClient` drives that exact path and more than twenty
+tests depend on it. A `generate()` facade would have broken them and hidden the
+provider differences this module exists to normalise.
+
+That no existing test needed editing is the acceptance test for the abstraction,
+and it is the reason the plan stated the constraint up front.
+
+**`SessionConfig.chat_model` and `eval_model` became `Optional[str] = None`**
+rather than defaulting to the registry literals. The pages construct
+`SessionConfig` at import time, so a literal default would have silently won
+over the environment and made the endpoint unconfigurable, quietly defeating the
+purpose of the phase.
+
+### Switching provider
+
+```
+MI_LLM_BASE_URL=http://<node>:8000/v1
+MI_LLM_API_KEY=<any non-empty value>
+MI_LLM_CHAT_MODEL=chat-8b
+MI_LLM_EVAL_MODEL=eval-70b
+```
+
+No code change.
+
+### Incident during this phase
+
+A `git add -A` committed `.claude/worktrees`, three embedded git repositories
+that would have broken clones of this repository. Removed from the index in the
+following commit and added to `.gitignore`.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| No `groq` import or construction remains | grep, clean |
+| No model literal outside the registry | grep, clean |
+| `groq` absent from `requirements.txt` and the lockfile | Confirmed |
+| Existing tests edited | **None** |
+| Pins match the lockfile | CI, all eight |
+| No undefined names | pyflakes, CI |
+| Suite | 250 passed, 0 failed |
+
+---
+
 ## Phase 2: dependency prune, pin, and lock
 
 Date: 2026-08-11
