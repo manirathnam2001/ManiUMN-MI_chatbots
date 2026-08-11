@@ -75,7 +75,7 @@ A phase pull request may merge into `msi-hybrid` when all of these hold.
 
 | Gate | Requirement |
 |---|---|
-| CI | Green, or failing only the 17 known pre-existing tests. Any new failure blocks |
+| CI | **Green. Zero failures.** Since Phase 1a cleared the inherited 17, any failure is a real regression and blocks the merge |
 | Production untouched | `git diff main pre-msi-baseline` is empty |
 | Plan reference | The pull request names the section it implements |
 | Changelog | A `CHANGELOG_MIGRATION.md` entry is included in the same pull request |
@@ -91,6 +91,7 @@ Legend: Done, In progress, Blocked, Not started.
 |---|---|---|---|---|---|
 | 0 | Unblock: security, accounts, environment | n/a | n/a | **In progress** | Key rotation and Help Desk answers outstanding |
 | 1 | Track B setup, safety net, dead code removal | `msi-hybrid` direct | none | **Done** 2026-08-02 | CI run, zero new failures |
+| 1a | Clear the 17 stale test failures | `msi/phase-1a-stale-tests` | #118 | **Done** 2026-08-11 | CI green, 221 passed 0 failed |
 | 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | not opened | Not started | None. Ready to start |
 | 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | not opened | Not started | None. Ready to start |
 | 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. Watch PR #117 overlap |
@@ -165,19 +166,20 @@ merge them before the migration proceeds, so the conflict surface stops growing.
 
 ---
 
-## 6. Known test baseline
-
-CI is red on `main` and has been for some time, because the previous workflow
-never ran the test suite.
+## 6. Test baseline
 
 | Branch | Result |
 |---|---|
 | `pre-msi-baseline` (equals `main`) | 17 failed, 226 passed, 2 skipped |
 | `msi-hybrid` after Phase 1 | 17 failed, 216 passed, 2 skipped |
+| `msi-hybrid` after Phase 1a | **0 failed, 221 passed, 2 skipped** |
 
-The failure sets are identical. Any phase pull request that increases the
-failure count beyond these 17, or changes which tests fail, does not merge.
+**The suite is green. Any failure from this point is a real regression and
+blocks the merge.**
 
-The 17 are stale assertions about code layout, detailed in
-`CHANGELOG_MIGRATION.md`. Clearing them is recommended before Phase 6, which
-relies on the suite as its regression signal for scoring changes.
+Note that `main` itself is still red at 17 failures. That is expected and is not
+a defect in production: the failures are stale assertions about code layout, and
+they are fixed only on `msi-hybrid`. They will reach `main` at the Phase 12
+cutover along with everything else.
+
+Detail in `CHANGELOG_MIGRATION.md` under "Phase 1a: stale test cleanup".
