@@ -92,42 +92,35 @@ class EmailQueue:
     def remove(self, entry_id: str) -> bool:
         """
         Remove processed email from queue.
-        
+
         Args:
             entry_id: Queue entry ID to remove
-            
+
         Returns:
             True if entry was found and removed, False otherwise
         """
         queue = self._load()
-        original_len = len(queue)
-        
-        # Find and remove entry
-        removed_entry = None
+
+        removed_entry = next((e for e in queue if e.get('id') == entry_id), None)
+        if removed_entry is None:
+            logger.warning(f"Email queue entry not found: {entry_id}")
+            return False
+
         queue = [e for e in queue if e.get('id') != entry_id]
-        
-        if len(queue) < original_len:
-            # Delete associated PDF file
-            for entry in self._load():
-                if entry.get('id') == entry_id:
-                    removed_entry = entry
-                    break
-            
-            if removed_entry and 'pdf_path' in removed_entry:
-                pdf_path = Path(removed_entry['pdf_path'])
-                if pdf_path.exists():
-                    try:
-                        pdf_path.unlink()
-                        logger.debug(f"Deleted PDF file: {pdf_path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to delete PDF file {pdf_path}: {e}")
-            
-            self._save(queue)
-            logger.info(f"Removed email from queue: {entry_id}")
-            return True
-        
-        logger.warning(f"Email queue entry not found: {entry_id}")
-        return False
+
+        pdf_path_str = removed_entry.get('pdf_path')
+        if pdf_path_str:
+            pdf_path = Path(pdf_path_str)
+            if pdf_path.exists():
+                try:
+                    pdf_path.unlink()
+                    logger.debug(f"Deleted PDF file: {pdf_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete PDF file {pdf_path}: {e}")
+
+        self._save(queue)
+        logger.info(f"Removed email from queue: {entry_id}")
+        return True
     
     def increment_retry_count(self, entry_id: str) -> Optional[int]:
         """

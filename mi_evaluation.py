@@ -1,8 +1,8 @@
 """MI Evaluation: two-call evaluator (evidence extraction + scoring) with fallback.
 
-Single source of truth for evaluating MI sessions. Replaces the legacy chain of
-``services/evaluation_service.py`` (regex parsing), ``feedback_template.py``
-(prompt + display formatting), and the LLM-call portion of ``scoring_utils.py``.
+Single source of truth for evaluating MI sessions. Consolidates the legacy
+evaluation, feedback-template, and LLM-scoring paths into one strict-JSON
+two-call pipeline.
 
 Design goals:
 

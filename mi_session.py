@@ -7,14 +7,15 @@ becomes a ~30-line shell that constructs a :class:`SessionConfig` and calls
 What's deliberately NOT in this runner (documented regressions per the
 approved plan; see C:\\Users\\manir\\.claude\\plans\\pure-marinating-pike.md):
 
-* Voice mode (STT/TTS) — the legacy ``chat_utils.handle_chat_input_with_voice``
-  is not wired up. ``SessionConfig`` reserves the field for a follow-up.
+* Voice mode (STT/TTS) — not wired up. ``SessionConfig`` reserves the field
+  for a follow-up.
 * Email-to-Box backup — the page-level send loop using
   ``RobustEmailSender`` is not invoked here.
-* Mutual semantic end detection — sessions end when the student clicks the
-  "Generate Feedback" button. The ``end_control_middleware`` module that
-  implemented this was removed during the MSI migration work; it had been
-  dead code since this runner replaced ``chat_utils.py``.
+* Mutual-intent semantic ending detection — sessions end when the student
+  clicks the "Generate Feedback" button, not via automatic detection. The
+  ``end_control_middleware`` module that implemented this was removed during
+  the MSI migration work; it had been dead code since this runner replaced
+  ``chat_utils.py``.
 
 Public surface:
 
@@ -27,7 +28,6 @@ Public surface:
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -338,36 +338,6 @@ def _render_feedback_section(config: SessionConfig) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Knowledge base loader (rubric files; kept page-local so each session can
-# resolve its own rubrics_dir relative to the worktree root).
-# ---------------------------------------------------------------------------
-
-
-def _load_rubric_text(rubric_dir_name: str) -> str:
-    """Read all .txt files under <repo_root>/<rubric_dir_name> and concatenate."""
-    from pathlib import Path
-
-    here = Path(__file__).resolve().parent
-    candidates = [here / rubric_dir_name, here.parent / rubric_dir_name]
-    rubric_dir = next((p for p in candidates if p.exists() and p.is_dir()), None)
-    if rubric_dir is None:
-        st.error(f"Configuration error: rubric directory '{rubric_dir_name}' not found.")
-        st.stop()
-
-    texts: List[str] = []
-    for path in sorted(rubric_dir.glob("*.txt")):
-        try:
-            texts.append(path.read_text(encoding="utf-8", errors="ignore"))
-        except OSError as exc:
-            logger.warning("could not read rubric file %s: %s", path, exc)
-
-    if not texts:
-        st.error(f"No rubric files in {rubric_dir}.")
-        st.stop()
-    return "\n\n".join(texts)
-
-
-# ---------------------------------------------------------------------------
 # Persona selection UI
 # ---------------------------------------------------------------------------
 
@@ -408,17 +378,13 @@ def run_practice_session(config: SessionConfig) -> None:
     st.title(f"{config.page_icon} {config.page_title}")
     st.markdown(config.intro_markdown, unsafe_allow_html=True)
 
-    # Initialize Groq client from session credentials.
-    os.environ["GROQ_API_KEY"] = st.session_state.groq_api_key
-    client = Groq()
+    # Initialize Groq client from session credentials. Pass the key directly
+    # rather than mutating os.environ, which is process-global and would race
+    # under concurrent users.
+    client = Groq(api_key=st.session_state.groq_api_key)
 
     _initialize_state(config)
     persona_prompts = _personas_to_prompt_dict(config.personas)
-
-    # Load rubrics once (kept for future RAG reintegration; currently unused
-    # because the strict-JSON evaluator does not require a separate retrieval
-    # context — its system prompt is self-contained).
-    _ = _load_rubric_text(config.rubric_dir_name)
 
     _persona_selection(config, persona_prompts)
 
