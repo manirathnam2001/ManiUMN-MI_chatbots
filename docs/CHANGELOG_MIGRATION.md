@@ -117,6 +117,92 @@ something again.
 
 ---
 
+## Phase 4: retire the per-student API key
+
+Date: 2026-08-11
+Branch: `msi/phase-4-api-keys`
+Pull request: #123
+Plan reference: `MIGRATION_PLAN.md` section 9
+Result: **254 passed, 2 skipped, 0 failed.**
+
+### Purpose
+
+Move the LLM credential from each student to the operator, read from the
+environment by `llm_provider`, in preparation for a single shared MSI endpoint.
+
+### This closed a real defect
+
+The key was held in Streamlit session state and then written to `os.environ`,
+which is process-global and shared by every concurrent session. Two students
+active at the same time could clobber each other's keys, so one student's
+requests could be billed to another student's account, and which one won was
+nondeterministic.
+
+PR #117 had already removed the read side of that race, by passing the key to
+the client explicitly instead of reading it back from the environment. This
+phase removed the write side, and the concept.
+
+### Removed
+
+- The API key field, its validation branch, the session-state store and the
+  `os.environ` write in `secret_code_portal.py`
+- The now-unused `import os` there
+- A pre-existing unused `import os` in `pages/developer_page.py`, which pyflakes
+  had been reporting as advisory since Phase 2
+
+### Changed
+
+| Item | Change |
+|---|---|
+| `mi_session._auth_guard` | Requires `student_name` only |
+| `pages/developer_page.py` guard | Same |
+| Auth error message | No longer tells students to re-enter a key they never supplied. Points at the instructor, logs the detail for the operator |
+| `run_practice_session` | Calls `load_settings()` with no argument, so the credential comes from `MI_LLM_API_KEY` |
+| `tests/test_flow_simulation.py` | Narrated the old credential flow; now describes the operator-held one |
+
+Reducing the guards mattered more than it looks. Leaving `groq_api_key` in the
+condition would have bounced **every** student back to the portal, because
+nothing populates that session key any more.
+
+### Added
+
+`tests/test_no_per_student_api_key.py`. The load-bearing test walks the AST of
+every request-path module asserting there is no assignment into `os.environ`,
+because the environment write is the actual defect rather than the input field.
+A grep for the field name alone would not catch someone reintroducing the write
+under a different name.
+
+### One test inverted
+
+`test_portal_credentials` asserted the portal **has** a Groq API key input. That
+requirement no longer exists, so the assertion was inverted and the test renamed
+to `test_portal_collects_only_the_student_name`, with a docstring explaining why,
+so a future reader does not "fix" it by restoring the field and the race with it.
+
+CI caught this on the first run. Against the old 17-failure baseline it would
+have been lost in the noise, which is the argument for the zero-failure gate in
+practice rather than in principle.
+
+### Deliberately not touched
+
+`config_loader.get_groq_api_key()` and its tests remain. It is dead code with no
+callers that reads only environment variables, so it is harmless. Removing it
+means removing its tests, which is outside this phase.
+
+### Rollback
+
+Operator-level: point `MI_LLM_BASE_URL` at Groq and set `MI_LLM_API_KEY` to one
+operator key. Per the approved decision there is no per-student fallback path,
+which is deliberate, since that path is the race.
+
+### Coordination required at cutover, not before
+
+This changes the student-facing form. Onboarding instructions telling students
+to obtain their own Groq key must be updated at cutover. Production still runs
+the old flow, so those instructions remain correct until then.
+
+---
+
 ## Phase 3: LLM provider abstraction
 
 Date: 2026-08-11
