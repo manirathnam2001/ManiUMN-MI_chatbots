@@ -11,7 +11,21 @@ identically everywhere.
 
 The assertions also used to target `pages/OHI.py` and `pages/HPV.py` directly.
 Rubric loading moved into `mi_session._load_rubric_text` when the bot pages
-became thin shells, so the tests now target that function.
+became thin shells.
+
+That loader has since been removed by PR #117, because it read the rubric text
+and immediately discarded it: the strict-JSON evaluator carries its own
+self-contained prompt. Nothing loads rubrics at runtime today.
+
+What survives is a configuration invariant. Every bot page still declares a
+`rubric_dir_name` on its `SessionConfig`, and those directories are retained so
+retrieval can be reinstated later. The tests below assert that the declared
+names actually exist on disk with content, which is the part that can still
+silently rot.
+
+If rubric loading is ever restored, restore file-relative resolution with it:
+resolve against `__file__`, never the process working directory, or it will
+break under Apptainer and Slurm.
 """
 
 import ast
@@ -20,7 +34,25 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-RUBRIC_DIRS = ("ohi_rubrics", "hpv_rubrics", "perio_rubrics", "tobacco_rubrics")
+PAGES = ("OHI.py", "HPV.py", "Perio.py", "Tobacco.py")
+
+
+def _declared_rubric_dirs():
+    """Return the rubric_dir_name declared by each bot page.
+
+    Parsed from the source rather than hardcoded, so a page that renames or
+    drops its rubric directory is caught rather than silently diverging from
+    this test's own list.
+    """
+    declared = {}
+    for page in PAGES:
+        path = REPO_ROOT / "pages" / page
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.keyword) and node.arg == "rubric_dir_name":
+                if isinstance(node.value, ast.Constant):
+                    declared[page] = node.value.value
+    return declared
 
 
 def test_repo_root_is_discoverable():
@@ -31,78 +63,44 @@ def test_repo_root_is_discoverable():
         f"Expected secret_code_portal.py under the derived repo root {REPO_ROOT}"
 
 
-def test_resolution_logic_works_from_root_and_from_pages():
-    """The candidate-list strategy must find rubrics from either location.
+def test_every_page_declares_a_rubric_dir():
+    """All four bot pages must declare a rubric_dir_name."""
+    declared = _declared_rubric_dirs()
+    missing = [p for p in PAGES if p not in declared]
+    assert not missing, f"pages missing a rubric_dir_name declaration: {missing}"
 
-    `_load_rubric_text` resolves against its own file location and tries both
-    `<dir>/<name>` and `<dir>/../<name>`. This reproduces that logic against
-    real paths, so it stays honest if the module ever moves.
+
+def test_declared_rubric_dirs_exist_with_content():
+    """Every declared rubric directory must exist and hold .txt files.
+
+    Nothing reads these at runtime since PR #117 removed the loader, so a typo
+    or a rename would otherwise go unnoticed until retrieval is reinstated.
     """
-    for rubric_name in RUBRIC_DIRS:
-        # Resolving from a module sitting at the repo root.
-        here = REPO_ROOT
-        candidates = [here / rubric_name, here.parent / rubric_name]
-        resolved = next((p for p in candidates if p.exists() and p.is_dir()), None)
-        assert resolved is not None, \
-            f"{rubric_name} not resolvable from the repo root"
-
-        # Resolving from a module sitting one level down, as pages/ modules do.
-        here = REPO_ROOT / "pages"
-        candidates = [here / rubric_name, here.parent / rubric_name]
-        resolved = next((p for p in candidates if p.exists() and p.is_dir()), None)
-        assert resolved is not None, \
-            f"{rubric_name} not resolvable from pages/"
-
-
-def test_rubric_loader_uses_file_relative_resolution():
-    """`_load_rubric_text` must not depend on the process working directory.
-
-    A bare relative path here would break under Apptainer, under Slurm, and any
-    time the app is launched from another directory.
-    """
-    source = (REPO_ROOT / "mi_session.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-
-    loader = next(
-        (n for n in ast.walk(tree)
-         if isinstance(n, ast.FunctionDef) and n.name == "_load_rubric_text"),
-        None,
-    )
-    assert loader is not None, "mi_session must define _load_rubric_text"
-
-    body = ast.get_source_segment(source, loader) or ""
-    assert "__file__" in body, \
-        "_load_rubric_text must resolve relative to __file__, not the working directory"
-    assert "Path(" in body, "_load_rubric_text must use pathlib"
-
-
-def test_rubric_loader_fails_gracefully():
-    """A missing rubric directory must produce a message, not a traceback."""
-    source = (REPO_ROOT / "mi_session.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-
-    loader = next(
-        (n for n in ast.walk(tree)
-         if isinstance(n, ast.FunctionDef) and n.name == "_load_rubric_text"),
-        None,
-    )
-    assert loader is not None, "mi_session must define _load_rubric_text"
-
-    body = ast.get_source_segment(source, loader) or ""
-    assert "st.error" in body, \
-        "_load_rubric_text must surface a user-facing error"
-    assert "st.stop" in body, \
-        "_load_rubric_text must halt rendering rather than continue with no rubric"
-    assert "not found" in body or "Configuration error" in body, \
-        "_load_rubric_text must explain what is missing"
-
-
-def test_rubric_directories_exist_and_have_content():
-    """All four rubric directories must exist and contain .txt files."""
-    for rubric_name in RUBRIC_DIRS:
+    for page, rubric_name in sorted(_declared_rubric_dirs().items()):
         rubric_dir = REPO_ROOT / rubric_name
-        assert rubric_dir.exists(), f"{rubric_name} directory not found at {rubric_dir}"
-        assert rubric_dir.is_dir(), f"{rubric_name} is not a directory"
+        assert rubric_dir.exists(), \
+            f"{page} declares {rubric_name}, but {rubric_dir} does not exist"
+        assert rubric_dir.is_dir(), \
+            f"{page} declares {rubric_name}, which is not a directory"
 
         txt_files = list(rubric_dir.glob("*.txt"))
-        assert txt_files, f"{rubric_name} contains no .txt files"
+        assert txt_files, \
+            f"{page} declares {rubric_name}, which contains no .txt files"
+
+
+def test_declared_rubric_dirs_resolve_from_root_and_from_pages():
+    """Rubric directories must be reachable from either module location.
+
+    A module at the repo root and a module in pages/ must both be able to find
+    them by trying `<dir>/<name>` then `<dir>/../<name>`. This is the resolution
+    strategy any restored loader should use, anchored on `__file__` rather than
+    the process working directory.
+    """
+    for rubric_name in sorted(set(_declared_rubric_dirs().values())):
+        for origin in (REPO_ROOT, REPO_ROOT / "pages"):
+            candidates = [origin / rubric_name, origin.parent / rubric_name]
+            resolved = next(
+                (p for p in candidates if p.exists() and p.is_dir()), None
+            )
+            assert resolved is not None, \
+                f"{rubric_name} not resolvable from {origin}"
