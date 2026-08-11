@@ -170,30 +170,34 @@ def test_auth_guard_performs_its_checks():
     print("  OK shared auth guard enforces authentication")
 
 
-def test_portal_credentials():
-    """Test that portal has credential inputs."""
+def test_portal_collects_only_the_student_name():
+    """The portal collects a name and a code, and no LLM credential.
+
+    This assertion was inverted deliberately. It previously required the portal
+    to have a Groq API key input. That field was removed because the key was
+    written to os.environ, a process-global mapping shared by every concurrent
+    Streamlit session, so two students active at once could clobber each other's
+    keys. The credential is now operator-held. See
+    tests/test_no_per_student_api_key.py for the guard on the underlying defect.
+    """
     print("\nTesting portal credential inputs...")
-    
+
     with open('secret_code_portal.py', 'r', encoding='utf-8') as f:
         content = f.read()
-    
-    # Check for credential inputs
+
     assert 'Student Name' in content or 'student_name' in content, \
         "Portal should have student name input"
-    assert 'Groq API Key' in content or 'groq_api_key' in content, \
-        "Portal should have Groq API key input"
-    
-    # Check that credentials are stored in session state
     assert 'st.session_state.student_name' in content, \
         "Portal should store student name in session state"
-    assert 'st.session_state.groq_api_key' in content, \
-        "Portal should store API key in session state"
-    
+
+    assert 'groq_api_key' not in content, \
+        "Portal must not collect or store a per-student API key"
+
     # Check for internal navigation
     assert 'st.switch_page' in content, \
         "Portal should use st.switch_page for internal navigation"
-    
-    print("✓ Portal has proper credential inputs and navigation")
+
+    print("OK Portal collects only the student name, and navigates internally")
 
 
 def test_caching_decorators():

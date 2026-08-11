@@ -173,8 +173,8 @@ def _auth_guard(expected_bot: str) -> None:
             st.switch_page("secret_code_portal.py")
         st.stop()
 
-    if "groq_api_key" not in st.session_state or "student_name" not in st.session_state:
-        st.error(":warning: Session Error: Missing credentials.")
+    if "student_name" not in st.session_state:
+        st.error(":warning: Session Error: Missing student name.")
         if st.button("Return to Portal"):
             st.switch_page("secret_code_portal.py")
         st.stop()
@@ -261,7 +261,14 @@ def _handle_chat_turn(
         assistant_text = response.choices[0].message.content or ""
     except Exception as exc:
         if is_auth_error(exc):
-            st.error("Invalid API key. Re-enter your Groq key on the portal and reload.")
+            # The credential is now operator-held, so there is nothing a
+            # student can do about this. Direct them to their instructor and
+            # log the detail for whoever maintains the deployment.
+            logger.error("LLM authentication failed: %s", exc)
+            st.error(
+                "The practice service is currently unavailable. "
+                "Please contact your instructor."
+            )
             return
         raise
 
@@ -395,14 +402,11 @@ def run_practice_session(config: SessionConfig) -> None:
     st.title(f"{config.page_icon} {config.page_title}")
     st.markdown(config.intro_markdown, unsafe_allow_html=True)
 
-    # Resolve the LLM endpoint. Defaults reproduce the previous Groq behaviour,
-    # so an unconfigured deployment is unchanged; pointing MI_LLM_BASE_URL at a
-    # self-hosted vLLM server switches provider with no code change.
-    #
-    # The student's key is passed explicitly and wins over the environment,
-    # preserving today's per-student credential model. When the shared endpoint
-    # replaces per-student keys, this argument simply goes away.
-    settings = load_settings(api_key=st.session_state.groq_api_key)
+    # Resolve the LLM endpoint. The credential is operator-held, supplied
+    # through MI_LLM_API_KEY rather than by each student, which removes the
+    # cross-user race that the per-student model had. Pointing MI_LLM_BASE_URL
+    # at a self-hosted vLLM server switches provider with no code change.
+    settings = load_settings()
     client = make_client(settings)
 
     _initialize_state(config)

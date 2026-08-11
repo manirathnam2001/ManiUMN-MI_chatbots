@@ -94,8 +94,8 @@ Legend: Done, In progress, Blocked, Not started.
 | 1a | Clear the 17 stale test failures | `msi/phase-1a-stale-tests` | #118 | **Done** 2026-08-11 | Merged. CI green |
 | - | Integrate PR #117 from main | `msi-hybrid` direct | #117 | **Done** 2026-08-11 | Merged + semantic fix. CI green, 228 passed |
 | 2 | Dependency prune, pin, lock | `msi/phase-2-deps` | #121 | **Done** 2026-08-11 | Merged. CI green |
-| 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | #122 | **In review** 2026-08-11 | CI green, 250 passed, zero test edits |
-| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | not opened | Not started | After Phase 3. PR #117 now merged, overlap resolved |
+| 3 | LLM provider abstraction | `msi/phase-3-llm-provider` | #122 | **Done** 2026-08-11 | Merged. CI green |
+| 4 | Retire per-student API keys | `msi/phase-4-api-keys` | #123 | **In review** 2026-08-11 | CI green, 254 passed |
 | 5 | Path externalization | `msi/phase-5-paths` | not opened | Not started | Blocks Phase 8 |
 | 6 | FERPA de-identification boundary | `msi/phase-6-deident` | not opened | Not started | **Blocked** on the A1 FERPA answer. Blocks Phase 7 |
 | 7 | Data persistence: Box archiving and MSI store | `msi/phase-7-persistence` | not opened | Not started | After Phase 6. Needs A3 answer for the MSI half |
