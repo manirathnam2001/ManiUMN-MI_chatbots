@@ -32,6 +32,8 @@ import streamlit as st
 from groq import Groq
 
 from mi_evaluation import (
+    DEFAULT_EVAL_MODEL,
+    DEFAULT_EXTRACTOR_MODEL,
     EvaluationError,
     EvaluationResult,
     evaluate_session,
@@ -92,9 +94,10 @@ class SessionConfig:
     bot_name_short: str  # used for filename: "OHI" | "HPV" | "Perio" | "Tobacco"
     evaluator_label: str  # human-readable label for the evaluator field
 
-    # Models
-    chat_model: str = "llama-3.1-8b-instant"
-    eval_model: str = "llama-3.3-70b-versatile"
+    # Models. The patient chat uses the same fast tier as the evidence
+    # extractor; see mi_evaluation for why these are the current IDs.
+    chat_model: str = DEFAULT_EXTRACTOR_MODEL
+    eval_model: str = DEFAULT_EVAL_MODEL
 
     # Reserved for follow-up reintegration (not implemented in this change).
     enable_voice: bool = False
@@ -234,17 +237,30 @@ def _handle_chat_turn(
     messages.extend(st.session_state.chat_history)
 
     try:
+        # gpt-oss is a reasoning model: its hidden reasoning counts against
+        # max_tokens, so keep effort low and leave headroom for a 2-3 sentence
+        # patient reply (Groq returns the reasoning in a separate field, not
+        # in ``content``).
         response = client.chat.completions.create(
             model=config.chat_model,
             messages=messages,
-            max_tokens=250,
+            max_tokens=600,
             temperature=0.7,
+            reasoning_effort="low",
         )
         assistant_text = response.choices[0].message.content or ""
     except Exception as exc:
         msg = str(exc).lower()
         if "401" in msg or "invalid api key" in msg or "authentication" in msg:
             st.error("Invalid API key. Re-enter your Groq key on the portal and reload.")
+            return
+        if "model_not_found" in msg or "does not exist" in msg:
+            logger.error("Groq rejected model %r: %s", config.chat_model, exc)
+            st.error(
+                f"The chat model `{config.chat_model}` is no longer available on Groq. "
+                "Check console.groq.com/docs/deprecations and update the model "
+                "IDs in mi_evaluation.py."
+            )
             return
         raise
 

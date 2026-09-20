@@ -48,6 +48,13 @@ from rubric.mi_rubric import (
 logger = logging.getLogger(__name__)
 
 
+# Groq model IDs. Groq retired ``llama-3.1-8b-instant`` and
+# ``llama-3.3-70b-versatile`` on 2026-08-16 (console.groq.com/docs/deprecations);
+# these are the replacements Groq recommends for each tier.
+DEFAULT_EXTRACTOR_MODEL = "openai/gpt-oss-20b"  # fast: evidence pass (Call 1)
+DEFAULT_EVAL_MODEL = "openai/gpt-oss-120b"  # strong: scoring pass (Call 2)
+
+
 # ---------------------------------------------------------------------------
 # Public types
 # ---------------------------------------------------------------------------
@@ -257,7 +264,7 @@ def evaluate_session(
     student_name: str,
     *,
     client: Any,
-    model: str = "llama-3.3-70b-versatile",
+    model: str = DEFAULT_EVAL_MODEL,
     extractor_model: Optional[str] = None,
 ) -> EvaluationResult:
     """Evaluate one MI session and return a normalized result.
@@ -268,7 +275,7 @@ def evaluate_session(
 
     ``model`` is used for the scoring pass (Call 2). ``extractor_model`` is
     used for the evidence pass (Call 1); when ``None`` we default to a faster
-    Groq model (``llama-3.1-8b-instant``), falling back to ``model`` if the
+    Groq model (``DEFAULT_EXTRACTOR_MODEL``), falling back to ``model`` if the
     client rejects it. Callers that want to pin both stages to the same model
     can pass ``extractor_model=model``.
 
@@ -294,7 +301,7 @@ def evaluate_session(
         session_type,
         student_name,
         client=client,
-        model=extractor_model or "llama-3.1-8b-instant",
+        model=extractor_model or DEFAULT_EXTRACTOR_MODEL,
         fallback_model=model,
     )
 
