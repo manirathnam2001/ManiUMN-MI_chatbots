@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -42,10 +43,18 @@ from mi_evaluation import (
     DEFAULT_EXTRACTOR_MODEL,
     EvaluationError,
     EvaluationResult,
+    is_daily_limit_error,
+    is_rate_limit_error,
+    retry_after_seconds,
     evaluate_session,
     format_evaluation_for_display,
 )
-from mi_pdf import construct_feedback_filename, generate_pdf_report
+from mi_pdf import (
+    construct_feedback_filename,
+    construct_transcript_filename,
+    generate_pdf_report,
+    generate_transcript_pdf,
+)
 from time_utils import get_formatted_utc_time
 
 
@@ -130,6 +139,7 @@ _DEFAULT_STATE = {
     # Box backup: "pending" | "success" | "queued" | "failed" | "skipped" | "no_email"
     "email_backup_status": "pending",
     "email_backup_result": None,  # dict from RobustEmailSender, or None
+    "email_backup_kind": None,  # "report" | "transcript" — which PDF the status refers to
 }
 
 
@@ -194,6 +204,35 @@ def _personas_to_prompt_dict(personas: Dict[str, Any]) -> Dict[str, str]:
     return out
 
 
+# Longest the chat will hold a student's turn waiting for Groq's per-minute
+# window. Longer than this and it is better to hand the turn back with a
+# "try again in a minute" than to sit on a spinner.
+_CHAT_MAX_WAIT_SECONDS = 60.0
+
+
+def _chat_completion_with_rate_limit(client: Groq, **kwargs: Any) -> Any:
+    """``chat.completions.create`` with one wait-and-retry on a per-minute 429.
+
+    Per-day limits and anything else propagate to the caller. The wait is
+    the ``retry-after`` Groq gives (or 20s if it gives none) and is shown to
+    the student so the pause is explained rather than mysterious.
+    """
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as exc:
+        if not is_rate_limit_error(exc) or is_daily_limit_error(exc):
+            raise
+        wait = retry_after_seconds(exc) or 20.0
+        if wait > _CHAT_MAX_WAIT_SECONDS:
+            raise
+        logger.info("Chat rate-limited; waiting %.0fs then retrying once", wait)
+        notice = st.empty()
+        notice.info(f"Groq's free tier is rate-limiting your key. Retrying in {wait:.0f}s…")
+        time.sleep(wait + 0.5)
+        notice.empty()
+        return client.chat.completions.create(**kwargs)
+
+
 def _handle_chat_turn(
     *,
     client: Groq,
@@ -245,15 +284,24 @@ def _handle_chat_turn(
         messages.append(guard_message)
     messages.extend(st.session_state.chat_history)
 
+    def _undo_user_turn() -> None:
+        # The student's message got no reply; drop it so they can resend
+        # without the transcript carrying a duplicate.
+        if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+            st.session_state.chat_history.pop()
+        st.session_state.turn_count = max(0, st.session_state.turn_count - 1)
+
     try:
         # gpt-oss is a reasoning model: its hidden reasoning counts against
         # max_tokens, so keep effort low and leave headroom for a 2-3 sentence
         # patient reply (Groq returns the reasoning in a separate field, not
-        # in ``content``).
-        response = client.chat.completions.create(
+        # in ``content``). The cap is kept small on purpose: Groq's free tier
+        # counts the requested cap against its 8k tokens-per-minute budget.
+        response = _chat_completion_with_rate_limit(
+            client,
             model=config.chat_model,
             messages=messages,
-            max_tokens=600,
+            max_tokens=400,
             temperature=0.7,
             reasoning_effort="low",
         )
@@ -269,6 +317,21 @@ def _handle_chat_turn(
                 f"The chat model `{config.chat_model}` is no longer available on Groq. "
                 "Check console.groq.com/docs/deprecations and update the model "
                 "IDs in mi_evaluation.py."
+            )
+            return
+        if is_daily_limit_error(exc):
+            _undo_user_turn()
+            st.error(
+                "Your Groq API key has used up its free daily limit, so the patient cannot "
+                "reply today. Click **Generate Feedback** now to save your conversation as a "
+                "transcript PDF for manual evaluation, or continue tomorrow with a fresh limit."
+            )
+            return
+        if is_rate_limit_error(exc):
+            _undo_user_turn()
+            st.warning(
+                "Groq's free tier is rate-limiting your key. Wait about a minute, then send "
+                "your last message again."
             )
             return
         raise
@@ -297,6 +360,16 @@ def _generate_feedback(client: Groq, config: SessionConfig) -> None:
     student_name = st.session_state.student_name
 
     timestamp = get_formatted_utc_time()
+    # The evaluator may pause to stay under Groq's free-tier budget; tell the
+    # student why the spinner is taking longer than usual.
+    wait_notice = st.empty()
+
+    def _on_wait(seconds: float, reason: str) -> None:
+        wait_notice.info(
+            f"Groq's free tier allows 8,000 tokens per minute per key. "
+            f"Waiting {seconds:.0f}s for the limit to reset before continuing… ({reason})"
+        )
+
     try:
         result = evaluate_session(
             transcript=transcript,
@@ -304,24 +377,97 @@ def _generate_feedback(client: Groq, config: SessionConfig) -> None:
             student_name=student_name,
             client=client,
             model=config.eval_model,
+            on_wait=_on_wait,
         )
     except EvaluationError as exc:
         logger.error("EvaluationError phase=%s: %s", exc.phase, exc)
         st.session_state.evaluation_error = (exc.phase, str(exc))
         st.session_state.evaluation_result = None
+        st.session_state.evaluation_timestamp = timestamp
         return
+    finally:
+        wait_notice.empty()
 
     st.session_state.evaluation_result = result
     st.session_state.evaluation_timestamp = timestamp
     st.session_state.evaluation_error = None
 
 
+# Student-facing explanations per EvaluationError phase. Anything not listed
+# gets the generic message.
+_EVAL_FAILURE_MESSAGES: Dict[str, str] = {
+    "rate_limit": (
+        "Groq's free tier allows 8,000 tokens per minute per API key, and the limit did not "
+        "clear in time. Wait a minute and click **Generate Feedback** again."
+    ),
+    "rate_limit_daily": (
+        "Your Groq API key has used up its free daily limit (200,000 tokens), so automated "
+        "feedback cannot be generated today."
+    ),
+    "rate_limit_size": (
+        "This conversation is too long to evaluate in one request on a free Groq key."
+    ),
+}
+
+
+def _render_evaluation_failure(config: SessionConfig, phase: str, message: str) -> None:
+    """Explain the failure and always give the student a transcript PDF.
+
+    Whatever went wrong with the evaluator, the conversation itself is done
+    and must not be lost: render a transcript-only PDF flagged for manual
+    evaluation, offer it for download, and back it up to Box exactly like an
+    evaluated report so the instructor can grade it by hand.
+    """
+    explanation = _EVAL_FAILURE_MESSAGES.get(phase)
+    if explanation:
+        st.error(f"Automated feedback could not be generated. {explanation}")
+        with st.expander("Technical details"):
+            st.code(f"phase: {phase}\n{message}")
+    else:
+        st.error(f"Evaluation failed (phase: {phase}). {message}")
+
+    if phase in ("rate_limit",):
+        st.info("You can click **Generate Feedback** again to retry.")
+    elif phase not in ("rate_limit_daily", "rate_limit_size"):
+        st.info("You can click **Generate Feedback** again to retry, or contact your administrator.")
+
+    st.markdown("### Your conversation is saved")
+    st.markdown(
+        "Download the transcript below and keep a copy. It has also been sent to your "
+        "instructor's Box folder, marked **NEEDS EVALUATION**, so it can be graded manually."
+    )
+    try:
+        pdf_bytes = generate_transcript_pdf(
+            student_name=st.session_state.student_name,
+            session_type=config.session_type,
+            transcript=st.session_state.chat_history,
+            timestamp_cst=st.session_state.evaluation_timestamp or get_formatted_utc_time(),
+            reason=explanation or f"Automated evaluation failed (phase: {phase}). {message}",
+        )
+        filename = construct_transcript_filename(
+            st.session_state.student_name,
+            config.bot_name_short,
+            st.session_state.selected_persona,
+        )
+        st.download_button(
+            label=f"Download {config.bot_name_short} Conversation Transcript (PDF)",
+            data=pdf_bytes,
+            file_name=filename,
+            mime="application/pdf",
+        )
+    except Exception as exc:  # The transcript is still on screen; don't hide it behind a crash.
+        logger.exception("Transcript PDF generation failed")
+        st.error(f"Could not generate the transcript PDF: {exc}")
+        return
+
+    _backup_report_to_box(config, pdf_bytes, filename, kind="transcript")
+
+
 def _render_feedback_section(config: SessionConfig) -> None:
     err = st.session_state.get("evaluation_error")
     if err:
         phase, message = err
-        st.error(f"Evaluation failed (phase: {phase}). {message}")
-        st.info("You can click 'Generate Feedback' again to retry, or contact your administrator.")
+        _render_evaluation_failure(config, phase, message)
         return
 
     result: Optional[EvaluationResult] = st.session_state.get("evaluation_result")
@@ -373,14 +519,29 @@ def _box_email_for(config: SessionConfig, email_config: Dict[str, Any]) -> Optio
     return email_config.get(f"{config.bot_name_short.lower()}_box_email") or None
 
 
-def _backup_report_to_box(config: SessionConfig, pdf_bytes: bytes, filename: str) -> None:
+def _backup_report_to_box(
+    config: SessionConfig,
+    pdf_bytes: bytes,
+    filename: str,
+    *,
+    kind: str = "report",
+) -> None:
     """Email the PDF to the bot's Box folder, once per evaluation.
 
     Status lives in ``st.session_state.email_backup_status`` so Streamlit
     reruns (every widget click) don't resend. On failure after the sender's
     own retries the PDF is queued to disk and retried at next app startup by
     ``secret_code_portal``; the student can also retry or skip from here.
+
+    ``kind`` is ``"report"`` (evaluated) or ``"transcript"`` (evaluation
+    failed). If the kind changes, e.g. a transcript went out and a later
+    retry produced a real report, the status resets so the new PDF is sent
+    too rather than being considered already done.
     """
+    if st.session_state.get("email_backup_kind") != kind:
+        st.session_state.email_backup_kind = kind
+        st.session_state.email_backup_status = "pending"
+        st.session_state.email_backup_result = None
     status = st.session_state.email_backup_status
 
     if status == "pending":

@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, TypedDict
+import re
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict
 
 from rubric.mi_rubric import (
     CategoryAssessment,
@@ -53,6 +55,17 @@ logger = logging.getLogger(__name__)
 # these are the replacements Groq recommends for each tier.
 DEFAULT_EXTRACTOR_MODEL = "openai/gpt-oss-20b"  # fast: evidence pass (Call 1)
 DEFAULT_EVAL_MODEL = "openai/gpt-oss-120b"  # strong: scoring pass (Call 2)
+
+# Groq free tier: 8k tokens per minute per key. Above this many transcript
+# tokens the evaluator sends the transcript once (single call) instead of
+# twice (evidence + scoring), so a 20-30 turn session still fits in a minute.
+# ~1500 tokens is about 12 student/patient exchanges.
+SINGLE_CALL_THRESHOLD_TOKENS = 1500
+
+# How long the evaluator is willing to sleep for Groq's per-minute window to
+# reset before giving up. The window is 60s; a little slack covers clock skew.
+MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
+RATE_LIMIT_RETRIES = 2
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +104,9 @@ class EvaluationError(Exception):
     """Hard failure during evaluation.
 
     ``phase`` is one of ``"llm_call"``, ``"json_parse"``, ``"schema"``,
-    ``"normalization"``. ``raw_response`` carries whatever text the LLM
+    ``"normalization"``, ``"rate_limit"`` (per-minute, did not clear),
+    ``"rate_limit_daily"`` (per-day quota) or ``"rate_limit_size"`` (one
+    request alone exceeds the per-minute budget). ``raw_response`` carries whatever text the LLM
     returned (or ``None`` if the call itself failed).
     """
 
@@ -266,6 +281,8 @@ def evaluate_session(
     client: Any,
     model: str = DEFAULT_EVAL_MODEL,
     extractor_model: Optional[str] = None,
+    on_wait: Optional[Callable[[float, str], None]] = None,
+    single_call_threshold_tokens: int = SINGLE_CALL_THRESHOLD_TOKENS,
 ) -> EvaluationResult:
     """Evaluate one MI session and return a normalized result.
 
@@ -279,12 +296,20 @@ def evaluate_session(
     client rejects it. Callers that want to pin both stages to the same model
     can pass ``extractor_model=model``.
 
+    ``on_wait(seconds, reason)`` is called before the evaluator sleeps to stay
+    inside Groq's per-minute token budget, so a UI can show why it is paused.
+
+    Long transcripts (over ``single_call_threshold_tokens``) skip Call 1 and
+    use the single-call evaluator, which sends the transcript once instead of
+    twice. That keeps a 20-30 turn session inside Groq's free-tier budget of
+    8k tokens per minute at the cost of slightly less precise evidence quotes.
+
     Returns a fully-validated :class:`EvaluationResult`. On JSON / schema
     failure that survives one retry, the result is returned with
     ``partial=True`` and a ``notes`` string explaining what went wrong.
 
     Raises :class:`EvaluationError` only for hard failures (network, auth,
-    invalid arguments).
+    invalid arguments, rate limits that did not clear after waiting).
     """
     if not transcript or not transcript.strip():
         raise EvaluationError(
@@ -292,18 +317,28 @@ def evaluate_session(
             phase="normalization",
         )
 
-    # Call 1: evidence extraction. On hard failure we let EvaluationError
-    # propagate (network/auth are fatal). On parse/schema failure after one
-    # retry, we silently drop evidence and fall back to the legacy single-call
-    # path for Call 2.
-    evidence = _extract_evidence(
-        transcript,
-        session_type,
-        student_name,
-        client=client,
-        model=extractor_model or DEFAULT_EXTRACTOR_MODEL,
-        fallback_model=model,
-    )
+    pacer = RateLimitPacer(on_wait=on_wait)
+
+    if estimate_tokens(transcript) > single_call_threshold_tokens:
+        logger.info(
+            "Transcript ~%d tokens exceeds %d; using single-call evaluator",
+            estimate_tokens(transcript), single_call_threshold_tokens,
+        )
+        evidence: Optional[_Evidence] = None
+    else:
+        # Call 1: evidence extraction. On hard failure we let EvaluationError
+        # propagate (network/auth are fatal). On parse/schema failure after one
+        # retry, we silently drop evidence and fall back to the legacy
+        # single-call path for Call 2.
+        evidence = _extract_evidence(
+            transcript,
+            session_type,
+            student_name,
+            client=client,
+            model=extractor_model or DEFAULT_EXTRACTOR_MODEL,
+            fallback_model=model,
+            pacer=pacer,
+        )
 
     # Call 2: scoring. If evidence is None we use the legacy single-call prompt
     # so the system still produces a result at least as good as the old code.
@@ -314,6 +349,7 @@ def evaluate_session(
         evidence=evidence,
         client=client,
         model=model,
+        pacer=pacer,
     )
 
 
@@ -330,6 +366,7 @@ def _extract_evidence(
     client: Any,
     model: str,
     fallback_model: str,
+    pacer: Optional["RateLimitPacer"] = None,
 ) -> Optional[_Evidence]:
     """Run Call 1 (evidence extraction). Return verified evidence, or None.
 
@@ -347,11 +384,11 @@ def _extract_evidence(
     # (e.g. model not available on the account), retry once with fallback_model
     # before giving up.
     try:
-        raw_first = _call_llm(client, model, base_messages)
+        raw_first = _call_llm(client, model, base_messages, pacer=pacer)
     except EvaluationError as exc:
         if model != fallback_model and _looks_like_unknown_model(exc):
             logger.info("Extractor model %s unavailable; falling back to %s", model, fallback_model)
-            raw_first = _call_llm(client, fallback_model, base_messages)
+            raw_first = _call_llm(client, fallback_model, base_messages, pacer=pacer)
             model = fallback_model
         else:
             raise
@@ -365,7 +402,7 @@ def _extract_evidence(
     retry_messages = base_messages + [
         {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
     ]
-    raw_second = _call_llm(client, model, retry_messages)
+    raw_second = _call_llm(client, model, retry_messages, pacer=pacer)
     parsed_second = _try_parse_extractor(raw_second, transcript)
     if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
         return parsed_second["evidence"]  # type: ignore[return-value]
@@ -487,6 +524,7 @@ def _score_with_evidence(
     evidence: Optional[_Evidence],
     client: Any,
     model: str,
+    pacer: Optional["RateLimitPacer"] = None,
 ) -> EvaluationResult:
     """Run Call 2 (scoring). Uses evidence when available, legacy prompt when not."""
     if evidence is None:
@@ -504,7 +542,7 @@ def _score_with_evidence(
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_first = _call_llm(client, model, base_messages)
+    raw_first = _call_llm(client, model, base_messages, pacer=pacer)
     parsed = _try_parse_and_validate(raw_first, session_type, evidence=evidence)
     if isinstance(parsed, dict) and parsed.get("__ok__"):
         return parsed["result"]  # type: ignore[return-value]
@@ -514,7 +552,7 @@ def _score_with_evidence(
     retry_messages = base_messages + [
         {"role": "system", "content": _RETRY_CORRECTION_HINT + f" (Previous failure: {first_error})"},
     ]
-    raw_second = _call_llm(client, model, retry_messages)
+    raw_second = _call_llm(client, model, retry_messages, pacer=pacer)
     parsed_second = _try_parse_and_validate(raw_second, session_type, evidence=evidence)
     if isinstance(parsed_second, dict) and parsed_second.get("__ok__"):
         return parsed_second["result"]  # type: ignore[return-value]
@@ -595,37 +633,245 @@ def _build_scorer_user_prompt_with_evidence(
 # ---------------------------------------------------------------------------
 
 
-def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
-    """Call the Groq client. Try with json_object response_format, fall back if unsupported."""
-    try:
+# Generation settings shared by both evaluator calls.
+#
+# gpt-oss is a reasoning model and Groq counts its hidden reasoning against
+# the completion cap. Without an explicit cap, a long transcript let the
+# model spend the whole default budget thinking and Groq's JSON validator
+# then rejected the truncated output with 400 json_validate_failed. Low
+# effort keeps the reasoning short. The cap is sized to the ~1-1.5k-token
+# JSON payloads Call 1 and Call 2 produce plus low-effort reasoning, and no
+# larger: Groq's free tier allows 8k tokens per minute per key and counts the
+# *requested* cap against it, so every token reserved here is a token the
+# transcript cannot use.
+_GENERATION_KWARGS: Dict[str, Any] = {
+    "temperature": 0.2,
+    "max_completion_tokens": 2048,
+    "reasoning_effort": "low",
+}
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count (~4 characters per token for English prose)."""
+    return len(text) // 4 + 1
+
+
+class RateLimitPacer:
+    """Keep evaluator calls inside Groq's per-minute token budget.
+
+    Every Groq response carries ``x-ratelimit-remaining-tokens`` and
+    ``x-ratelimit-reset-tokens``. The pacer records them after each call and,
+    before the next one, sleeps until the window resets if the next call would
+    not fit. This turns a would-be 429 into a short, explained pause (via
+    ``on_wait``) instead of a failed evaluation.
+    """
+
+    def __init__(
+        self,
+        on_wait: Optional[Callable[[float, str], None]] = None,
+        *,
+        max_wait: float = MAX_RATE_LIMIT_WAIT_SECONDS,
+        sleep: Optional[Callable[[float], None]] = None,
+    ) -> None:
+        self.on_wait = on_wait
+        self.max_wait = max_wait
+        # Resolved at call time so tests can patch time.sleep.
+        self._sleep = sleep
+        self.remaining_tokens: Optional[int] = None
+        self.reset_seconds: Optional[float] = None
+        self.waits: List[float] = []  # for tests and logging
+
+    def observe(self, headers: Any) -> None:
+        """Record rate-limit state from a response's headers (any mapping)."""
+        if not headers:
+            return
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.2,
-            )
+            remaining = headers.get("x-ratelimit-remaining-tokens")
+            reset = headers.get("x-ratelimit-reset-tokens")
+        except AttributeError:
+            return
+        if remaining is not None:
+            try:
+                self.remaining_tokens = int(float(remaining))
+            except (TypeError, ValueError):
+                pass
+        if reset is not None:
+            parsed = parse_duration_seconds(str(reset))
+            if parsed is not None:
+                self.reset_seconds = parsed
+
+    def before_call(self, estimated_tokens: int) -> None:
+        """Sleep through the reset if ``estimated_tokens`` will not fit."""
+        if self.remaining_tokens is None or self.reset_seconds is None:
+            return
+        if estimated_tokens <= self.remaining_tokens:
+            return
+        self.wait(
+            self.reset_seconds,
+            f"next call needs ~{estimated_tokens} tokens, {self.remaining_tokens} left this minute",
+        )
+        # The window has reset; forget stale numbers until the next response.
+        self.remaining_tokens = None
+        self.reset_seconds = None
+
+    def wait(self, seconds: float, reason: str) -> None:
+        seconds = max(0.0, min(float(seconds), self.max_wait)) + 0.5
+        logger.info("Rate-limit pause %.1fs: %s", seconds, reason)
+        self.waits.append(seconds)
+        if self.on_wait:
+            self.on_wait(seconds, reason)
+        (self._sleep or time.sleep)(seconds)
+
+
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|h|m|s)")  # ms must precede m and s
+
+
+def parse_duration_seconds(text: str) -> Optional[float]:
+    """Parse Groq duration strings like ``"7.66s"``, ``"1m3.5s"``, ``"250ms"``, ``"2h1m"``."""
+    if not text:
+        return None
+    text = text.strip().lower()
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):  # bare seconds (retry-after header)
+        return float(text)
+    total = 0.0
+    matched = False
+    for value, unit in _DURATION_RE.findall(text):
+        matched = True
+        v = float(value)
+        total += {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}[unit] * v
+    return total if matched else None
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    status = getattr(exc, "status_code", None)
+    return status == 429 or "rate limit" in msg or "rate_limit" in msg or "error code: 429" in msg
+
+
+def is_daily_limit_error(exc: Exception) -> bool:
+    """Per-day quota (TPD/RPD): waiting a minute will not help."""
+    msg = str(exc).lower()
+    return "per day" in msg or "(tpd)" in msg or "(rpd)" in msg
+
+
+def is_request_too_large_error(exc: Exception) -> bool:
+    """413: a single request exceeds the per-minute budget by itself."""
+    msg = str(exc).lower()
+    status = getattr(exc, "status_code", None)
+    return status == 413 or "request too large" in msg or "reduce your message size" in msg
+
+
+def retry_after_seconds(exc: Exception) -> Optional[float]:
+    """Seconds Groq asks us to wait, from the header or the message text."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers:
+        try:
+            value = headers.get("retry-after")
+        except AttributeError:
+            value = None
+        parsed = parse_duration_seconds(str(value)) if value else None
+        if parsed is not None:
+            return parsed
+    match = re.search(r"try again in\s+([0-9hms.]+)", str(exc), flags=re.IGNORECASE)
+    if match:
+        return parse_duration_seconds(match.group(1))
+    return None
+
+
+def _create_with_headers(client: Any, **kwargs: Any) -> Tuple[Any, Any]:
+    """Call ``chat.completions.create`` and also return the response headers.
+
+    The Groq SDK exposes headers through ``with_raw_response``; test fakes and
+    other clients may not, in which case headers are ``None`` and the pacer
+    simply stays passive.
+    """
+    completions = client.chat.completions
+    raw_api = getattr(completions, "with_raw_response", None)
+    if raw_api is not None:
+        try:
+            raw = raw_api.create(**kwargs)
+            return raw.parse(), getattr(raw, "headers", None)
+        except (AttributeError, TypeError):
+            pass  # not a real SDK client; fall through
+    return completions.create(**kwargs), None
+
+
+def _call_llm(
+    client: Any,
+    model: str,
+    messages: List[Dict[str, str]],
+    *,
+    pacer: Optional[RateLimitPacer] = None,
+) -> str:
+    """Call the Groq client and return the message text.
+
+    Tries JSON mode first and falls back to plain text if the model lacks it
+    or Groq's JSON validator rejects the output. Rate limits are handled here:
+    the pacer pre-waits when the call will not fit the per-minute budget, a
+    429 is retried after the ``retry-after`` Groq gives, and per-day or
+    request-too-large limits raise immediately with a phase the UI can act on.
+    """
+    pacer = pacer or RateLimitPacer()
+    estimated = sum(estimate_tokens(m.get("content", "")) for m in messages)
+    estimated += int(_GENERATION_KWARGS["max_completion_tokens"])
+
+    base_kwargs: Dict[str, Any] = {"model": model, "messages": messages, **_GENERATION_KWARGS}
+    json_kwargs: Dict[str, Any] = {**base_kwargs, "response_format": {"type": "json_object"}}
+
+    def _attempt() -> Tuple[Any, Any]:
+        try:
+            return _create_with_headers(client, **json_kwargs)
         except TypeError:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.2,
-            )
+            return _create_with_headers(client, **base_kwargs)
         except Exception as exc:
-            if _looks_like_unsupported_format(exc):
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.2,
-                )
-            else:
-                raise
-    except Exception as exc:
-        raise EvaluationError(
-            f"LLM call failed: {exc}",
-            phase="llm_call",
-            raw_response=None,
-        ) from exc
+            # Either the model has no JSON mode, or Groq's JSON validator
+            # rejected the output (json_validate_failed). In both cases a
+            # plain-text retry is worth one attempt: the parser downstream
+            # extracts JSON from prose and has its own corrective retry.
+            if _looks_like_unsupported_format(exc) or _looks_like_json_validate_failed(exc):
+                logger.warning("JSON mode failed for %s (%s); retrying as plain text", model, exc)
+                return _create_with_headers(client, **base_kwargs)
+            raise
+
+    response = None
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        pacer.before_call(estimated)
+        try:
+            response, headers = _attempt()
+            pacer.observe(headers)
+            break
+        except Exception as exc:
+            if is_daily_limit_error(exc):
+                raise EvaluationError(
+                    f"Groq daily limit reached for this API key: {exc}",
+                    phase="rate_limit_daily",
+                ) from exc
+            if is_request_too_large_error(exc):
+                raise EvaluationError(
+                    f"Transcript too large for one Groq request on this key: {exc}",
+                    phase="rate_limit_size",
+                ) from exc
+            if is_rate_limit_error(exc) and attempt < RATE_LIMIT_RETRIES:
+                wait = retry_after_seconds(exc)
+                if wait is None:
+                    wait = 20.0 * (attempt + 1)
+                if wait > pacer.max_wait:
+                    raise EvaluationError(
+                        f"Groq asked to wait {wait:.0f}s, longer than the evaluator will hold: {exc}",
+                        phase="rate_limit",
+                    ) from exc
+                pacer.wait(wait, f"Groq per-minute limit hit (attempt {attempt + 1})")
+                continue
+            if is_rate_limit_error(exc):
+                raise EvaluationError(
+                    f"Groq per-minute limit did not clear after {RATE_LIMIT_RETRIES} retries: {exc}",
+                    phase="rate_limit",
+                ) from exc
+            raise EvaluationError(
+                f"LLM call failed: {exc}",
+                phase="llm_call",
+                raw_response=None,
+            ) from exc
 
     try:
         return response.choices[0].message.content or ""
@@ -640,6 +886,12 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
 def _looks_like_unsupported_format(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "response_format" in msg or "json_object" in msg
+
+
+def _looks_like_json_validate_failed(exc: Exception) -> bool:
+    """Groq 400 raised when JSON mode output is not valid JSON (e.g. truncated)."""
+    msg = str(exc).lower()
+    return "json_validate_failed" in msg or "failed to generate json" in msg
 
 
 def _looks_like_unknown_model(exc: EvaluationError) -> bool:

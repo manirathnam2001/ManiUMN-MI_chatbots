@@ -103,6 +103,34 @@ def test_network_failure_raises_evaluation_error() -> None:
     assert info.value.phase == "llm_call"
 
 
+def test_json_validate_failed_retries_without_json_mode() -> None:
+    # Groq's 400 when JSON-mode output is truncated (seen with gpt-oss when
+    # reasoning consumed the completion budget). Must not be fatal: retry the
+    # same call as plain text, which the parser handles.
+    groq_400 = RuntimeError(
+        "Error code: 400 - {'error': {'message': 'Failed to generate JSON. Please adjust "
+        "your prompt.', 'type': 'invalid_request_error', 'code': 'json_validate_failed'}}"
+    )
+    client = FakeClient([groq_400, _evidence_payload(), _good_payload()])
+    result = me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    assert result["partial"] is False
+    calls = client.chat.completions.calls
+    assert len(calls) == 3
+    assert calls[0].get("response_format") == {"type": "json_object"}
+    assert "response_format" not in calls[1], "retry must drop JSON mode"
+    assert calls[1]["model"] == calls[0]["model"]
+
+
+def test_evaluator_calls_bound_reasoning_and_completion_budget() -> None:
+    # Both evaluator calls must cap completion tokens and keep reasoning low;
+    # without this gpt-oss can exhaust the default budget before emitting JSON.
+    client = FakeClient([_evidence_payload(), _good_payload()])
+    me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
+    for call in client.chat.completions.calls:
+        assert call["max_completion_tokens"] >= 2048
+        assert call["reasoning_effort"] == "low"
+
+
 def test_recommendations_include_lowest_category() -> None:
     payload = {
         "categories": {
