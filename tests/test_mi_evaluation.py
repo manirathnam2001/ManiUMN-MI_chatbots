@@ -129,8 +129,8 @@ def test_recommendations_include_lowest_category() -> None:
 def test_two_call_happy_path_uses_fast_extractor_model() -> None:
     client = FakeClient([_evidence_payload(), _good_payload()])
     me.evaluate_session(DEFAULT_TRANSCRIPT, "OHI", "S", client=client)
-    assert client.chat.completions.calls[0]["model"] == "llama-3.1-8b-instant"
-    assert client.chat.completions.calls[1]["model"] == "llama-3.3-70b-versatile"
+    assert client.chat.completions.calls[0]["model"] == me.DEFAULT_EXTRACTOR_MODEL
+    assert client.chat.completions.calls[1]["model"] == me.DEFAULT_EVAL_MODEL
 
 
 def test_extractor_failure_falls_back_to_single_call() -> None:

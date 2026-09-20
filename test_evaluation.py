@@ -286,9 +286,9 @@ def test_two_call_happy_path_makes_two_calls() -> None:
     assert result["partial"] is False
     assert len(client.chat.completions.calls) == 2
     # First call goes to the extractor model by default.
-    assert client.chat.completions.calls[0]["model"] == "llama-3.1-8b-instant"
+    assert client.chat.completions.calls[0]["model"] == me.DEFAULT_EXTRACTOR_MODEL
     # Second call goes to the scoring model.
-    assert client.chat.completions.calls[1]["model"] == "llama-3.3-70b-versatile"
+    assert client.chat.completions.calls[1]["model"] == me.DEFAULT_EVAL_MODEL
 
 
 def test_extractor_failure_falls_back_to_single_call() -> None:
