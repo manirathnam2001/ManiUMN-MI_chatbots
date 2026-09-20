@@ -16,7 +16,10 @@ Replaces ``pdf_utils.py``. Key behavioral differences from the legacy module:
 Public surface:
 
 * :func:`construct_feedback_filename` — port of the legacy filename helper.
+* :func:`construct_transcript_filename` — filename for the unevaluated variant.
 * :func:`generate_pdf_report` — single ReportLab pipeline producing ``bytes``.
+* :func:`generate_transcript_pdf` — transcript only, for manual evaluation when
+  the automated evaluator could not run (e.g. Groq rate limits).
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
+    HRFlowable,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -74,6 +78,20 @@ def construct_feedback_filename(
     if persona_name and persona_name.strip():
         parts.append(_sanitize_for_filename(persona_name))
     return "-".join(parts) + " Feedback.pdf"
+
+
+def construct_transcript_filename(
+    student_name: str,
+    bot_name: str,
+    persona_name: Optional[str] = None,
+) -> str:
+    """Return ``[Student]-[Bot]-[Persona] Transcript NEEDS-EVALUATION.pdf``.
+
+    The suffix is deliberately loud so these stand out in the Box folder
+    next to the evaluated ``... Feedback.pdf`` reports.
+    """
+    base = construct_feedback_filename(student_name, bot_name, persona_name)
+    return base[: -len(" Feedback.pdf")] + " Transcript NEEDS-EVALUATION.pdf"
 
 
 def _sanitize_for_filename(value: str) -> str:
@@ -136,6 +154,17 @@ def _build_wrapped_table(data: list, content_width: float = 6.5 * inch) -> Table
     total = sum(col_proportions)
     col_widths = [(p / total) * content_width for p in col_proportions]
     return Table(data, colWidths=col_widths)
+
+
+def _divider() -> HRFlowable:
+    # A drawn rule rather than a row of U+2500 characters: the built-in
+    # Helvetica has no glyph for those, so they rendered as black boxes.
+    return HRFlowable(width="100%", thickness=0.75, color=colors.grey, spaceBefore=6, spaceAfter=6)
+
+
+# Chat roles as they should read on paper. Instructors grade the student and
+# read the patient; "User"/"Assistant" are implementation details.
+_ROLE_LABELS = {"user": "Student", "assistant": "Patient"}
 
 
 def _get_performance_level(percentage: float) -> str:
@@ -248,13 +277,13 @@ def generate_pdf_report(
 
     if result["partial"]:
         elements.append(Paragraph(
-            "<b>&#9888; PARTIAL REPORT &mdash; MANUAL REVIEW REQUIRED.</b> "
+            "<b>PARTIAL REPORT &mdash; MANUAL REVIEW REQUIRED.</b> "
             "The automated evaluator output could not be fully parsed. "
             "Whatever was successfully scored is shown below; raw evaluator response is included as an appendix.",
             warning_style,
         ))
 
-    elements.append(Paragraph("<para align='center'>" + ("\u2500" * 60) + "</para>", body_style))
+    elements.append(_divider())
 
     # ----- Score Summary table -----
     elements.append(Paragraph("Score Summary", section_style))
@@ -344,9 +373,31 @@ def generate_pdf_report(
     elements.append(Spacer(1, 20))
 
     # ----- Conversation Transcript -----
+    _append_transcript(elements, transcript, section_style, role_style, convo_style)
+
+    # ----- Appendix: raw evaluator response (only when partial) -----
+    if result["partial"] and result["notes"]:
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph("Appendix: Raw Evaluator Response", section_style))
+        for line in _sanitize_for_pdf(result["notes"]).splitlines():
+            elements.append(Paragraph(line if line.strip() else "&nbsp;", body_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _append_transcript(
+    elements: list,
+    transcript: Iterable[Dict[str, str]],
+    section_style: ParagraphStyle,
+    role_style: ParagraphStyle,
+    convo_style: ParagraphStyle,
+) -> None:
+    """Append the "Conversation Transcript" section shared by both PDFs."""
     elements.append(Paragraph("Conversation Transcript", section_style))
     for msg in transcript or []:
-        role = str(msg.get("role", "user")).title()
+        role = _ROLE_LABELS.get(str(msg.get("role", "user")).lower(), str(msg.get("role", "user")).title())
         content = _sanitize_for_pdf(str(msg.get("content", "")))
         elements.append(Paragraph(f"<b>{role}:</b>", role_style))
         # Wrap long content in 80-char chunks for readability.
@@ -364,12 +415,86 @@ def generate_pdf_report(
             elements.append(Paragraph(content, convo_style))
         elements.append(Spacer(1, 8))
 
-    # ----- Appendix: raw evaluator response (only when partial) -----
-    if result["partial"] and result["notes"]:
-        elements.append(Spacer(1, 12))
-        elements.append(Paragraph("Appendix: Raw Evaluator Response", section_style))
-        for line in _sanitize_for_pdf(result["notes"]).splitlines():
-            elements.append(Paragraph(line if line.strip() else "&nbsp;", body_style))
+
+def generate_transcript_pdf(
+    *,
+    student_name: str,
+    session_type: str,
+    transcript: Iterable[Dict[str, str]],
+    timestamp_cst: str,
+    reason: str,
+) -> bytes:
+    """Render the conversation alone, flagged for manual evaluation.
+
+    Used when the automated evaluator could not run (typically Groq's
+    free-tier rate limit on the student's key). Same header, transcript
+    layout and page setup as :func:`generate_pdf_report`, with a loud
+    "NEEDS EVALUATION" banner and the ``reason`` in place of the scores, so
+    an instructor can grade it by hand and file it next to the others.
+    """
+    if not student_name or not student_name.strip():
+        raise ValueError("Student name cannot be empty")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72,
+        title=f"MI Session Transcript - {session_type} (NEEDS EVALUATION)",
+        author="MI Assessment System",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "Title", parent=styles["Heading1"],
+        fontSize=20, spaceAfter=20, alignment=1,
+        textColor=colors.darkblue, fontName="Helvetica-Bold",
+    )
+    section_style = ParagraphStyle(
+        "Section", parent=styles["Heading2"],
+        fontSize=16, spaceBefore=20, spaceAfter=10,
+        textColor=colors.darkblue, fontName="Helvetica-Bold",
+    )
+    info_style = ParagraphStyle(
+        "Info", parent=styles["Normal"],
+        fontSize=14, spaceAfter=6, fontName="Helvetica-Bold",
+    )
+    body_style = ParagraphStyle(
+        "Body", parent=styles["Normal"],
+        fontSize=11, leading=14, spaceAfter=6,
+    )
+    warning_style = ParagraphStyle(
+        "Warning", parent=styles["Normal"],
+        fontSize=12, textColor=colors.red, spaceAfter=6,
+        fontName="Helvetica-Bold",
+    )
+    convo_style = ParagraphStyle(
+        "Convo", parent=styles["Normal"],
+        fontSize=10, leading=13, leftIndent=10, rightIndent=10, spaceAfter=4,
+    )
+    role_style = ParagraphStyle(
+        "Role", parent=styles["Normal"],
+        fontSize=10, leading=13, leftIndent=10, rightIndent=10, spaceAfter=4,
+        fontName="Helvetica-Bold",
+    )
+
+    elements: list = []
+    elements.append(Paragraph(f"MI Session Transcript - {session_type}", title_style))
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"<b>Student:</b> {_sanitize_for_pdf(student_name)}", info_style))
+    elements.append(Paragraph(f"<b>Session Date:</b> {_sanitize_for_pdf(timestamp_cst)}", info_style))
+    elements.append(Paragraph(
+        "<b>NEEDS EVALUATION &mdash; automated feedback was not generated.</b> "
+        "This transcript is complete and should be evaluated manually against the MI rubric.",
+        warning_style,
+    ))
+    elements.append(Paragraph(f"<b>Reason:</b> {_sanitize_for_pdf(reason)}", body_style))
+    elements.append(_divider())
+
+    _append_transcript(elements, transcript, section_style, role_style, convo_style)
 
     doc.build(elements)
     buffer.seek(0)
