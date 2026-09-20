@@ -595,6 +595,21 @@ def _build_scorer_user_prompt_with_evidence(
 # ---------------------------------------------------------------------------
 
 
+# Generation settings shared by both evaluator calls.
+#
+# gpt-oss is a reasoning model and Groq counts its hidden reasoning against
+# the completion cap. Without an explicit cap, a long transcript let the
+# model spend the whole default budget thinking and Groq's JSON validator
+# then rejected the truncated output with 400 json_validate_failed. Low
+# effort keeps the reasoning short; the cap leaves ample room for the
+# ~1-2k-token JSON payloads Call 1 and Call 2 produce.
+_GENERATION_KWARGS: Dict[str, Any] = {
+    "temperature": 0.2,
+    "max_completion_tokens": 4096,
+    "reasoning_effort": "low",
+}
+
+
 def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
     """Call the Groq client. Try with json_object response_format, fall back if unsupported."""
     try:
@@ -603,20 +618,25 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
                 model=model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.2,
+                **_GENERATION_KWARGS,
             )
         except TypeError:
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.2,
+                **_GENERATION_KWARGS,
             )
         except Exception as exc:
-            if _looks_like_unsupported_format(exc):
+            # Either the model has no JSON mode, or Groq's JSON validator
+            # rejected the output (json_validate_failed). In both cases a
+            # plain-text retry is worth one attempt: the parser downstream
+            # extracts JSON from prose and has its own corrective retry.
+            if _looks_like_unsupported_format(exc) or _looks_like_json_validate_failed(exc):
+                logger.warning("JSON mode failed for %s (%s); retrying as plain text", model, exc)
                 response = client.chat.completions.create(
                     model=model,
                     messages=messages,
-                    temperature=0.2,
+                    **_GENERATION_KWARGS,
                 )
             else:
                 raise
@@ -640,6 +660,12 @@ def _call_llm(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
 def _looks_like_unsupported_format(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "response_format" in msg or "json_object" in msg
+
+
+def _looks_like_json_validate_failed(exc: Exception) -> bool:
+    """Groq 400 raised when JSON mode output is not valid JSON (e.g. truncated)."""
+    msg = str(exc).lower()
+    return "json_validate_failed" in msg or "failed to generate json" in msg
 
 
 def _looks_like_unknown_model(exc: EvaluationError) -> bool:
