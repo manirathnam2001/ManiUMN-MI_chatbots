@@ -9,10 +9,13 @@ approved plan; see C:\\Users\\manir\\.claude\\plans\\pure-marinating-pike.md):
 
 * Voice mode (STT/TTS) — not wired up. ``SessionConfig`` reserves the field
   for a follow-up.
-* Email-to-Box backup — the page-level send loop using
-  ``RobustEmailSender`` is not invoked here.
 * Mutual-intent semantic ending detection — sessions end when the student
   clicks the "Generate Feedback" button, not via automatic detection.
+
+The email-to-Box backup was also dropped by that plan and restored in
+September 2026: after the PDF is generated, :func:`_backup_report_to_box`
+sends it to the bot's Box upload address via ``RobustEmailSender`` (retries,
+then persistent queue), the same way the pre-refactor pages did.
 
 Public surface:
 
@@ -24,6 +27,7 @@ Public surface:
 
 from __future__ import annotations
 
+import io
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -31,6 +35,8 @@ from typing import Any, Dict, List, Optional
 import streamlit as st
 from groq import Groq
 
+from config_loader import ConfigLoader
+from email_utils import RobustEmailSender
 from mi_evaluation import (
     DEFAULT_EVAL_MODEL,
     DEFAULT_EXTRACTOR_MODEL,
@@ -121,6 +127,9 @@ _DEFAULT_STATE = {
     "evaluation_timestamp": None,
     "evaluation_error": None,  # (phase, message) tuple, or None
     "feedback_button_clicked": False,
+    # Box backup: "pending" | "success" | "queued" | "failed" | "skipped" | "no_email"
+    "email_backup_status": "pending",
+    "email_backup_result": None,  # dict from RobustEmailSender, or None
 }
 
 
@@ -347,6 +356,95 @@ def _render_feedback_section(config: SessionConfig) -> None:
     except Exception as exc:  # PDF rendering failure is rare but should not eat the screen.
         logger.exception("PDF generation failed")
         st.error(f"Could not generate PDF: {exc}")
+        return
+
+    # Box backup runs after the download button so a slow or failing SMTP
+    # server never keeps the student from getting their report.
+    _backup_report_to_box(config, pdf_bytes, filename)
+
+
+# ---------------------------------------------------------------------------
+# Email-to-Box backup
+# ---------------------------------------------------------------------------
+
+
+def _box_email_for(config: SessionConfig, email_config: Dict[str, Any]) -> Optional[str]:
+    """Look up the Box upload address for this bot, e.g. ``ohi_box_email``."""
+    return email_config.get(f"{config.bot_name_short.lower()}_box_email") or None
+
+
+def _backup_report_to_box(config: SessionConfig, pdf_bytes: bytes, filename: str) -> None:
+    """Email the PDF to the bot's Box folder, once per evaluation.
+
+    Status lives in ``st.session_state.email_backup_status`` so Streamlit
+    reruns (every widget click) don't resend. On failure after the sender's
+    own retries the PDF is queued to disk and retried at next app startup by
+    ``secret_code_portal``; the student can also retry or skip from here.
+    """
+    status = st.session_state.email_backup_status
+
+    if status == "pending":
+        st.markdown("### Backing Up Report to Box")
+        try:
+            app_config = ConfigLoader().config
+            email_config = app_config.get("email_config", {})
+            box_email = _box_email_for(config, email_config)
+            if not box_email:
+                st.session_state.email_backup_status = "no_email"
+                logger.warning("No Box email configured for %s; skipping backup", config.bot_name_short)
+            else:
+                progress = st.empty()
+                status_text = st.empty()
+
+                def _on_progress(attempt: int, max_attempts: int, state: str) -> None:
+                    progress.progress(attempt / max_attempts)
+                    status_text.text(f"Attempt {attempt}/{max_attempts}: {state}")
+
+                sender = RobustEmailSender(app_config)
+                result = sender.send_with_guaranteed_delivery(
+                    pdf_buffer=io.BytesIO(pdf_bytes),
+                    filename=filename,
+                    recipient=box_email,
+                    student_name=st.session_state.student_name,
+                    session_type=config.session_type,
+                    progress_callback=_on_progress,
+                )
+                progress.empty()
+                status_text.empty()
+                st.session_state.email_backup_result = result
+                if result.get("success"):
+                    st.session_state.email_backup_status = "success"
+                elif result.get("queued"):
+                    st.session_state.email_backup_status = "queued"
+                else:
+                    st.session_state.email_backup_status = "failed"
+        except Exception as exc:  # Never let the backup take down the feedback page.
+            logger.exception("Box backup failed unexpectedly")
+            st.session_state.email_backup_result = {"success": False, "queued": False, "error": str(exc)}
+            st.session_state.email_backup_status = "failed"
+        status = st.session_state.email_backup_status
+
+    result = st.session_state.get("email_backup_result") or {}
+    if status == "success":
+        st.success(f"Report backed up to Box. (attempt {result.get('attempts', 1)})")
+    elif status == "queued":
+        st.warning("Box backup is queued and will be retried automatically. Please keep your downloaded copy.")
+    elif status == "no_email":
+        st.warning("Box email is not configured for this bot. Report is available for download only.")
+    elif status == "skipped":
+        st.info("Box backup skipped. Please keep your downloaded copy.")
+    elif status == "failed":
+        st.error(f"Box backup failed: {result.get('error') or 'unknown error'}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Retry Backup"):
+                st.session_state.email_backup_status = "pending"
+                st.session_state.email_backup_result = None
+                st.rerun()
+        with col2:
+            if st.button("Skip Backup"):
+                st.session_state.email_backup_status = "skipped"
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
